@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v477 loaded");
+console.log("[CriaVideo] app.js v516 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -201,7 +201,56 @@ function showToast(msg, type = "info") {
 const WAN_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const DEFAULT_REALISTIC_DURATION_OPTIONS = [5, 10, 15, 20, 45, 60];
 const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
+const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
+const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
+const SIMILAR_ENGINE_OPTIONS = ["lite2", "viduq3", "grok", "wan2", "seedance"];
+const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "lite2", "viduq3"]);
+
+function _isSeedanceFamilyEngine(engineValue) {
+    return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
+}
+
+function _getCreateRealisticDurationOptions(engineValue) {
+    const engine = String(engineValue || "").trim().toLowerCase();
+    if (engine === "wan2") return WAN_REALISTIC_DURATION_OPTIONS;
+    if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
+    if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
+    return DEFAULT_REALISTIC_DURATION_OPTIONS;
+}
+
+function _getAutoRealisticDurationOptions(engineValue) {
+    const engine = String(engineValue || "").trim().toLowerCase();
+    if (engine === "grok") return AUTO_GROK_DURATION_OPTIONS;
+    if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
+    if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
+    return WAN_REALISTIC_DURATION_OPTIONS;
+}
+
+function _getSimilarManualDurationOptions(engineValue) {
+    const normalizedEngine = _normalizeSimilarEngine(engineValue);
+    if (normalizedEngine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
+    if (normalizedEngine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
+    return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
+}
+
+function _clampSimilarDurationForEngine(engineValue, durationValue) {
+    const normalizedEngine = _normalizeSimilarEngine(engineValue);
+    const safeDuration = Number(durationValue || 0);
+    const minDuration = normalizedEngine === "viduq3" ? 1 : 5;
+    const maxDuration = normalizedEngine === "viduq3" ? 16 : normalizedEngine === "lite2" ? 12 : 15;
+    if (!Number.isFinite(safeDuration) || safeDuration <= 0) {
+        return minDuration;
+    }
+    return Math.max(minDuration, Math.min(maxDuration, safeDuration));
+}
+
+function _pickSimilarManualDuration(engineValue, rawValue) {
+    return _pickClosestDurationOption(_getSimilarManualDurationOptions(engineValue), rawValue);
+}
+
 const WORKFLOW_PROMPT_AI_STYLE_OPTIONS = [
     { value: "commercial", label: "Comercial" },
     { value: "meme", label: "Meme Viral" },
@@ -351,11 +400,7 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
         _syncSeedanceLastFrameToggle(prefix);
         return;
     }
-    const options = engine === "wan2"
-        ? WAN_REALISTIC_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons(`${prefix}-realistic-duration`, options, preferredValue);
     _syncSeedanceLastFrameToggle(prefix);
 }
@@ -364,28 +409,20 @@ function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
     const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    toggleGroup.hidden = engine !== "seedance";
+    toggleGroup.hidden = !_isSeedanceFamilyEngine(engine);
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
     const engine = engineBtn?.dataset.value || "wan2";
-    const options = engine === "wan2"
-        ? WAN_REALISTIC_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : DEFAULT_REALISTIC_DURATION_OPTIONS;
+    const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
     const engine = document.querySelector("#auto-realistic-engine .engine-option.selected")?.dataset.value || "wan2";
-    const options = engine === "grok"
-        ? AUTO_GROK_DURATION_OPTIONS
-        : engine === "seedance"
-            ? SEEDANCE_REALISTIC_DURATION_OPTIONS
-            : WAN_REALISTIC_DURATION_OPTIONS;
+    const options = _getAutoRealisticDurationOptions(engine);
     _renderDurationButtons("auto-realistic-duration", options, preferredValue);
 }
 
@@ -1137,6 +1174,12 @@ function bindDashboardEvents() {
     if (publishGenerateBtn) {
         publishGenerateBtn.addEventListener("click", () => {
             generatePublishTitleDescription();
+        });
+    }
+    const publishDetailsBtn = document.getElementById("btn-publish-analysis-details");
+    if (publishDetailsBtn) {
+        publishDetailsBtn.addEventListener("click", () => {
+            togglePublishAnalysisDetails();
         });
     }
     const publishPreviewVideo = document.getElementById("pub-render-preview");
@@ -3680,7 +3723,8 @@ function _isProjectProcessingStatus(status) {
 
 function _projectVisibleInCreateList(project) {
     const normalizedStatus = String(project?.status || "").trim().toLowerCase();
-    return !_isEditorProjectListItem(project)
+    return !project?.hide_from_create_list
+        && !_isEditorProjectListItem(project)
         && (
             _isProjectProcessingStatus(normalizedStatus)
             || normalizedStatus === "failed"
@@ -4061,7 +4105,9 @@ let similarState = {
     projectId: 0,
     status: "",
     progress: 0,
+    bulkFrameTextRemovalBusy: false,
     activeUploadSceneId: 0,
+    activeUploadSceneFrameTarget: "",
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
     sourceVideoName: "",
@@ -4081,10 +4127,11 @@ let similarState = {
     pollingTimer: null,
     controlsLocked: false,
     engineManuallySelected: false,
-    selectedEngine: "wan2",
+    selectedEngine: "lite2",
     sceneEngineSelectionBySceneId: {},
     pendingBusyStage: "",
     pendingBusySceneId: 0,
+    pendingBusySceneIds: [],
     busyProgressStage: "",
     busyProgressCurrent: 0,
     busyProgressTarget: 0,
@@ -4165,7 +4212,7 @@ let workflowState = {
 const SIMILAR_STAGE_LABELS = {
     queued_analysis: "Vídeo recebido. Preparando análise...",
     downloading_reference: "Baixando vídeo de referência...",
-    analyzing_reference: "Analisando frames e criando prompts por cena...",
+    analyzing_reference: "Analisando o vídeo.",
     analysis_ready: "Análise concluída. Revise as cenas abaixo.",
     analysis_general_ready: "Análise geral concluída. O prompt único já está pronto.",
     scene_edited: "Cena atualizada. Gere a previa para validar.",
@@ -4190,9 +4237,9 @@ const SIMILAR_DETECTED_MODE_LABELS = {
     unknown: "Não foi possível identificar com confiança o perfil visual do vídeo.",
 };
 const SIMILAR_MODE_ENGINE_DEFAULT = {
-    static_narrated: "wan2",
-    realistic: "wan2",
-    unknown: "wan2",
+    static_narrated: "lite2",
+    realistic: "lite2",
+    unknown: "lite2",
 };
 const SIMILAR_ACTION_ICONS = {
     save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
@@ -5092,9 +5139,14 @@ async function createSimilar(projectId) {
     }
 
     const realisticArtists = new Set([
+        "Pro 3.1 Start",
+        "Pro 3.1",
+        "Vidu Q3 Pro Starter",
         "Wan 2.2",
         "Ultra High 1.0",
         "Ultra High 2.2",
+        "Lite 2.0 Fast",
+        "Lite 2.0",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
         "Grok",
@@ -5116,9 +5168,11 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "lite2", "viduq3"].includes(raw)) {
             return raw;
         }
+        if (raw.includes("lite 2.0") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
+        if (raw.includes("pro 3.1") || raw.includes("vidu")) return "viduq3";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
         if (raw.includes("cria 3.0") || raw.includes("grok")) return "grok";
@@ -5665,6 +5719,16 @@ function initCreateWizard() {
             const target = event.target;
             if (!(target instanceof HTMLTextAreaElement)) return;
 
+            const frameMatch = /^similar-frame-instruction-(\d+)$/.exec(String(target.id || ""));
+            if (frameMatch) {
+                const sceneId = Number(frameMatch[1] || 0);
+                if (!sceneId) return;
+
+                _syncSimilarDraftsFromDom();
+                _setSimilarFrameCreateActionVisibility(sceneId);
+                return;
+            }
+
             const match = /^similar-scene-prompt-(\d+)$/.exec(String(target.id || ""));
             if (!match) return;
 
@@ -5906,7 +5970,7 @@ function initCreateWizard() {
             const container = eng.closest(".form-group")?.parentElement;
             if (container) {
                 // Keep realistic engines without auto music by default (user can still enable manually).
-                const hasNativeAudio = (engineVal === "grok" || engineVal === "seedance" || engineVal === "wan2");
+                const hasNativeAudio = (engineVal === "grok" || _isSeedanceFamilyEngine(engineVal) || engineVal === "wan2");
                 const musicCb = container.querySelector("[id$='-realistic-music']");
                 if (musicCb) {
                     const useScriptTevoxi = musicCb.id === "script-realistic-music"
@@ -6031,13 +6095,58 @@ function _chooseCreateMode(mode) {
         openScriptImageCreatorFromCreateMode();
         return;
     }
-    if (normalizedMode === "series") {
-        openSeriesWorkspaceStart({ fromCreateModal: true });
+    if (normalizedMode === "audio") {
+        _openCreateAudioBuilderMode();
         return;
     }
     document.getElementById("create-mode-selection").hidden = true;
     switchCreateMode(normalizedMode);
 }
+
+function _openCreateAudioBuilderMode() {
+    switchCreateMode("script");
+    toggleScriptAudioBuilder(true);
+    toggleMinhaVoz("script-audio-builder", true);
+    const modalBody = document.querySelector("#modal-new-project .modal-body");
+    if (modalBody) {
+        modalBody.scrollTop = 0;
+    }
+}
+
+function handleNewProjectModalClose() {
+    const aiSuggestPanel = document.getElementById("ai-suggest-panel");
+    if (aiSuggestPanel && !aiSuggestPanel.hidden) {
+        hideAiSuggestPanel();
+        return;
+    }
+
+    const workflowPanel = document.getElementById("create-panel-workflow");
+    if (workflowPanel && !workflowPanel.hidden) {
+        document.getElementById("workflow-back")?.click();
+        return;
+    }
+
+    const similarPanel = document.getElementById("create-panel-similar");
+    if (similarPanel && !similarPanel.hidden) {
+        document.getElementById("similar-back")?.click();
+        return;
+    }
+
+    const scriptPanel = document.getElementById("create-panel-script");
+    if (scriptPanel && !scriptPanel.hidden) {
+        scriptBack();
+        return;
+    }
+
+    const wizardPanel = document.getElementById("create-panel-wizard");
+    if (wizardPanel && !wizardPanel.hidden) {
+        wizardBack();
+        return;
+    }
+
+    closeModal("modal-new-project");
+}
+window.handleNewProjectModalClose = handleNewProjectModalClose;
 
 function switchCreateMode(mode) {
     if (!mode) return;
@@ -6233,15 +6342,19 @@ function _stopSimilarPolling() {
     }
 }
 
-function _setSimilarStatus(message, kind = "running") {
+function _setSimilarStatus(message, kind = "running", options = {}) {
     const statusEl = document.getElementById("similar-status");
     if (!statusEl) return;
 
     const text = String(message || "").trim();
+    const previousProgress = Number(statusEl.dataset.progress || 0);
+    const previousStage = String(statusEl.dataset.stage || "").trim();
     if (!text) {
         statusEl.hidden = true;
         statusEl.replaceChildren();
         statusEl.className = "similar-status";
+        delete statusEl.dataset.progress;
+        delete statusEl.dataset.stage;
         return;
     }
 
@@ -6262,8 +6375,29 @@ function _setSimilarStatus(message, kind = "running") {
         statusEl.classList.add("status-running");
         const progressEl = document.createElement("span");
         progressEl.className = "similar-status-progress";
+        const hasDeterminateProgress = Number.isFinite(Number(options.progress));
+        const currentStage = String(options.stage || "").trim();
+        if (hasDeterminateProgress) {
+            progressEl.classList.add("is-determinate");
+        }
         const progressBarEl = document.createElement("span");
         progressBarEl.className = "similar-status-progress-bar";
+        if (hasDeterminateProgress) {
+            const normalizedProgress = Math.max(4, Math.min(100, Number(options.progress || 0) || 4));
+            const canReusePreviousProgress = currentStage && currentStage === previousStage && previousProgress > 0 && previousProgress <= normalizedProgress;
+            const startProgress = canReusePreviousProgress
+                ? previousProgress
+                : Math.max(4, Math.min(normalizedProgress, 8));
+            progressBarEl.style.width = `${startProgress}%`;
+            statusEl.dataset.progress = String(normalizedProgress);
+            statusEl.dataset.stage = currentStage;
+            requestAnimationFrame(() => {
+                progressBarEl.style.width = `${normalizedProgress}%`;
+            });
+        } else {
+            delete statusEl.dataset.progress;
+            delete statusEl.dataset.stage;
+        }
         progressEl.appendChild(progressBarEl);
         statusEl.appendChild(progressEl);
     }
@@ -6536,6 +6670,17 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const tags = _safeSimilarTags(project?.tags);
     const startFrameUrl = String(tags.similar_unified_start_frame_url || "").trim();
     const endFrameUrl = String(tags.similar_unified_end_frame_url || "").trim();
+    const requestedStage = String(
+        similarState.pendingBusyStage === "generating_unified_scene"
+            ? similarState.pendingBusyStage
+            : tags.similar_stage || ""
+    ).trim();
+    const activeUnifiedStage = _resolveSimilarBusyStage(requestedStage, project?.status || "");
+    const isGeneratingUnifiedScene = activeUnifiedStage === "generating_unified_scene";
+    const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
+    const unifiedClipProgress = isGeneratingUnifiedScene
+        ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
+        : 0;
     const frameEntries = [
         startFrameUrl
             ? {
@@ -6557,7 +6702,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
             : null,
     ].filter(Boolean);
 
-    if (!frameEntries.length) {
+    if (!frameEntries.length && !unifiedClipUrl && !isGeneratingUnifiedScene) {
         wrapEl.innerHTML = "";
         wrapEl.hidden = true;
         return;
@@ -6577,12 +6722,16 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const frameBusyDisabledAttr = (frameBusy || similarState.controlsLocked) ? "disabled" : "";
     const activeFrameLabel = _getSimilarUnifiedFrameLabel(activeFrameKind);
     const activeFrameLabelLower = _getSimilarUnifiedFrameLabel(activeFrameKind, { lower: true });
-    const summary = pendingCount
-        ? `O vídeo será gerado com o primeiro frame, o último frame e mais ${pendingCount} imagem(ns) extra(s) enviada(s) por você.`
-        : "O vídeo será gerado com o primeiro frame, o último frame e o prompt único atual.";
+    const summary = isGeneratingUnifiedScene
+        ? `Gerando o vídeo com o primeiro frame, o último frame${pendingCount ? ` e mais ${pendingCount} imagem(ns) extra(s)` : ""}.`
+        : pendingCount
+            ? `O vídeo será gerado com o primeiro frame, o último frame e mais ${pendingCount} imagem(ns) extra(s) enviada(s) por você.`
+            : unifiedClipUrl
+                ? "O vídeo final fica ao lado dos frames usados na geração."
+                : "O vídeo será gerado com o primeiro frame, o último frame e o prompt único atual.";
     const galleryMarkup = frameEntries.map((entry) => `
-        <article class="similar-frame-gallery-item is-base${similarState.unifiedFrameEditorOpen && activeFrameKind === entry.kind ? " is-active" : ""}">
-            <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
+        <article class="similar-frame-gallery-item is-base${similarState.unifiedFrameEditorOpen && activeFrameKind === entry.kind ? " is-active" : ""}${isGeneratingUnifiedScene ? " is-generating-clip" : ""}">
+            <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${isGeneratingUnifiedScene ? " is-generating-clip" : ""}">
                 <img src="${esc(entry.url)}" alt="${esc(entry.alt)}" loading="lazy">
                 <div class="similar-frame-image-actions">
                     <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${SIMILAR_ACTION_ICONS.download}</a>
@@ -6592,6 +6741,30 @@ function _renderSimilarUnifiedReferencePanel(project) {
             </div>
         </article>
     `).join("");
+    const clipCardMarkup = unifiedClipUrl
+        ? `
+            <article class="similar-frame-gallery-item is-active">
+                <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}">
+                    <video src="${esc(unifiedClipUrl)}" controls preload="metadata" playsinline></video>
+                    <span class="similar-frame-gallery-badge">Vídeo</span>
+                </div>
+            </article>
+        `
+        : isGeneratingUnifiedScene
+            ? `
+                <article class="similar-frame-gallery-item is-active is-generating-clip">
+                    <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass} is-generating-clip">
+                        <div class="similar-scene-clip-placeholder" role="status" aria-live="polite">
+                            <span class="similar-scene-clip-spinner" aria-hidden="true"></span>
+                            <strong>Gerando vídeo</strong>
+                            <small>${unifiedClipProgress > 0 ? `${unifiedClipProgress}%` : "Processando"}</small>
+                        </div>
+                        <span class="similar-frame-gallery-badge">Vídeo</span>
+                    </div>
+                </article>
+            `
+            : "";
+    const galleryItemCount = frameEntries.length + (clipCardMarkup ? 1 : 0);
     const frameUploadsMarkup = framePendingCount
         ? `
             <div class="similar-reference-frame-upload-list">
@@ -6650,8 +6823,9 @@ function _renderSimilarUnifiedReferencePanel(project) {
             </div>
             <div class="similar-reference-frame-body">
                 <div class="similar-reference-frame-primary-column">
-                    <div class="similar-reference-frame-gallery${frameEntries.length === 1 ? " similar-reference-frame-gallery-single" : ""}">
+                    <div class="similar-reference-frame-gallery${galleryItemCount === 1 ? " similar-reference-frame-gallery-single" : ""}">
                         ${galleryMarkup}
+                        ${clipCardMarkup}
                     </div>
                 </div>
             </div>
@@ -6799,7 +6973,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = ["grok", "wan2", "seedance"].map((engineValue) => `
+    enginePickerEl.innerHTML = SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
         <button
             class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
             type="button"
@@ -6808,42 +6982,15 @@ function _renderSimilarUnifiedPrompt(project) {
             aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
         >${_similarSceneEngineLabel(engineValue)}</button>
     `).join("");
-    _renderDurationButtons("similar-unified-duration-options", [5, 10, 15], selectedDuration);
-
-    const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
-    const unifiedClipUrl = String(tags.similar_unified_clip_url || "").trim();
-    const referenceFrameCount = Number(tags.similar_unified_reference_frame_count || 0) || 0;
-    const generatedEngine = _normalizeSimilarEngine(tags.similar_unified_clip_engine || selectedEngine);
-    const generatedDuration = parseInt(tags.similar_unified_clip_duration || selectedDuration || "10", 10) || 10;
-    const previewItems = [];
-    if (unifiedClipUrl) {
-        previewItems.push(`
-            <div class="similar-preview-box ${previewAspectClass}">
-                <video src="${esc(unifiedClipUrl)}" controls preload="metadata"></video>
-            </div>
-        `);
-    }
-
-    if (previewItems.length) {
-        const previewMetaParts = [];
-        if (referenceFrameCount > 0) {
-            previewMetaParts.push(`${referenceFrameCount} imagem(ns) de referencia`);
-        }
-        previewMetaParts.push(`Motor: ${_similarEngineDisplayLabel(generatedEngine)}`);
-        previewMetaParts.push(`Duracao: ${generatedDuration}s`);
-        previewMetaEl.textContent = previewMetaParts.join(" | ");
-        previewStageEl.innerHTML = `<div class="similar-scene-preview${previewItems.length === 1 ? " similar-scene-preview-single" : ""}">${previewItems.join("")}</div>`;
-        previewWrapEl.hidden = false;
-    } else {
-        previewMetaEl.textContent = "";
-        previewStageEl.innerHTML = "";
-        previewWrapEl.hidden = true;
-    }
+    _renderDurationButtons("similar-unified-duration-options", _similarUnifiedDurationOptions(selectedEngine), selectedDuration);
+    previewMetaEl.textContent = "";
+    previewStageEl.innerHTML = "";
+    previewWrapEl.hidden = true;
 
     textEl.value = promptText;
     metaEl.textContent = metaText;
     if (generateBtn) {
-        generateBtn.textContent = unifiedClipUrl ? "Gerar novamente o vídeo" : "Gerar vídeo";
+        generateBtn.textContent = String(tags.similar_unified_clip_url || "").trim() ? "Gerar novamente o vídeo" : "Gerar vídeo";
     }
     _renderSimilarUnifiedReferencePanel(project);
     _syncSimilarUnifiedUploadUi(project);
@@ -7350,20 +7497,27 @@ function similarSelectSceneDuration(sceneId, rawValue) {
     const durationEl = document.getElementById(`similar-scene-duration-${targetId}`);
     const durationModeEl = document.getElementById(`similar-scene-duration-mode-${targetId}`);
     const durationWrapEl = document.getElementById(`similar-scene-duration-options-${targetId}`);
-    if (!durationEl || !durationModeEl || !durationWrapEl) return;
+    const durationSelectEl = document.getElementById(`similar-scene-duration-select-${targetId}`);
+    if (!durationEl || !durationModeEl || (!durationWrapEl && !durationSelectEl)) return;
 
+    const selectedEngine = _getSimilarSceneSelectedEngine(targetId);
     const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
     const normalizedMode = _normalizeSimilarSceneDurationMode(rawValue) || "auto";
     const selectedDuration = normalizedMode === "auto"
-        ? detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], rawValue);
+        ? _clampSimilarDurationForEngine(selectedEngine, detectedDurationSeconds)
+        : _pickSimilarManualDuration(selectedEngine, rawValue);
 
     durationEl.value = String(selectedDuration);
     durationModeEl.value = normalizedMode;
-    durationWrapEl.querySelectorAll(".duration-option").forEach((buttonEl) => {
-        const buttonValue = _normalizeSimilarSceneDurationMode(buttonEl.dataset.value || "");
-        buttonEl.classList.toggle("selected", buttonValue === normalizedMode);
-    });
+    if (durationWrapEl) {
+        durationWrapEl.querySelectorAll(".duration-option").forEach((buttonEl) => {
+            const buttonValue = _normalizeSimilarSceneDurationMode(buttonEl.dataset.value || "");
+            buttonEl.classList.toggle("selected", buttonValue === normalizedMode);
+        });
+    }
+    if (durationSelectEl) {
+        durationSelectEl.value = normalizedMode;
+    }
 
     _syncSimilarDraftsFromDom();
     _scheduleSimilarSceneAutoSave(targetId, { delay: 260 });
@@ -7371,22 +7525,35 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "grok" || value === "wan2" || value === "seedance") {
+    if (value === "grok" || value === "wan2" || value === "lite2" || value === "seedance" || value === "viduq3") {
         return value;
     }
-    return "wan2";
+    if (value.includes("lite 2.0") || value.includes("seedance v1.5") || value.includes("seedance-v1.5")) {
+        return "lite2";
+    }
+    if (value.includes("vidu") || value.includes("pro 3.1") || value === "pro31" || value === "pro3.1") {
+        return "viduq3";
+    }
+    if (value.includes("mega 2.0") || value.includes("seedance")) return "seedance";
+    if (value.includes("cria 3.0") || value.includes("grok")) return "grok";
+    if (value.includes("wan") || value.includes("ultra")) return "wan2";
+    return "lite2";
 }
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra 3.0";
+    if (normalized === "lite2") return "Lite 2.0 Fast";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
+    if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra High 3.0";
+    if (normalized === "lite2") return "Lite 2.0 Fast";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
 }
@@ -7396,7 +7563,7 @@ function _getSimilarSceneSelectedEngine(sceneId) {
     return _normalizeSimilarEngine(
         similarState.sceneEngineSelectionBySceneId?.[sceneKey]
         || similarState.selectedEngine
-        || "wan2"
+        || "lite2"
     );
 }
 
@@ -7419,23 +7586,32 @@ function _getSimilarUnifiedSelectedEngine(tags = null) {
     return _normalizeSimilarEngine(
         similarState.unifiedEngine
         || safeTags.similar_unified_clip_engine
-        || "seedance"
+        || "lite2"
     );
+}
+
+function _similarUnifiedDurationOptions(engineValue) {
+    return _getSimilarManualDurationOptions(engineValue);
 }
 
 function _getSimilarUnifiedSelectedDuration(tags = null) {
     const safeTags = tags && typeof tags === "object" && !Array.isArray(tags)
         ? tags
         : _safeSimilarTags(similarState.lastProjectSnapshot?.tags);
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(safeTags);
     const preferred = parseInt(
         similarState.unifiedDuration || safeTags.similar_unified_clip_duration || "10",
         10,
     );
-    return _pickClosestDurationOption([5, 10, 15], preferred || 10);
+    return _pickClosestDurationOption(_similarUnifiedDurationOptions(selectedEngine), preferred || 10);
 }
 
 function similarSelectUnifiedEngine(engineValue) {
     similarState.unifiedEngine = _normalizeSimilarEngine(engineValue);
+    similarState.unifiedDuration = _pickClosestDurationOption(
+        _getSimilarManualDurationOptions(similarState.unifiedEngine),
+        similarState.unifiedDuration || 10,
+    );
     if (similarState.lastProjectSnapshot) {
         _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
     }
@@ -7448,6 +7624,95 @@ function _getSimilarProjectScene(sceneId) {
         ? similarState.lastProjectSnapshot.scenes
         : [];
     return scenes.find((scene) => Number(scene?.id || 0) === targetId) || null;
+}
+
+function _setSimilarSceneBoundaryFramePreview(sceneId, frameTarget, previewUrl = "") {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const previewKey = _normalizeSimilarSceneFrameTarget(frameTarget) === "end"
+        ? "frameEndPreviewUrl"
+        : "frameStartPreviewUrl";
+    const nextPreviewUrl = String(previewUrl || "").trim();
+    const nextDraft = {
+        ...(similarState.sceneDraftsBySceneId[key] || {}),
+    };
+    const previousPreviewUrl = String(nextDraft[previewKey] || "").trim();
+    if (previousPreviewUrl && previousPreviewUrl !== nextPreviewUrl) {
+        _revokeSimilarPreviewUrl(previousPreviewUrl);
+    }
+
+    if (nextPreviewUrl) {
+        nextDraft[previewKey] = nextPreviewUrl;
+    } else {
+        delete nextDraft[previewKey];
+    }
+
+    if (Object.keys(nextDraft).length) {
+        similarState.sceneDraftsBySceneId[key] = nextDraft;
+    } else {
+        delete similarState.sceneDraftsBySceneId[key];
+    }
+}
+
+function _getSimilarSceneBoundaryFramePreview(sceneId, frameTarget) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return "";
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    return _normalizeSimilarSceneFrameTarget(frameTarget) === "end"
+        ? String(draft.frameEndPreviewUrl || "").trim()
+        : String(draft.frameStartPreviewUrl || "").trim();
+}
+
+function _patchSimilarSceneBoundaryFrameSnapshot(sceneId, frameTarget, frameUrl) {
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const resolvedFrameUrl = String(frameUrl || "").trim();
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    if (!resolvedFrameUrl || !scenes.length) return;
+
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return;
+
+    const sceneIndex = scenes.findIndex((scene) => Number(scene?.id || 0) === targetId);
+    if (sceneIndex < 0) return;
+
+    const currentScene = scenes[sceneIndex];
+    currentScene.clip_url = "";
+    currentScene.clip_path = "";
+    currentScene.scene_type = "image";
+
+    if (normalizedFrameTarget === "end") {
+        currentScene.reference_frame_end_url = resolvedFrameUrl;
+        const nextScene = scenes[sceneIndex + 1];
+        if (nextScene) {
+            nextScene.reference_frame_url = resolvedFrameUrl;
+            nextScene.reference_frame_text_detected = false;
+            nextScene.reference_frame_text_excerpt = "";
+            nextScene.clip_url = "";
+            nextScene.clip_path = "";
+            nextScene.scene_type = "image";
+        }
+        return;
+    }
+
+    currentScene.reference_frame_url = resolvedFrameUrl;
+    currentScene.reference_frame_text_detected = false;
+    currentScene.reference_frame_text_excerpt = "";
+    const previousScene = scenes[sceneIndex - 1];
+    if (previousScene) {
+        previousScene.reference_frame_end_url = resolvedFrameUrl;
+    }
+}
+
+function _resetSimilarSceneUploadIntent() {
+    similarState.activeUploadSceneId = 0;
+    similarState.activeUploadSceneFrameTarget = "";
+    const input = document.getElementById("similar-scene-image-input");
+    if (input) {
+        input.multiple = true;
+    }
 }
 
 function _setSimilarSceneServerPromptValue(sceneId, promptValue) {
@@ -7473,14 +7738,117 @@ function _similarPreviewAspectClass(aspectRatio) {
     return "similar-preview-box-horizontal";
 }
 
-function _setSimilarBusyIntent(stage = "", sceneId = 0) {
-    similarState.pendingBusyStage = String(stage || "").trim();
-    similarState.pendingBusySceneId = Number(sceneId || 0);
+function _setSimilarFrameCreateActionVisibility(sceneId, forceVisible = null) {
+    const actionEl = document.getElementById(`similar-frame-create-action-${sceneId}`);
+    if (!actionEl) return;
+
+    const nextVisible = typeof forceVisible === "boolean"
+        ? forceVisible
+        : !!String(document.getElementById(`similar-frame-instruction-${sceneId}`)?.value || "").trim();
+
+    actionEl.hidden = !nextVisible;
 }
 
-function _clearSimilarBusyIntent() {
+function _normalizeSimilarBusySceneIds(rawSceneIds) {
+    const source = Array.isArray(rawSceneIds) ? rawSceneIds : [rawSceneIds];
+    const resolved = [];
+    source.forEach((rawValue) => {
+        const sceneId = Number(rawValue || 0);
+        if (sceneId > 0 && !resolved.includes(sceneId)) {
+            resolved.push(sceneId);
+        }
+    });
+    return resolved;
+}
+
+function _getSimilarPendingBusySceneIds() {
+    return _normalizeSimilarBusySceneIds(similarState.pendingBusySceneIds);
+}
+
+function _setSimilarPendingBusySceneIds(sceneIds) {
+    const normalized = _normalizeSimilarBusySceneIds(sceneIds);
+    similarState.pendingBusySceneIds = normalized;
+    similarState.pendingBusySceneId = normalized[normalized.length - 1] || 0;
+    return normalized;
+}
+
+function _addSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+
+    const nextIds = _getSimilarPendingBusySceneIds();
+    if (!nextIds.includes(normalizedSceneId)) {
+        nextIds.push(normalizedSceneId);
+    }
+    return _setSimilarPendingBusySceneIds(nextIds);
+}
+
+function _removeSimilarPendingBusySceneId(sceneId) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId <= 0) {
+        return _getSimilarPendingBusySceneIds();
+    }
+    return _setSimilarPendingBusySceneIds(
+        _getSimilarPendingBusySceneIds().filter((value) => value !== normalizedSceneId)
+    );
+}
+
+function _extractSimilarActiveSceneGenerationIds(tags = {}) {
+    const resolved = _normalizeSimilarBusySceneIds(tags?.similar_active_scene_generation_ids || []);
+    const fallbackSceneId = Number(tags?.similar_regenerating_scene_id || 0);
+    const previewSceneId = Number(tags?.similar_current_scene_id || 0);
+    const stage = String(tags?.similar_stage || "").trim();
+
+    if (fallbackSceneId > 0 && !resolved.includes(fallbackSceneId)) {
+        resolved.push(fallbackSceneId);
+    }
+    if (stage === "generating_previews" && previewSceneId > 0 && !resolved.includes(previewSceneId)) {
+        resolved.push(previewSceneId);
+    }
+
+    return resolved;
+}
+
+function _reconcileSimilarPendingBusySceneIds(project, tags = {}) {
+    const activeSceneIds = _extractSimilarActiveSceneGenerationIds(tags);
+    const status = String(project?.status || "").trim().toLowerCase();
+
+    if (!activeSceneIds.length && !_isSimilarBusyProcessingStatus(status)) {
+        _setSimilarPendingBusySceneIds([]);
+        return activeSceneIds;
+    }
+
+    const nextPendingIds = _getSimilarPendingBusySceneIds().filter((sceneId) => !activeSceneIds.includes(sceneId));
+    _setSimilarPendingBusySceneIds(nextPendingIds);
+    return activeSceneIds;
+}
+
+function _setSimilarBusyIntent(stage = "", sceneId = 0) {
+    similarState.pendingBusyStage = String(stage || "").trim();
+    const normalizedSceneId = Number(sceneId || 0);
+    if (["generating_scene", "regenerating_scene"].includes(similarState.pendingBusyStage) && normalizedSceneId > 0) {
+        _addSimilarPendingBusySceneId(normalizedSceneId);
+        return;
+    }
+    similarState.pendingBusySceneId = normalizedSceneId;
+}
+
+function _clearSimilarBusyIntent(sceneId = 0) {
+    const normalizedSceneId = Number(sceneId || 0);
+    if (normalizedSceneId > 0) {
+        const remainingSceneIds = _removeSimilarPendingBusySceneId(normalizedSceneId);
+        if (!remainingSceneIds.length && ["generating_scene", "regenerating_scene"].includes(String(similarState.pendingBusyStage || "").trim())) {
+            similarState.pendingBusyStage = "";
+            similarState.pendingBusySceneId = 0;
+        }
+        return;
+    }
+
     similarState.pendingBusyStage = "";
     similarState.pendingBusySceneId = 0;
+    _setSimilarPendingBusySceneIds([]);
 }
 
 function _isSimilarBusyProcessingStatus(status) {
@@ -7488,16 +7856,19 @@ function _isSimilarBusyProcessingStatus(status) {
     return ["generating_scenes", "generating_clips", "rendering"].includes(normalizedStatus);
 }
 
-function _hideSimilarBusyOverlay() {
+function _hideSimilarBusyOverlay(options = {}) {
+    const preserveProgress = !!options.preserveProgress;
     const overlayEl = document.getElementById("similar-busy-overlay");
     const modalEl = document.getElementById("modal-new-project");
-    if (similarState.busyProgressTimer) {
+    if (!preserveProgress && similarState.busyProgressTimer) {
         clearInterval(similarState.busyProgressTimer);
         similarState.busyProgressTimer = null;
     }
-    similarState.busyProgressStage = "";
-    similarState.busyProgressCurrent = 0;
-    similarState.busyProgressTarget = 0;
+    if (!preserveProgress) {
+        similarState.busyProgressStage = "";
+        similarState.busyProgressCurrent = 0;
+        similarState.busyProgressTarget = 0;
+    }
     if (overlayEl) {
         overlayEl.hidden = true;
     }
@@ -7604,7 +7975,14 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
     }
 
     const scenes = Array.isArray(project?.scenes) ? project.scenes : [];
-    const requestedSceneId = Number(options.sceneId || tags?.similar_regenerating_scene_id || similarState.pendingBusySceneId || 0);
+    const requestedSceneId = Number(
+        options.sceneId
+        || _extractSimilarActiveSceneGenerationIds(tags)[0]
+        || tags?.similar_regenerating_scene_id
+        || similarState.pendingBusySceneId
+        || _getSimilarPendingBusySceneIds()[0]
+        || 0
+    );
     const targetScene = requestedSceneId
         ? scenes.find((scene) => Number(scene?.id || 0) === requestedSceneId) || _getSimilarProjectScene(requestedSceneId)
         : null;
@@ -7631,7 +8009,10 @@ function _updateSimilarBusyOverlay(project, tags = {}, options = {}) {
             : "Criando as cenas uma por uma. Aguarde a conclusao para editar novamente.";
     }
 
-    const usesInlineSceneProgress = busyStage === "generating_scene" || busyStage === "regenerating_scene" || busyStage === "generating_previews";
+    const usesInlineSceneProgress = busyStage === "generating_scene"
+        || busyStage === "regenerating_scene"
+        || busyStage === "generating_previews"
+        || busyStage === "generating_unified_scene";
     if (similarState.busyProgressStage !== busyStage || (!usesInlineSceneProgress && overlayEl.hidden)) {
         similarState.busyProgressStage = busyStage;
         similarState.busyProgressCurrent = Math.max(4, Math.min(100, progress));
@@ -7677,13 +8058,13 @@ function _setSimilarEngineSelection(engineValue, options = {}) {
     });
 
     if (!found) {
-        const fallback = document.querySelector("#similar-engine-options [data-value='wan2']");
+        const fallback = document.querySelector("#similar-engine-options [data-value='lite2']");
         if (fallback) {
             fallback.classList.add("selected");
         }
     }
 
-    similarState.selectedEngine = found ? normalized : "wan2";
+    similarState.selectedEngine = found ? normalized : "lite2";
     if (markManual) {
         similarState.engineManuallySelected = true;
     }
@@ -7695,7 +8076,7 @@ function _getSimilarSelectedEngine() {
     if (selected) {
         return _normalizeSimilarEngine(selected.dataset.value);
     }
-    return _normalizeSimilarEngine(similarState.selectedEngine || "wan2");
+    return _normalizeSimilarEngine(similarState.selectedEngine || "lite2");
 }
 
 function _resolveSimilarDetectedMode(tags) {
@@ -7749,7 +8130,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     const suggestedEngine = _normalizeSimilarEngine(
-        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "wan2"
+        tags?.similar_engine_suggested || SIMILAR_MODE_ENGINE_DEFAULT[detectedMode] || "lite2"
     );
     if (!similarState.engineManuallySelected) {
         _setSimilarEngineSelection(suggestedEngine, { markManual: false });
@@ -7942,6 +8323,9 @@ function _clearAllSimilarScenePendingUploads() {
 function _forgetSimilarSceneDraft(sceneId) {
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    _revokeSimilarPreviewUrl(draft.frameStartPreviewUrl);
+    _revokeSimilarPreviewUrl(draft.frameEndPreviewUrl);
     delete similarState.sceneDraftsBySceneId[key];
 }
 
@@ -8016,16 +8400,17 @@ function _normalizeSimilarSceneDurationMode(rawValue) {
     if (value === "auto") {
         return "auto";
     }
-    if (["5", "10", "15"].includes(value)) {
+    if (["5", "10", "12", "15"].includes(value)) {
         return value;
     }
     return "";
 }
 
 function _resolveSimilarSceneDurationSelection(scene, draft = {}) {
-    const detectedDurationSeconds = _similarSceneDetectedDurationSeconds(scene);
-    const currentDurationSeconds = _similarSceneDurationSeconds(scene);
-    const manualOptions = [5, 10, 15];
+    const selectedEngine = _getSimilarSceneSelectedEngine(Number(scene?.id || 0));
+    const detectedDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, _similarSceneDetectedDurationSeconds(scene));
+    const currentDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, _similarSceneDurationSeconds(scene));
+    const manualOptions = _getSimilarManualDurationOptions(selectedEngine);
     const closestManualDuration = _pickClosestDurationOption(manualOptions, currentDurationSeconds);
     const serverMode = Math.abs(currentDurationSeconds - detectedDurationSeconds) <= 0.05
         ? "auto"
@@ -8080,14 +8465,15 @@ function _similarSceneTimingNeedsSave(sceneId) {
     const durationModeEl = document.getElementById(`similar-scene-duration-mode-${targetId}`);
     if (!durationEl || !durationModeEl) return false;
 
+    const selectedEngine = _getSimilarSceneSelectedEngine(targetId);
     const durationSelection = _resolveSimilarSceneDurationSelection(scene);
     const currentMode = _normalizeSimilarSceneDurationMode(durationModeEl.value || "") || durationSelection.serverMode;
     const currentDuration = currentMode === "auto"
         ? durationSelection.detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], Number(durationEl.value || 0) || durationSelection.selectedDurationSeconds);
+        : _pickSimilarManualDuration(selectedEngine, Number(durationEl.value || 0) || durationSelection.selectedDurationSeconds);
     const serverDuration = durationSelection.serverMode === "auto"
         ? durationSelection.detectedDurationSeconds
-        : _pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds);
+        : _pickSimilarManualDuration(selectedEngine, durationSelection.currentDurationSeconds);
 
     return currentMode !== durationSelection.serverMode || Math.abs(currentDuration - serverDuration) > 0.05;
 }
@@ -8140,7 +8526,7 @@ async function _flushSimilarSceneAutoSave(sceneId) {
     }
 }
 
-function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction, narrationOpen, narrationText, frameBusy, frameBusyLabel } = {}) {
+function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction, narrationOpen, narrationText, frameBusy, frameBusyLabel, frameTarget } = {}) {
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
 
@@ -8197,11 +8583,24 @@ function _setSimilarSceneFrameEditorDraft(sceneId, { open, instruction, narratio
         }
     }
 
+    if (typeof frameTarget === "string") {
+        nextDraft.frameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    }
+
     if (Object.keys(nextDraft).length) {
         similarState.sceneDraftsBySceneId[key] = nextDraft;
     } else {
         delete similarState.sceneDraftsBySceneId[key];
     }
+}
+
+function _normalizeSimilarSceneFrameTarget(rawValue) {
+    return String(rawValue || "").trim().toLowerCase() === "end" ? "end" : "start";
+}
+
+function _getSimilarSceneFrameLabel(frameTarget, { lower = false } = {}) {
+    const label = _normalizeSimilarSceneFrameTarget(frameTarget) === "end" ? "Frame final" : "Frame inicial";
+    return lower ? label.toLowerCase() : label;
 }
 
 function _syncSimilarDraftsFromDom() {
@@ -8233,9 +8632,10 @@ function _syncSimilarDraftsFromDom() {
 
         const serverStart = scene ? Number(scene.start_time || 0).toFixed(1) : String(startEl?.dataset.serverValue || "");
         const durationSelection = _resolveSimilarSceneDurationSelection(scene, existingDraft);
+        const selectedEngine = _getSimilarSceneSelectedEngine(sceneId);
         const serverDuration = durationSelection.serverMode === "auto"
             ? String(durationSelection.detectedDurationSeconds)
-            : String(_pickClosestDurationOption([5, 10, 15], durationSelection.currentDurationSeconds));
+            : String(_pickSimilarManualDuration(selectedEngine, durationSelection.currentDurationSeconds));
         const serverDurationMode = durationSelection.serverMode;
         const startValue = startEl ? String(startEl.value || "") : serverStart;
         const durationValue = durationEl ? String(durationEl.value || "") : serverDuration;
@@ -8355,6 +8755,7 @@ function _renderSimilarScenes(project, options = {}) {
     const force = !!options.force;
     const listEl = document.getElementById("similar-scenes-list");
     const containerEl = document.getElementById("similar-scenes-container");
+    const toolbarEl = containerEl?.querySelector(".similar-scenes-toolbar");
     if (!listEl || !containerEl) return;
 
     if (!force) {
@@ -8377,19 +8778,39 @@ function _renderSimilarScenes(project, options = {}) {
         return;
     }
 
+    const scenesWithDetectedText = scenes.filter((scene) => {
+        const excerpt = String(scene?.reference_frame_text_excerpt || "").trim();
+        return !!scene?.reference_frame_text_detected || !!excerpt;
+    });
+
+    if (toolbarEl) {
+        const detectedTextCount = scenesWithDetectedText.length;
+        const removeAllLabel = similarState.bulkFrameTextRemovalBusy
+            ? "Removendo escritas..."
+            : "Remover todas as escritas";
+        const removeAllDisabledAttr = similarState.bulkFrameTextRemovalBusy ? "disabled" : "";
+        const detectedTextLabel = detectedTextCount === 1
+            ? "1 cena com escrita detectada."
+            : `${detectedTextCount} cenas com escrita detectada.`;
+
+        toolbarEl.innerHTML = `
+            <span class="field-hint">Etapa 1: revise prompts, tempos e imagens de cada cena.</span>
+            ${detectedTextCount
+                ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveAllFrameText()" title="${removeAllLabel}" aria-label="${removeAllLabel}" ${removeAllDisabledAttr}>${removeAllLabel}</button><span class="field-hint similar-scenes-toolbar-note">${detectedTextLabel}</span>`
+                : ""}
+        `;
+    }
+
     containerEl.hidden = false;
     similarState.lastProjectSnapshot = project;
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const projectTags = _safeSimilarTags(project?.tags);
     const activeBusyStage = _resolveSimilarBusyStage(String(projectTags.similar_stage || "").trim(), String(project?.status || "").trim().toLowerCase())
         || String(similarState.pendingBusyStage || "").trim();
-    const activeBusySceneId = Number(
-        (activeBusyStage === "generating_previews"
-            ? projectTags.similar_current_scene_id
-            : (projectTags.similar_regenerating_scene_id || projectTags.similar_current_scene_id))
-        || similarState.pendingBusySceneId
-        || 0
-    );
+    const activeBusySceneIds = new Set([
+        ..._extractSimilarActiveSceneGenerationIds(projectTags),
+        ..._getSimilarPendingBusySceneIds(),
+    ]);
     const similarActionIcons = {
         save: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>',
         upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
@@ -8421,48 +8842,87 @@ function _renderSimilarScenes(project, options = {}) {
         const pendingCount = pendingUploads.length;
         const applyDisabledAttr = pendingCount ? "" : "disabled";
         const clearDisabledAttr = pendingCount ? "" : "disabled";
-        const applyUploadedLabel = pendingCount > 1
-            ? "Aplicar imagens (WAN 2.6)"
-            : "Aplicar imagem enviada";
         const selectedSceneEngine = _getSimilarSceneSelectedEngine(sceneId);
+        const applyUploadedLabel = pendingCount > 1
+            ? `Aplicar imagens (${_similarEngineDisplayLabel(selectedSceneEngine)})`
+            : "Aplicar imagem enviada";
         const hasImagePreview = !!String(scene.image_url || "").trim();
         const clipUrlRaw = String(scene.clip_url || scene.clip_path || "");
         const clipUrlSafe = esc(clipUrlRaw);
         const hasClipPreview = !!clipUrlRaw.trim();
-        const hasReferenceFrame = !!String(scene.reference_frame_url || "").trim();
-        const isGeneratingSceneClip = activeBusySceneId === sceneId && ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage);
+        const startFrameUrlRaw = String(scene.reference_frame_url || scene.reference_frame_path || "").trim();
+        const endFrameUrlRaw = String(scene.reference_frame_end_url || scene.reference_frame_end_path || "").trim();
+        const startFramePreviewUrlRaw = _getSimilarSceneBoundaryFramePreview(sceneId, "start");
+        const endFramePreviewUrlRaw = _getSimilarSceneBoundaryFramePreview(sceneId, "end");
+        const renderedStartFrameUrlRaw = startFramePreviewUrlRaw || startFrameUrlRaw;
+        const renderedEndFrameUrlRaw = endFramePreviewUrlRaw || endFrameUrlRaw;
+        const hasReferenceFrame = !!renderedStartFrameUrlRaw;
+        const hasBoundaryFrame = hasReferenceFrame || !!renderedEndFrameUrlRaw;
+        const isGeneratingSceneClip = activeBusySceneIds.has(sceneId) && (
+            ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage)
+            || activeBusySceneIds.size > 0
+        );
         const frameEditorOpen = !!draft.frameEditorOpen;
         const narrationEditorOpen = !!draft.narrationEditorOpen;
+        const activeFrameTarget = _normalizeSimilarSceneFrameTarget(draft.frameTarget || "start");
+        const activeFrameLabel = _getSimilarSceneFrameLabel(activeFrameTarget);
+        const activeFrameLabelLower = _getSimilarSceneFrameLabel(activeFrameTarget, { lower: true });
+        const isEditingEndFrame = activeFrameTarget === "end";
         const frameBusy = !!draft.frameBusy;
         const frameBusyDisabledAttr = frameBusy ? "disabled" : "";
         const frameInstruction = Object.prototype.hasOwnProperty.call(draft, "frameInstruction")
             ? String(draft.frameInstruction || "")
             : "";
         const frameInstructionValue = esc(frameInstruction);
+        const showFrameCreateAction = !!frameInstruction;
         const narrationRaw = Object.prototype.hasOwnProperty.call(draft, "narrationText")
             ? String(draft.narrationText || "")
             : _extractSimilarNarrationFromPrompt(promptRaw);
         const narrationValue = esc(narrationRaw);
-        const frameBusyLabel = esc(String(draft.frameBusyLabel || "Trocando a imagem com IA..."));
-        const referenceFrameUrlRaw = String(scene.reference_frame_url || "");
-        const referenceFrameAltRaw = `Frame extraido da cena ${idx + 1}`;
-        const referenceDownloadName = esc(`frame-cena-${idx + 1}.jpg`);
+        const frameBusyLabel = esc(String(draft.frameBusyLabel || (isEditingEndFrame ? "Atualizando o frame final..." : "Trocando a imagem com IA...")));
+        const startFrameAltRaw = `Frame inicial usado na cena ${idx + 1}`;
+        const endFrameAltRaw = `Frame final usado na cena ${idx + 1}`;
+        const startFrameDownloadName = esc(`frame-cena-${idx + 1}-inicio.jpg`);
+        const endFrameDownloadName = esc(`frame-cena-${idx + 1}-fim.jpg`);
+        const referenceTextExcerptRaw = String(scene.reference_frame_text_excerpt || "").trim();
+        const referenceTextDetected = !!scene.reference_frame_text_detected || !!referenceTextExcerptRaw;
+        const removeTextTitle = "Remover escrita do frame base";
         const generatedImageVariants = Array.isArray(scene.generated_image_variants)
             ? scene.generated_image_variants.filter((item) => String(item?.url || item?.path || "").trim())
             : [];
-        const frameEditTitle = "Editar imagem";
+        const frameEditTitle = isEditingEndFrame ? "Editar frame final" : "Editar imagem";
         const narrationTitle = narrationEditorOpen ? "Fechar narracao" : "Editar narracao";
-        const frameGenerateTitle = generatedImageVariants.length
-            ? "Gerar novamente a partir deste frame"
-            : "Criar imagem a partir deste frame";
+        const frameGenerateTitle = isEditingEndFrame
+            ? "Atualizar frame final com IA"
+            : generatedImageVariants.length
+                ? "Gerar novamente a partir deste frame"
+                : "Criar imagem a partir deste frame";
         const canGenerateFrameVariant = !!frameInstruction || pendingCount > 0;
         const frameRerollTitle = canGenerateFrameVariant
             ? frameGenerateTitle
-            : "Escreva um ajuste ou envie uma nova foto";
+            : `Escreva um ajuste ou envie uma nova foto antes de editar o ${activeFrameLabelLower}`;
         const frameRerollDisabledAttr = frameBusy || !canGenerateFrameVariant ? "disabled" : "";
-        const framePanelSummary = generatedImageVariants.length
-            ? `${generatedImageVariants.length + 1} imagens lado a lado.`
-            : "Contexto visual da cena.";
+        const frameCreateTitle = isEditingEndFrame
+            ? `Aplicar ajuste ao ${activeFrameLabelLower}`
+            : generatedImageVariants.length
+                ? "Criar nova imagem com este ajuste"
+                : "Criar imagem com este ajuste";
+        const framePanelSummary = endFrameUrlRaw
+            ? generatedImageVariants.length
+                ? `Entrada + saida do vídeo e ${generatedImageVariants.length} variacao(oes) IA.`
+                : "Entrada e saida usadas neste vídeo."
+            : generatedImageVariants.length
+                ? `Entrada do vídeo e ${generatedImageVariants.length} variacao(oes) IA.`
+                : "Contexto visual da cena.";
+        const referenceFrameQuickActionsMarkup = referenceTextDetected
+            ? `
+                <div class="similar-reference-frame-tools">
+                    <div class="similar-reference-frame-quick-actions">
+                        <button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>
+                    </div>
+                </div>
+            `
+            : "";
         const sceneClipProgress = isGeneratingSceneClip
             ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
             : 0;
@@ -8484,21 +8944,17 @@ function _renderSimilarScenes(project, options = {}) {
         const durationValue = durationSelection.selectedMode === "auto"
             ? durationSelection.detectedDurationSeconds
             : durationSelection.selectedDurationSeconds;
-        const durationButtonsMarkup = ["auto", "5", "10", "15"].map((value) => {
+        const manualDurationOptions = _getSimilarManualDurationOptions(selectedSceneEngine);
+        const durationSelectMarkup = ["auto", ...manualDurationOptions.map((value) => String(value))].map((value) => {
             const normalizedValue = _normalizeSimilarSceneDurationMode(value) || "auto";
             const isSelected = durationSelection.selectedMode === normalizedValue;
             const title = normalizedValue === "auto"
                 ? `Usar o tempo detectado desta cena (${durationSelection.detectedDurationSeconds.toFixed(1)}s)`
                 : `Gerar esta cena com ${normalizedValue} segundos`;
-            return `
-                <button
-                    class="duration-option${isSelected ? " selected" : ""}"
-                    data-value="${normalizedValue}"
-                    type="button"
-                    title="${title}"
-                    aria-label="${title}"
-                >${_formatDurationOptionLabel(normalizedValue)}</button>
-            `;
+            const label = normalizedValue === "auto"
+                ? `Automatico (${durationSelection.detectedDurationSeconds.toFixed(1)}s)`
+                : _formatDurationOptionLabel(normalizedValue);
+            return `<option value="${normalizedValue}" title="${title}"${isSelected ? " selected" : ""}>${label}</option>`;
         }).join("");
 
         const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "", overlayActionsMarkup = "" }) => {
@@ -8520,25 +8976,46 @@ function _renderSimilarScenes(project, options = {}) {
             `;
         };
 
+        const framePrimaryAction = isEditingEndFrame
+            ? `similarApplySceneBoundaryFrame(${sceneId})`
+            : `similarGenerateFrameVariant(${sceneId})`;
         const frameGalleryItems = hasReferenceFrame
             ? [
                 buildFrameGalleryItem({
-                    url: referenceFrameUrlRaw,
-                    alt: referenceFrameAltRaw,
-                    badge: "Base",
-                    downloadName: referenceDownloadName,
+                    url: renderedStartFrameUrlRaw,
+                    alt: startFrameAltRaw,
+                    badge: "Entrada",
+                    downloadName: startFrameDownloadName,
                     isBase: true,
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
-                            <a class="similar-frame-image-action" href="${esc(referenceFrameUrlRaw)}" download="${referenceDownloadName}" title="Baixar Base" aria-label="Baixar Base">${similarActionIcons.download}</a>
-                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId})" title="${frameEditTitle}" aria-label="${frameEditTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                            <a class="similar-frame-image-action" href="${esc(renderedStartFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
+                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 }),
             ]
             : [];
+        if (renderedEndFrameUrlRaw) {
+            frameGalleryItems.push(
+                buildFrameGalleryItem({
+                    url: renderedEndFrameUrlRaw,
+                    alt: endFrameAltRaw,
+                    badge: "Saida",
+                    downloadName: endFrameDownloadName,
+                    clipBusy: isGeneratingSceneClip,
+                    clipBusyMarkup: sceneClipBusyMarkup,
+                    overlayActionsMarkup: `
+                        <div class="similar-frame-image-actions">
+                            <a class="similar-frame-image-action" href="${esc(renderedEndFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
+                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'end')" title="Editar frame final" aria-label="Editar frame final" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                        </div>
+                    `,
+                })
+            );
+        }
         generatedImageVariants.forEach((variant, variantIdx) => {
             frameGalleryItems.push(
                 buildFrameGalleryItem({
@@ -8582,7 +9059,7 @@ function _renderSimilarScenes(project, options = {}) {
                 </div>
             `
             : "";
-        const inlineClipMarkup = hasReferenceFrame && hasClipPreview
+        const inlineClipMarkup = hasBoundaryFrame && hasClipPreview
             ? `
                 <aside class="similar-scene-clip-column">
                     <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass}${hasClipPreview ? "" : " is-generating"}">
@@ -8594,14 +9071,15 @@ function _renderSimilarScenes(project, options = {}) {
             `
             : "";
 
-        const referenceFrameMarkup = hasReferenceFrame
+        const referenceFrameMarkup = hasBoundaryFrame
             ? `
                 <section class="similar-reference-frame-panel">
                     <div class="similar-reference-frame-head">
                         <div>
-                            <strong>Frame base</strong>
+                            <strong>Frames usados no vídeo</strong>
                             <span>${framePanelSummary}</span>
                         </div>
+                        ${referenceFrameQuickActionsMarkup}
                     </div>
                     <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                         <div class="similar-reference-frame-primary-column">
@@ -8609,6 +9087,7 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${inlineClipMarkup}
                     </div>
+                    ${referenceFrameQuickActionsMarkup}
                     <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
                         <label for="similar-scene-narration-${sceneId}">O que deve ser falado nesta cena?</label>
                         <textarea id="similar-scene-narration-${sceneId}" class="input similar-reference-frame-editor-input" rows="2" maxlength="320" placeholder="Ex.: Estou muito feliz, agora vou renovar minha sala" onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); similarApplySceneNarration(${sceneId}); }">${narrationValue}</textarea>
@@ -8619,16 +9098,19 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                     </div>
                     <div class="similar-reference-frame-editor is-open">
-                        <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar neste frame? (opcional)</label>
+                        <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar no ${activeFrameLabelLower}? (opcional)</label>
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
-                        <p class="field-hint">A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto.</p>
+                        <p class="field-hint">${isEditingEndFrame ? "A nova imagem passa a valer como frame final desta cena e continuidade da próxima." : "A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto."}</p>
                         <div class="similar-reference-frame-editor-tools">
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadFrameReference(${sceneId})" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarUploadFrameReference(${sceneId}, '${activeFrameTarget}')" title="Enviar nova foto" aria-label="Enviar nova foto" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
                             ${pendingCount ? `<button class="similar-frame-tool-btn similar-frame-tool-btn-icon" type="button" onclick="similarClearSceneUploads(${sceneId})" title="Limpar fotos enviadas" aria-label="Limpar fotos enviadas" ${frameBusyDisabledAttr}>${similarActionIcons.close}</button>` : ""}
                             <button class="similar-frame-tool-btn similar-frame-tool-btn-icon${narrationEditorOpen ? " is-active" : ""}" type="button" onclick="similarToggleNarrationEdit(${sceneId})" title="${narrationTitle}" aria-label="${narrationTitle}" ${frameBusyDisabledAttr}>${similarActionIcons.narration}</button>
-                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="similarGenerateFrameVariant(${sceneId})" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.image}</button>
+                            <button class="similar-frame-tool-btn similar-frame-tool-btn-icon similar-frame-tool-btn-primary" type="button" onclick="${framePrimaryAction}" title="${frameRerollTitle}" aria-label="${frameRerollTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.image}</button>
                         </div>
                         ${frameUploadsMarkup}
+                        <div id="similar-frame-create-action-${sceneId}" class="similar-reference-frame-editor-actions similar-reference-frame-create-actions" ${showFrameCreateAction ? "" : "hidden"}>
+                            <button class="similar-frame-create-btn" type="button" onclick="${framePrimaryAction}" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>${isEditingEndFrame ? "Aplicar" : "Criar"}</span></button>
+                        </div>
                         ${frameBusyMarkup}
                     </div>
                 </section>
@@ -8695,12 +9177,14 @@ function _renderSimilarScenes(project, options = {}) {
                 <div class="similar-scene-pickers">
                     <div class="similar-scene-duration-picker" aria-label="Duracao da cena ${idx + 1}">
                         <span class="similar-scene-picker-label">Tempo</span>
-                        <div id="similar-scene-duration-options-${sceneId}" class="duration-options similar-scene-duration-options">${durationButtonsMarkup}</div>
+                        <select id="similar-scene-duration-select-${sceneId}" class="input similar-scene-duration-select" onchange="similarSelectSceneDuration(${sceneId}, this.value)" aria-label="Selecionar a duracao da cena ${idx + 1}">
+                            ${durationSelectMarkup}
+                        </select>
                         <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
                         <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
                     </div>
                     <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                        ${["grok", "wan2", "seedance"].map((engineValue) => `
+                        ${SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
                             <button
                                 class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
                                 type="button"
@@ -10512,13 +10996,15 @@ function workflowAddNode(kind) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="lite2">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
@@ -10529,6 +11015,7 @@ function workflowAddNode(kind) {
             <label>Resolução</label>
             <select id="workflow-resolution" class="input workflow-input">
                 <option value="480p">480p</option>
+                <option value="540p">540p</option>
                 <option value="720p" selected>720p</option>
                 <option value="1080p">1080p</option>
             </select>
@@ -10853,6 +11340,8 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
+        lite2: "Lite 2.0 Fast",
+        viduq3: "Pro 3.1 Start",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
     };
@@ -10946,9 +11435,16 @@ function workflowStartTemplateRunTracking(projectId, engineLabel, templateKey = 
 }
 
 function workflowEngineDurationOptions(engine) {
+    if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
+    if (engine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
+    if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
+}
+
+function workflowPreferredResolutionForEngine(engine) {
+    return engine === "viduq3" ? "540p" : "720p";
 }
 
 function workflowSyncEngineDurationOptions() {
@@ -10956,13 +11452,24 @@ function workflowSyncEngineDurationOptions() {
     const durationSelect = document.getElementById("workflow-duration");
     if (!engineSelect || !durationSelect) return;
     const current = parseInt(durationSelect.value || "15", 10) || 15;
-    const options = workflowEngineDurationOptions(engineSelect.value || "wan2");
+    const selectedEngine = engineSelect.value || "wan2";
+    const options = workflowEngineDurationOptions(selectedEngine);
     const nextValue = _pickClosestDurationOption(options, current || options[0]);
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (engineSelect.value || "wan2") !== "seedance";
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(engineSelect.value || "wan2");
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(selectedEngine);
+    }
+    const resolutionSelect = document.getElementById("workflow-resolution");
+    if (resolutionSelect) {
+        const preferredResolution = workflowPreferredResolutionForEngine(selectedEngine);
+        if (selectedEngine === "viduq3") {
+            resolutionSelect.value = preferredResolution;
+        } else if (!resolutionSelect.value || resolutionSelect.value === "540p") {
+            resolutionSelect.value = preferredResolution;
+        }
     }
 }
 
@@ -11132,13 +11639,15 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
+                <option value="lite2">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
@@ -11849,8 +12358,8 @@ async function workflowRunSeedance() {
         const duration = parseInt(document.getElementById("workflow-duration")?.value || "10", 10) || 10;
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
-        const resolution = document.getElementById("workflow-resolution")?.value || "720p";
-        const useLastImageAsFinalFrame = workflowEngine === "seedance"
+        const resolution = document.getElementById("workflow-resolution")?.value || workflowPreferredResolutionForEngine(workflowEngine);
+        const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(workflowEngine)
             && !!document.getElementById("workflow-seedance-last-frame")?.checked;
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
         if (workflowEngine === "avatar31" && !workflowAudioUploadId) {
@@ -12002,6 +12511,7 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
         const isProcessing = ["generating_scenes", "generating_clips", "rendering"].includes(status);
         const rawStage = String(tags.similar_stage || "").trim();
         const stage = _resolveSimilarBusyStage(rawStage, status) || rawStage;
+        const activeSceneGenerationIds = _reconcileSimilarPendingBusySceneIds(project, tags);
         const lockGlobalUi = isProcessing && !["generating_scene", "regenerating_scene", "generating_previews"].includes(stage);
         const suppressGlobalStatus = status !== "failed" && (
             (isProcessing && ["generating_scene", "regenerating_scene", "generating_previews"].includes(stage))
@@ -12031,17 +12541,20 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             message = "Vídeo final pronto. Você pode assistir na lista de projetos.";
         } else if ((stage === "analysis_ready" || stage === "analysis_general_ready") && detectedModeLabel) {
             message = `${stageLabel} ${detectedModeLabel}`;
-        } else if (progress > 0) {
-            message = `${stageLabel} (${progress}%)`;
         }
 
-        if (!isProcessing) {
+        const showGlobalStatus = status === "failed" || isProcessing || activeSceneGenerationIds.length > 0;
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _clearSimilarBusyIntent();
-            _hideSimilarBusyOverlay();
         }
 
-        const showGlobalStatus = status === "failed" || isProcessing;
-        _setSimilarStatus(showGlobalStatus && !suppressGlobalStatus ? message : "", kind);
+        _setSimilarStatus(
+            showGlobalStatus && !suppressGlobalStatus ? message : "",
+            kind,
+            showGlobalStatus && !suppressGlobalStatus && kind === "running"
+                ? { progress: progress > 0 ? progress : 4, stage }
+                : {},
+        );
         similarState.lastProjectSnapshot = project;
         _syncSimilarSourcePreview(project);
         scheduleSimilarAnalysisCreditEstimates();
@@ -12052,11 +12565,11 @@ async function _refreshSimilarProject({ silent = false, preserveUnifiedTags = nu
             stage,
             status,
             progress,
-            sceneId: Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
+            sceneId: activeSceneGenerationIds[0] || Number(tags.similar_regenerating_scene_id || 0) || similarState.pendingBusySceneId,
         });
         _refreshSimilarButtonsDisabled(lockGlobalUi);
 
-        if (!isProcessing) {
+        if (!isProcessing && !activeSceneGenerationIds.length) {
             _stopSimilarPolling();
             _refreshSimilarButtonsDisabled(false);
         }
@@ -12089,6 +12602,7 @@ function _resetSimilarModeState() {
     similarState.projectId = 0;
     similarState.status = "";
     similarState.progress = 0;
+    similarState.bulkFrameTextRemovalBusy = false;
     similarState.activeUploadSceneId = 0;
     _clearSimilarSourceFile();
     similarState.sourceVerificationStatus = "idle";
@@ -12101,7 +12615,7 @@ function _resetSimilarModeState() {
     similarState.verifiedSourceName = "";
     similarState.controlsLocked = false;
     similarState.engineManuallySelected = false;
-    similarState.selectedEngine = "grok";
+    similarState.selectedEngine = "lite2";
     similarState.sceneEngineSelectionBySceneId = {};
     _clearSimilarBusyIntent();
     similarState.lastProjectSnapshot = null;
@@ -12133,7 +12647,7 @@ function _resetSimilarModeState() {
     if (titleEl) titleEl.value = "";
     const aspectEl = document.getElementById("similar-aspect");
     if (aspectEl) aspectEl.value = "16:9";
-    _setSimilarEngineSelection("grok", { markManual: false });
+    _setSimilarEngineSelection("lite2", { markManual: false });
     const uploadInput = document.getElementById("similar-scene-image-input");
     if (uploadInput) uploadInput.value = "";
 
@@ -12291,7 +12805,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
     similarState.detectedMode = "";
     similarState.detectedReason = "";
     similarState.detectedConfidence = 0;
-    _setSimilarEngineSelection("grok", { markManual: false });
+    _setSimilarEngineSelection("lite2", { markManual: false });
     _clearSimilarUnifiedPrompt();
 
     _refreshSimilarButtonsDisabled(true);
@@ -12459,7 +12973,7 @@ async function similarGenerateUnifiedScene() {
             uploadIds.push(uploadId);
         }
     });
-    const useLastImageAsFinalFrame = engine === "seedance"
+    const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(engine)
         && !!document.getElementById("similar-unified-seedance-last-frame")?.checked;
 
     try {
@@ -12471,6 +12985,9 @@ async function similarGenerateUnifiedScene() {
         });
         _queueSimilarScroll({ preferUnified: true, preferStatus: true });
         _refreshSimilarButtonsDisabled(true);
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+        }
         await api(`/video/projects/${projectId}/similar/generate-unified-scene`, {
             method: "POST",
             body: JSON.stringify({
@@ -12940,15 +13457,19 @@ async function similarSaveScene(sceneId, options = {}) {
         promptEl.value = prompt;
     }
     const fallbackStart = Number(scene?.start_time || 0);
+    const selectedEngine = _getSimilarSceneSelectedEngine(sceneId);
     const fallbackDuration = scene ? _similarSceneDuration(scene) : 5;
-    const fallbackDurationSeconds = scene ? _similarSceneDurationSeconds(scene) : fallbackDuration;
-    const detectedDurationSeconds = scene ? _similarSceneDetectedDurationSeconds(scene) : fallbackDurationSeconds;
+    const fallbackDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, scene ? _similarSceneDurationSeconds(scene) : fallbackDuration);
+    const detectedDurationSeconds = _clampSimilarDurationForEngine(selectedEngine, scene ? _similarSceneDetectedDurationSeconds(scene) : fallbackDurationSeconds);
     const startRaw = Number.parseFloat(startEl?.value || String(fallbackStart));
     const startTime = Number.isFinite(startRaw) ? Math.max(0, startRaw) : Math.max(0, fallbackStart);
     const selectedDurationMode = _normalizeSimilarSceneDurationMode(durationModeEl?.value || "")
-        || (Math.abs(fallbackDurationSeconds - detectedDurationSeconds) <= 0.05 ? "auto" : String(_pickClosestDurationOption([5, 10, 15], fallbackDurationSeconds)));
-    const durationRaw = parseInt(durationEl?.value || String(fallbackDuration), 10);
-    const duration = Number.isFinite(durationRaw) ? Math.max(5, Math.min(15, durationRaw)) : fallbackDuration;
+        || (Math.abs(fallbackDurationSeconds - detectedDurationSeconds) <= 0.05 ? "auto" : String(_pickSimilarManualDuration(selectedEngine, fallbackDurationSeconds)));
+    const durationRaw = Number.parseFloat(durationEl?.value || String(fallbackDuration));
+    const duration = _clampSimilarDurationForEngine(
+        selectedEngine,
+        Number.isFinite(durationRaw) ? durationRaw : fallbackDuration,
+    );
     const payload = {
         prompt,
         start_time: startTime,
@@ -12984,16 +13505,104 @@ async function similarSaveScene(sceneId, options = {}) {
     }
 }
 
-function similarUploadSceneImage(sceneId) {
+function similarUploadSceneImage(sceneId, { frameTarget = "" } = {}) {
     const input = document.getElementById("similar-scene-image-input");
     if (!input) return;
     similarState.activeUploadSceneId = Number(sceneId || 0);
+    similarState.activeUploadSceneFrameTarget = frameTarget
+        ? _normalizeSimilarSceneFrameTarget(frameTarget)
+        : "";
+    input.multiple = !similarState.activeUploadSceneFrameTarget;
     input.value = "";
     input.click();
 }
 
-function similarUploadFrameReference(sceneId) {
-    similarUploadSceneImage(sceneId);
+function similarUploadFrameReference(sceneId, frameTarget = "") {
+    if (frameTarget) {
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            open: true,
+            frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
+        });
+    }
+    similarUploadSceneImage(sceneId, { frameTarget });
+}
+
+async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files) {
+    const projectId = Number(similarState.projectId || 0);
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const selectedFiles = Array.from(files || []).slice(0, 1);
+    const frameLabelLower = _getSimilarSceneFrameLabel(normalizedFrameTarget, { lower: true });
+    if (!projectId || !sceneId || !selectedFiles.length) {
+        return;
+    }
+
+    const file = selectedFiles[0];
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        throw new Error("Use somente imagens JPG, PNG ou WebP.");
+    }
+
+    const scene = _getSimilarProjectScene(sceneId);
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
+    const localPreviewUrl = URL.createObjectURL(file);
+    _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, localPreviewUrl);
+    _setSimilarSceneFrameEditorDraft(sceneId, {
+        open: true,
+        frameTarget: normalizedFrameTarget,
+        frameBusy: true,
+        frameBusyLabel: normalizedFrameTarget === "end"
+            ? "Atualizando o frame final com a foto enviada..."
+            : "Atualizando o frame inicial com a foto enviada...",
+    });
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+    _setSimilarStatus(`Atualizando o ${frameLabelLower} com a nova foto...`, "running");
+    _queueSimilarScroll({ sceneId, preferStatus: true });
+
+    try {
+        const uploaded = await uploadTempFileWithRetry(file, "image", frameLabelLower, { showProgress: false });
+        const uploadId = String(uploaded?.upload_id || "").trim();
+        if (!uploadId) {
+            throw new Error("Upload da imagem retornou sem identificador. Tente novamente.");
+        }
+
+        const response = await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/boundary-frame`, {
+            method: "POST",
+            body: JSON.stringify({
+                frame_kind: normalizedFrameTarget,
+                generate_from_prompt: false,
+                prompt_override: promptOverride,
+                image_upload_ids: [uploadId],
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+
+        _patchSimilarSceneBoundaryFrameSnapshot(sceneId, normalizedFrameTarget, response?.frame_url || "");
+        _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            open: true,
+            frameTarget: normalizedFrameTarget,
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        showToast(normalizedFrameTarget === "end" ? "Frame final atualizado." : "Frame inicial atualizado.", "success");
+        await _refreshSimilarProject({ silent: true });
+    } catch (error) {
+        _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            frameTarget: normalizedFrameTarget,
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        throw error;
+    }
 }
 
 function _applySimilarNarrationToPrompt(sceneId, { closeEditor = false, notify = false } = {}) {
@@ -13021,15 +13630,24 @@ function _applySimilarNarrationToPrompt(sceneId, { closeEditor = false, notify =
 async function _handleSimilarSceneImageInput(event) {
     const projectId = Number(similarState.projectId || 0);
     const sceneId = Number(similarState.activeUploadSceneId || 0);
+    const frameTarget = String(similarState.activeUploadSceneFrameTarget || "").trim();
     const files = Array.from(event.target?.files || []);
     event.target.value = "";
 
     if (!projectId || !sceneId || !files.length) {
-        similarState.activeUploadSceneId = 0;
+        _resetSimilarSceneUploadIntent();
         return;
     }
 
     try {
+        if (frameTarget) {
+            if (files.length > 1) {
+                showToast("Para substituir o frame, envie uma imagem por vez. So a primeira foi usada.", "info");
+            }
+            await _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files);
+            return;
+        }
+
         const existingUploads = _getSimilarScenePendingUploads(sceneId);
         const remainingSlots = Math.max(0, 6 - existingUploads.length);
         if (!remainingSlots) {
@@ -13069,7 +13687,7 @@ async function _handleSimilarSceneImageInput(event) {
     } catch (error) {
         showToast(`Erro ao enviar imagem: ${error.message}`, "error");
     } finally {
-        similarState.activeUploadSceneId = 0;
+        _resetSimilarSceneUploadIntent();
     }
 }
 
@@ -13096,7 +13714,7 @@ async function similarApplyUploadedSceneImages(sceneId) {
 
     try {
         if (uploadIds.length > 1) {
-            _setSimilarStatus("Unindo imagens enviadas com WAN 2.6...", "running");
+            _setSimilarStatus(`Preparando imagens para ${_similarEngineDisplayLabel(_getSimilarSceneSelectedEngine(sceneId))}...`, "running");
         } else {
             _setSimilarStatus("Aplicando imagem enviada na cena...", "running");
         }
@@ -13157,11 +13775,14 @@ async function similarGenerateSceneImage(sceneId) {
     }
 }
 
-function similarToggleFrameEdit(sceneId) {
+function similarToggleFrameEdit(sceneId, frameTarget = "start") {
     _syncSimilarDraftsFromDom();
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
-    _setSimilarSceneFrameEditorDraft(sceneId, { open: true });
+    _setSimilarSceneFrameEditorDraft(sceneId, {
+        open: true,
+        frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
+    });
     if (similarState.lastProjectSnapshot) {
         _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
     }
@@ -13223,18 +13844,133 @@ function similarCloseFrameEdit(sceneId) {
     }
 }
 
-async function similarGenerateFrameVariant(sceneId) {
+function _buildSimilarFrameTextRemovalInstruction(scene) {
+    const detectedText = String(scene?.reference_frame_text_excerpt || "").trim();
+    return [
+        "Remover completamente qualquer escrita, legenda, logotipo tipografico, marca d'agua, letreiro ou palavra visivel deste frame.",
+        detectedText ? `Eliminar especificamente o texto \"${detectedText}\" sem deixar rastros.` : "",
+        "Reconstruir a area afetada com fundo, textura, perspectiva e iluminacao coerentes com a imagem original.",
+        "Manter exatamente o mesmo enquadramento, os mesmos objetos restantes e a mesma luz.",
+        "Nao criar nenhum texto novo.",
+    ].filter(Boolean).join(" ");
+}
+
+async function _requestSimilarFrameVariant(
+    sceneId,
+    {
+        instructionOverride = "",
+        busyLabel = "",
+        successMessage = "",
+        promoteReferenceFrame = false,
+        suppressSuccessToast = false,
+        suppressErrorToast = false,
+        rethrowOnError = false,
+    } = {},
+) {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
         alert("Inicie a analise antes de editar um frame.");
-        return;
+        return false;
     }
 
     const scene = _getSimilarProjectScene(sceneId);
     const hasReferenceFrame = !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim();
     if (!hasReferenceFrame) {
         showToast("Esta cena ainda nao possui frame de referencia disponivel.", "error");
-        return;
+        return false;
+    }
+
+    _applySimilarNarrationToPrompt(sceneId);
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+    const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
+    const editInstruction = String(instructionOverride || instructionEl?.value || "").trim();
+    const uploadIds = [];
+    _getSimilarScenePendingUploads(sceneId).forEach((item) => {
+        const uploadId = String(item?.upload_id || "").trim();
+        if (uploadId && !uploadIds.includes(uploadId)) {
+            uploadIds.push(uploadId);
+        }
+    });
+
+    if (!editInstruction && !uploadIds.length) {
+        showToast("Escreva um ajuste ou envie uma nova foto antes de criar a imagem.", "error");
+        instructionEl?.focus();
+        return false;
+    }
+
+    try {
+        if (editInstruction) {
+            _setSimilarSceneFrameEditorDraft(sceneId, {
+                open: true,
+                instruction: editInstruction,
+            });
+        }
+        const resolvedBusyLabel = String(busyLabel || "").trim() || (
+            uploadIds.length
+                ? "Trocando a pessoa/elemento no frame com as imagens enviadas..."
+                : "Criando uma nova imagem a partir do frame..."
+        );
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            frameBusy: true,
+            frameBusyLabel: resolvedBusyLabel,
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        _setSimilarStatus("Criando uma nova imagem com base no frame extraido...", "running");
+        _queueSimilarScroll({ sceneId, preferStatus: true });
+        await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
+            method: "POST",
+            body: JSON.stringify({
+                generate_from_prompt: true,
+                prompt_override: promptOverride,
+                edit_instruction: editInstruction,
+                promote_reference_frame: !!promoteReferenceFrame,
+                image_upload_ids: uploadIds,
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        _setSimilarSceneFrameEditorDraft(sceneId, { open: true, frameBusy: false, frameBusyLabel: "" });
+        if (!suppressSuccessToast) {
+            showToast(successMessage || "Nova variacao criada a partir do frame.", "success");
+        }
+        await _refreshSimilarProject();
+        return true;
+    } catch (error) {
+        _setSimilarSceneFrameEditorDraft(sceneId, { frameBusy: false, frameBusyLabel: "" });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        if (!suppressErrorToast) {
+            showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
+        }
+        if (rethrowOnError) {
+            throw error;
+        }
+        return false;
+    }
+}
+
+async function similarApplySceneBoundaryFrame(sceneId) {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de editar um frame.");
+        return false;
+    }
+
+    const scene = _getSimilarProjectScene(sceneId);
+    const sceneKey = _similarSceneStateKey(sceneId);
+    const draft = sceneKey ? (similarState.sceneDraftsBySceneId[sceneKey] || {}) : {};
+    const frameTarget = _normalizeSimilarSceneFrameTarget(draft.frameTarget || "end");
+    if (frameTarget !== "end") {
+        return _requestSimilarFrameVariant(sceneId);
+    }
+
+    const hasEndFrame = !!String(scene?.reference_frame_end_url || scene?.reference_frame_end_path || "").trim();
+    if (!hasEndFrame) {
+        showToast("Esta cena ainda nao possui frame final disponivel para edicao.", "error");
+        return false;
     }
 
     _applySimilarNarrationToPrompt(sceneId);
@@ -13251,43 +13987,179 @@ async function similarGenerateFrameVariant(sceneId) {
     });
 
     if (!editInstruction && !uploadIds.length) {
-        showToast("Escreva um ajuste ou envie uma nova foto antes de criar a imagem.", "error");
+        showToast("Escreva um ajuste ou envie uma nova foto antes de atualizar o frame final.", "error");
         instructionEl?.focus();
-        return;
+        return false;
     }
+
+    const usePromptEdit = !!editInstruction;
 
     try {
         _setSimilarSceneFrameEditorDraft(sceneId, {
+            open: true,
+            frameTarget: "end",
+            instruction: editInstruction,
             frameBusy: true,
-            frameBusyLabel: uploadIds.length
-                ? "Trocando a pessoa/elemento no frame com as imagens enviadas..."
-                : "Criando uma nova imagem a partir do frame...",
+            frameBusyLabel: usePromptEdit
+                ? "Atualizando o frame final com IA..."
+                : uploadIds.length > 1
+                    ? "Unindo as fotos para atualizar o frame final..."
+                    : "Atualizando o frame final com a foto enviada...",
         });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
-        _setSimilarStatus("Criando uma nova imagem com base no frame extraido...", "running");
+        _setSimilarStatus("Atualizando o frame final usado nesta cena...", "running");
         _queueSimilarScroll({ sceneId, preferStatus: true });
-        await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/image`, {
+        await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/boundary-frame`, {
             method: "POST",
             body: JSON.stringify({
-                generate_from_prompt: true,
+                frame_kind: "end",
+                generate_from_prompt: usePromptEdit,
                 prompt_override: promptOverride,
                 edit_instruction: editInstruction,
                 image_upload_ids: uploadIds,
                 aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
             }),
         });
-        _setSimilarSceneFrameEditorDraft(sceneId, { open: true, frameBusy: false, frameBusyLabel: "" });
-        showToast("Nova variacao criada a partir do frame.", "success");
+        _clearSimilarScenePendingUploads(sceneId);
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            open: true,
+            frameTarget: "end",
+            instruction: "",
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
+        showToast("Frame final atualizado.", "success");
         await _refreshSimilarProject();
+        return true;
     } catch (error) {
-        _setSimilarSceneFrameEditorDraft(sceneId, { frameBusy: false, frameBusyLabel: "" });
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            frameTarget: "end",
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
-        showToast(`Erro ao editar frame com IA: ${error.message}`, "error");
+        showToast(`Erro ao atualizar o frame final: ${error.message}`, "error");
+        return false;
     }
+}
+
+async function similarGenerateFrameVariant(sceneId) {
+    const sceneKey = _similarSceneStateKey(sceneId);
+    const draft = sceneKey ? (similarState.sceneDraftsBySceneId[sceneKey] || {}) : {};
+    if (_normalizeSimilarSceneFrameTarget(draft.frameTarget || "start") === "end") {
+        await similarApplySceneBoundaryFrame(sceneId);
+        return;
+    }
+    await _requestSimilarFrameVariant(sceneId);
+}
+
+async function similarRemoveFrameText(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    await _requestSimilarFrameVariant(sceneId, {
+        instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+        busyLabel: "Removendo escrita do frame base...",
+        promoteReferenceFrame: true,
+        successMessage: "Escrita removida do frame base.",
+    });
+}
+
+async function similarRemoveAllFrameText() {
+    if (similarState.bulkFrameTextRemovalBusy) {
+        return;
+    }
+
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Inicie a analise antes de remover as escritas.");
+        return;
+    }
+
+    const detectedScenes = (Array.isArray(similarState.lastProjectSnapshot?.scenes) ? similarState.lastProjectSnapshot.scenes : [])
+        .filter((scene) => Number(scene?.id || 0) > 0)
+        .filter((scene) => !!scene?.reference_frame_text_detected || !!String(scene?.reference_frame_text_excerpt || "").trim())
+        .filter((scene) => !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim())
+        .sort((left, right) => Number(left?.scene_index || 0) - Number(right?.scene_index || 0));
+
+    if (!detectedScenes.length) {
+        showToast("Nenhuma cena com escrita detectada.", "info");
+        return;
+    }
+
+    similarState.bulkFrameTextRemovalBusy = true;
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+
+    let successCount = 0;
+    const failedSceneNumbers = [];
+
+    try {
+        for (let index = 0; index < detectedScenes.length; index += 1) {
+            const scene = detectedScenes[index];
+            const sceneId = Number(scene?.id || 0);
+            if (!sceneId) {
+                continue;
+            }
+
+            try {
+                const updated = await _requestSimilarFrameVariant(sceneId, {
+                    instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+                    busyLabel: `Removendo escrita do frame ${index + 1} de ${detectedScenes.length}...`,
+                    promoteReferenceFrame: true,
+                    suppressSuccessToast: true,
+                    suppressErrorToast: true,
+                    rethrowOnError: true,
+                });
+                if (updated) {
+                    successCount += 1;
+                }
+            } catch (_error) {
+                failedSceneNumbers.push(Number(scene?.scene_index || index) + 1);
+            }
+        }
+    } finally {
+        similarState.bulkFrameTextRemovalBusy = false;
+        await _refreshSimilarProject({ silent: true, preserveUnifiedTags: true });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+    }
+
+    if (successCount > 0) {
+        showToast(
+            successCount === 1
+                ? "Escrita removida de 1 frame base."
+                : `Escrita removida de ${successCount} frames base.`,
+            "success",
+        );
+    }
+
+    if (failedSceneNumbers.length) {
+        showToast(
+            failedSceneNumbers.length === 1
+                ? `Falha ao remover a escrita da cena ${failedSceneNumbers[0]}.`
+                : `Falha ao remover a escrita das cenas ${failedSceneNumbers.join(", ")}.`,
+            "error",
+        );
+    }
+}
+
+async function similarGenerateFrameVariant(sceneId) {
+    await _requestSimilarFrameVariant(sceneId);
+}
+
+async function similarRemoveFrameText(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    await _requestSimilarFrameVariant(sceneId, {
+        instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
+        busyLabel: "Removendo escrita do frame base...",
+        promoteReferenceFrame: true,
+        successMessage: "Escrita removida do frame base.",
+    });
 }
 
 async function similarRegenerateScene(sceneId, generationMode = "image") {
@@ -13303,12 +14175,18 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         const promptOverride = _readSimilarScenePromptForRequest(sceneId, { applyNarration: true }).trim();
         const hasExistingClip = !!String(scene?.clip_url || scene?.clip_path || "").trim();
         const busyStage = hasExistingClip ? "regenerating_scene" : "generating_scene";
+        const hasActiveSceneGeneration = _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+            || _getSimilarPendingBusySceneIds().length > 0;
         _setSimilarBusyIntent(busyStage, sceneId);
-        similarState.busyProgressStage = busyStage;
-        similarState.busyProgressCurrent = 4;
-        similarState.busyProgressTarget = 4;
+        if (!hasActiveSceneGeneration) {
+            similarState.busyProgressStage = busyStage;
+            similarState.busyProgressCurrent = 4;
+            similarState.busyProgressTarget = 4;
+        } else if (!String(similarState.busyProgressStage || "").trim()) {
+            similarState.busyProgressStage = busyStage;
+        }
         _ensureSimilarBusyProgressTimer();
-        _hideSimilarBusyOverlay();
+        _hideSimilarBusyOverlay({ preserveProgress: true });
         if (similarState.lastProjectSnapshot) {
             _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
         }
@@ -13334,9 +14212,15 @@ async function similarRegenerateScene(sceneId, generationMode = "image") {
         await _refreshSimilarProject();
     } catch (error) {
         showToast(`Erro ao regenerar cena: ${error.message}`, "error");
-        _clearSimilarBusyIntent();
-        _hideSimilarBusyOverlay();
+        _clearSimilarBusyIntent(sceneId);
+        _hideSimilarBusyOverlay({
+            preserveProgress: _extractSimilarActiveSceneGenerationIds(_safeSimilarTags(similarState.lastProjectSnapshot?.tags)).length > 0
+                || _getSimilarPendingBusySceneIds().length > 0,
+        });
         _refreshSimilarButtonsDisabled(false);
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
     }
 }
 
@@ -13740,7 +14624,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 image_upload_ids: imageUploadIds,
                 audio_upload_id: audioUploadId,
                 engine: engine,
-                use_last_image_as_final_frame: engine === "seedance"
+                use_last_image_as_final_frame: _isSeedanceFamilyEngine(engine)
                     && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
                 audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
                 lyrics: selectedTevoxiSong
@@ -14029,6 +14913,7 @@ function resetCreateWizard(options = {}) {
     if (audioBuilder) audioBuilder.hidden = true;
     const audioBuilderTrigger = document.getElementById("script-video-audio-builder-trigger");
     if (audioBuilderTrigger) audioBuilderTrigger.classList.remove("active", "is-ready");
+    toggleMinhaVoz("script-audio-builder", false);
     const audioBuilderText = document.getElementById("script-audio-builder-text");
     if (audioBuilderText) audioBuilderText.value = "";
     const audioBuilderCharCount = document.getElementById("script-audio-builder-char-count");
@@ -14982,7 +15867,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana/text-to-image",
         label: "Nano Banana",
-        defaultCostLabel: "6 créditos",
+        defaultCostLabel: "3 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -14992,7 +15877,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "google/nano-banana-pro/text-to-image",
         label: "Nano Banana Pro",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "5 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -15002,7 +15887,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v5.0-lite/sequential",
         label: "Mega 5.0 Anime",
-        defaultCostLabel: "8 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -15012,7 +15897,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "bytedance/seedream-v4.5",
         label: "Mega 5.0 Real",
-        defaultCostLabel: "9 créditos",
+        defaultCostLabel: "8 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -15022,7 +15907,7 @@ const SCRIPT_IMAGE_CREATOR_MODELS = [
     {
         id: "openai/gpt-image-1/text-to-image",
         label: "GPT Image",
-        defaultCostLabel: "11 créditos",
+        defaultCostLabel: "7 créditos",
         requiresReference: false,
         supportsSize: false,
         supportsThinkingMode: false,
@@ -17186,13 +18071,13 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.classList.toggle("has-file", hasManualAudio && scriptUserAudioSourceKind === "video");
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
-    if (builderHeading) {
-        builderHeading.textContent = hasVideo ? "Criar áudio para este vídeo" : "Criar áudio com voz IA";
+    const builderCopy = document.getElementById("script-audio-builder-copy");
+    if (builderCopy) builderCopy.hidden = !hasVideo;
+    if (builderHeading && hasVideo) {
+        builderHeading.textContent = "Criar áudio para este vídeo";
     }
-    if (builderSubheading) {
-        builderSubheading.textContent = hasVideo
-            ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
-            : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio para usar neste projeto.";
+    if (builderSubheading && hasVideo) {
+        builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
 }
 
@@ -20712,13 +21597,40 @@ function _setPublishAnalysisStatus(message = "", kind = "idle") {
     statusEl.className = `publish-analysis-status is-${kind}`;
 }
 
+function togglePublishAnalysisDetails(forceExpanded = null) {
+    const toggleBtn = document.getElementById("btn-publish-analysis-details");
+    const summaryEl = document.getElementById("publish-analysis-summary");
+    if (!toggleBtn || !summaryEl || toggleBtn.hidden || !summaryEl.innerHTML.trim()) {
+        if (toggleBtn) {
+            toggleBtn.setAttribute("aria-expanded", "false");
+            toggleBtn.classList.remove("is-open");
+        }
+        if (summaryEl) {
+            summaryEl.hidden = true;
+        }
+        return;
+    }
+
+    const currentExpanded = toggleBtn.getAttribute("aria-expanded") === "true";
+    const nextExpanded = forceExpanded === null ? !currentExpanded : !!forceExpanded;
+    toggleBtn.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+    toggleBtn.classList.toggle("is-open", nextExpanded);
+    summaryEl.hidden = !nextExpanded;
+}
+
 function _renderPublishAnalysisSummary(project = null) {
     const summaryEl = document.getElementById("publish-analysis-summary");
+    const detailsBtn = document.getElementById("btn-publish-analysis-details");
     if (!summaryEl) {
         return;
     }
 
     if (!project) {
+        if (detailsBtn) {
+            detailsBtn.hidden = true;
+            detailsBtn.setAttribute("aria-expanded", "false");
+            detailsBtn.classList.remove("is-open");
+        }
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
@@ -20771,10 +21683,17 @@ function _renderPublishAnalysisSummary(project = null) {
     }).filter(Boolean);
 
     if (!sceneCount && !summaryPreview && !sceneItems.length && !cameraLabel && !detectedReason && !audioMeta && !transcriptPreview) {
+        if (detailsBtn) {
+            detailsBtn.hidden = true;
+            detailsBtn.setAttribute("aria-expanded", "false");
+            detailsBtn.classList.remove("is-open");
+        }
         summaryEl.hidden = true;
         summaryEl.innerHTML = "";
         return;
     }
+
+    const keepExpanded = detailsBtn?.getAttribute("aria-expanded") === "true";
 
     const metaBits = [
         sceneCount > 0 ? `${sceneCount} cenas mapeadas` : "",
@@ -20783,7 +21702,6 @@ function _renderPublishAnalysisSummary(project = null) {
         detectedReason,
     ].filter(Boolean);
 
-    summaryEl.hidden = false;
     summaryEl.innerHTML = `
         <div class="publish-analysis-summary-meta">
             ${metaBits.map((item) => `<span>${esc(item)}</span>`).join("")}
@@ -20792,6 +21710,10 @@ function _renderPublishAnalysisSummary(project = null) {
         ${transcriptPreview ? `<div class="publish-analysis-transcript"><strong>Transcricao do audio</strong><p>${esc(transcriptPreview)}</p></div>` : ""}
         ${sceneItems.length ? `<ul class="publish-analysis-scene-list">${sceneItems.join("")}</ul>` : ""}
     `;
+    if (detailsBtn) {
+        detailsBtn.hidden = false;
+    }
+    togglePublishAnalysisDetails(keepExpanded);
 }
 
 function _isPublishAnalysisReady(project = null) {
@@ -20853,8 +21775,11 @@ function _refreshPublishAnalysisActions() {
         analyzeLabel.textContent = isAnalyzing ? "Analisando..." : "Analisar";
     }
     if (generateBtn) {
-        generateBtn.disabled = !hasRender || !analysisReady || isAnalyzing || isGenerating;
+        const canShowGenerate = hasRender && (analysisReady || isGenerating);
+        generateBtn.hidden = !canShowGenerate;
+        generateBtn.disabled = !canShowGenerate || isAnalyzing || isGenerating;
         generateBtn.textContent = isGenerating ? "Gerando..." : "Gerar título e descrição";
+        generateBtn.classList.toggle("is-attention", canShowGenerate && !isAnalyzing && !isGenerating);
     }
     if (previewCard) {
         previewCard.classList.toggle("is-analyzing", hasRender && isAnalyzing);
@@ -21069,6 +21994,7 @@ async function publishStartAnalysis() {
                 aspect_ratio: aspectRatio,
                 analysis_mode: "scene",
                 analysis_limit_seconds: PUBLISH_ANALYSIS_MAX_SECONDS,
+                hide_from_create_list: true,
             }),
         });
 
@@ -24374,7 +25300,7 @@ function _setAutoRealisticEngine(engineValue) {
 
     const toggleGroup = document.getElementById("auto-seedance-last-frame-group");
     if (toggleGroup) {
-        toggleGroup.hidden = (selected?.dataset.value || "wan2") !== "seedance";
+        toggleGroup.hidden = !_isSeedanceFamilyEngine(selected?.dataset.value || "wan2");
     }
 
     _syncAutoRealisticDurationOptions();
@@ -26544,7 +27470,7 @@ async function createAutoSchedule() {
             add_music: useMusic && !useTevoxi,
             use_tevoxi: useTevoxi,
             use_last_image_as_final_frame: !useTevoxi
-                && (selectedEngine?.dataset.value || "") === "seedance"
+                && _isSeedanceFamilyEngine(selectedEngine?.dataset.value || "")
                 && !!document.getElementById("auto-seedance-last-frame")?.checked,
             enable_subtitles: enableSubs,
         };
@@ -26978,6 +27904,7 @@ window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
 window.similarUploadFrameReference = similarUploadFrameReference;
+window.similarApplySceneBoundaryFrame = similarApplySceneBoundaryFrame;
 window.similarUploadUnifiedImages = similarUploadUnifiedImages;
 window.similarUploadUnifiedFrameReference = similarUploadUnifiedFrameReference;
 window.similarToggleNarrationEdit = similarToggleNarrationEdit;
@@ -27207,17 +28134,18 @@ function selectPersona(el, prefix) {
     }
 }
 
-function toggleMinhaVoz(prefix) {
+function toggleMinhaVoz(prefix, forceOpen = null) {
     const btn = document.getElementById(`${prefix}-minha-voz-btn`);
     const panel = document.getElementById(`${prefix}-persona-panel`);
-    const isOpen = !panel.classList.contains('hidden');
-    
-    if (isOpen) {
-        panel.classList.add('hidden');
-        btn.classList.remove('active');
-    } else {
-        panel.classList.remove('hidden');
-        btn.classList.add('active');
+    if (!btn || !panel) return;
+
+    const shouldOpen = typeof forceOpen === "boolean"
+        ? forceOpen
+        : panel.classList.contains("hidden");
+
+    panel.classList.toggle("hidden", !shouldOpen);
+    btn.classList.toggle("active", shouldOpen);
+    if (shouldOpen) {
         loadVoiceProfiles();
     }
 }
@@ -27773,6 +28701,9 @@ function _getPlanBillingDetails(plan, billingPeriod = _creditBillingPeriod) {
 
 function _getDisplayUnitPrice(row) {
     const unitSuffix = row.unit === "second" ? "s" : "img";
+    if (Number(row.usdPerUnit || 0) <= 0) {
+        return `Grátis/${unitSuffix}`;
+    }
     if (_creditDisplayCurrency === "brl") {
         return `${_formatBrl(row.brlPerUnit || 0)}/${unitSuffix}`;
     }
@@ -27785,6 +28716,10 @@ function _formatComparisonUnits(row, count) {
         return `${formatted} s`;
     }
     return `${formatted} imagens`;
+}
+
+function _shouldShowCreditTopupSection() {
+    return Math.max(0, parseInt(_userCredits || "0", 10) || 0) <= 0;
 }
 
 function _ensureCreditOfferSelection() {
@@ -27801,12 +28736,33 @@ function _ensureCreditOfferSelection() {
     }
     if (_selectedCreditOffer.kind === "package") {
         const idx = Number(_selectedCreditOffer.packageIndex || 0);
-        if (packages[idx]) {
+        if (_shouldShowCreditTopupSection() && packages[idx]) {
             _selectedCreditOffer.packageIndex = idx;
             return;
         }
     }
 
+    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+}
+
+function _applyPreferredCreditOffer(preferredKind = "") {
+    const normalized = String(preferredKind || "").trim().toLowerCase();
+    if (normalized === "plan") {
+        const paidPlans = _paidCreditPlans();
+        if (paidPlans.length) {
+            const currentPlan = paidPlans.find((plan) => String(plan.code || "").trim().toLowerCase() === _currentCreditPlan);
+            _selectedCreditOffer = {
+                kind: "plan",
+                code: String((currentPlan || paidPlans[0] || {}).code || "starter"),
+                packageIndex: 0,
+            };
+            return;
+        }
+    }
+    if (["package", "topup", "recarga"].includes(normalized) && _shouldShowCreditTopupSection() && _creditPackagesCatalog().length) {
+        _selectedCreditOffer = { kind: "package", code: "", packageIndex: 0 };
+        return;
+    }
     _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
 }
 
@@ -27821,6 +28777,7 @@ function _getSelectedCreditOfferDetails() {
             title: pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`,
             subtitle: `${_formatCreditsInt(pkg.credits)} créditos extras avulsos`,
             priceLabel: _getDisplayPrice(pkg),
+            headlinePrice: _getDisplayPrice(pkg),
             purchaseLabel: "Créditos extras",
         };
     }
@@ -27833,6 +28790,7 @@ function _getSelectedCreditOfferDetails() {
         title: `${plan.name || plan.shortName || "Plano"}${billing.period === "annual" ? " anual" : ""}`,
         subtitle: billing.summaryLabel,
         priceLabel: billing.priceLabel,
+        headlinePrice: billing.headlinePrice,
         purchaseLabel: billing.period === "annual" ? "Plano anual" : "Plano mensal",
     };
 }
@@ -27855,8 +28813,11 @@ function _renderPricingPlanCards() {
         const equivalentMonthly = billing.equivalentMonthlyLabel
             ? `<div class="pricing-plan-subprice">${billing.equivalentMonthlyLabel}</div>`
             : "";
+        const actionButton = isCurrent
+            ? `<button class="pricing-plan-select is-disabled" type="button" disabled>${ctaLabel}</button>`
+            : `<button class="pricing-plan-select" type="button" onclick="event.stopPropagation(); selectCreditPlan('${planCode}', true)">${ctaLabel}</button>`;
         return `
-            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}" onclick="selectCreditPlan('${planCode}')">
+            <article class="pricing-plan-card ${isSelected ? "is-selected" : ""}" data-theme="${plan.accent || planCode}" onclick="selectCreditPlan('${planCode}', false)">
                 ${badge}
                 <div class="pricing-plan-card-head">
                     <h3>${plan.name || plan.shortName || planCode}</h3>
@@ -27865,7 +28826,7 @@ function _renderPricingPlanCards() {
                 <div class="pricing-plan-price">${detailLine}</div>
                 ${equivalentMonthly}
                 <div class="pricing-plan-cycle">${cycleLabel}</div>
-                <button class="pricing-plan-select" type="button" onclick="event.stopPropagation(); selectCreditPlan('${planCode}')">${ctaLabel}</button>
+                ${actionButton}
                 <div class="pricing-plan-points">${creditsLabel}</div>
                 <ul class="pricing-plan-benefits">
                     ${benefits.map((item) => `<li>${item}</li>`).join("")}
@@ -27884,7 +28845,7 @@ function _renderPricingPackages() {
         const badge = pkg.badge ? `<span class="pricing-topup-badge">${pkg.badge}</span>` : "";
         const selected = selectedPackageIndex === index ? "is-selected" : "";
         return `
-            <button class="pricing-topup-card ${selected}" type="button" onclick="selectCreditPackage(${index})">
+            <button class="pricing-topup-card ${selected}" type="button" onclick="selectCreditPackage(${index}, true)">
                 ${badge}
                 <span class="pricing-topup-title">${pkg.label || `Recarga ${_formatCreditsInt(pkg.credits)}`}</span>
                 <strong class="pricing-topup-price">${_getDisplayPrice(pkg)}</strong>
@@ -27914,14 +28875,17 @@ function _renderPricingComparisonSections() {
             ? (plan.billingLabel || `${_formatCreditsInt(planBudget)} créditos iniciais`)
             : billing.comparisonMetaLabel;
         const actionLabel = isCurrent ? "Plano atual" : "Selecionar plano";
+        const actionButton = code === "free"
+            ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${isCurrent ? "Plano atual" : "Plano gratuito"}</button>`
+            : isCurrent
+            ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${actionLabel}</button>`
+            : `<button class="pricing-compare-plan-btn" type="button" onclick="selectCreditPlan('${code}', true)">${actionLabel}</button>`;
         return `
             <th class="pricing-compare-plan ${isCurrent ? "is-current" : ""}" data-theme="${plan.accent || code}">
                 <div class="pricing-compare-plan-name">${plan.shortName || plan.name || code}</div>
                 <div class="pricing-compare-plan-price">${priceLabel}</div>
                 <div class="pricing-compare-plan-meta">${metaLine}</div>
-                ${code === "free"
-                    ? `<button class="pricing-compare-plan-btn is-disabled" type="button" disabled>${isCurrent ? "Plano atual" : "Plano gratuito"}</button>`
-                    : `<button class="pricing-compare-plan-btn ${isCurrent ? "is-disabled" : ""}" type="button" onclick="selectCreditPlan('${code}')">${actionLabel}</button>`}
+                ${actionButton}
             </th>
         `;
     }).join("");
@@ -27942,13 +28906,16 @@ function _renderPricingComparisonSections() {
             const planCells = plans.map((plan) => {
                 const usage = row.plans?.[plan.code] || {};
                 const billing = _getPlanBillingDetails(plan);
+                const isUnlimited = !!usage.unlimited;
                 const baseCount = parseInt(usage.includedUnits || 0, 10) || 0;
-                const count = String(plan.code || "free") === "free"
+                const count = isUnlimited
+                    ? null
+                    : String(plan.code || "free") === "free"
                     ? baseCount
                     : baseCount * (billing.comparisonMultiplier || 1);
                 return `
                     <td class="pricing-model-value-cell" data-theme="${plan.accent || plan.code || 'free'}">
-                        <strong>${_formatComparisonUnits(row, count)}</strong>
+                        <strong>${isUnlimited ? "Ilimitado" : _formatComparisonUnits(row, count)}</strong>
                         <span>${_getDisplayUnitPrice(row)}</span>
                     </td>
                 `;
@@ -28002,7 +28969,7 @@ function _renderCreditCheckoutPanel() {
             <div class="pricing-checkout-copy">
                 <span>${selectedOffer.purchaseLabel}</span>
                 <strong>${selectedOffer.title}</strong>
-                <small>${selectedOffer.subtitle} • ${selectedOffer.priceLabel}</small>
+                <small>${selectedOffer.subtitle} • ${selectedOffer.headlinePrice || selectedOffer.priceLabel}</small>
             </div>
             <div class="pricing-checkout-actions">
                 <button class="credits-btn credits-btn-pix" type="button" onclick="purchaseCredits('pix')">Pagar com PIX</button>
@@ -28010,6 +28977,61 @@ function _renderCreditCheckoutPanel() {
             </div>
         </section>
     `;
+}
+
+function closeCreditCheckoutModal() {
+    document.getElementById("credit-checkout-modal-overlay")?.remove();
+}
+
+function closeCreditsPurchaseModal() {
+    closeCreditCheckoutModal();
+    document.getElementById("credits-modal-overlay")?.remove();
+}
+
+function _renderCreditCheckoutModalContent() {
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    if (!selectedOffer) return "";
+
+    const isPlan = selectedOffer.kind === "plan";
+    const helperText = isPlan
+        ? "Confira o plano selecionado e escolha como deseja finalizar o pagamento."
+        : "Confira a recarga escolhida e selecione a forma de pagamento para adicionar créditos ao saldo.";
+
+    return `
+        <div class="credit-checkout-modal">
+            <button class="credits-modal-close" type="button" onclick="closeCreditCheckoutModal()">&times;</button>
+            <span class="credit-checkout-kicker">${selectedOffer.purchaseLabel}</span>
+            <h3>${isPlan ? "Finalizar escolha do plano" : "Finalizar compra de créditos"}</h3>
+            <p class="credit-checkout-description">${helperText}</p>
+            <div class="credit-checkout-balance">
+                <strong>Saldo atual:</strong> ${_formatCreditsInt(_userCredits)} créditos
+            </div>
+            ${_renderCreditCheckoutPanel()}
+        </div>
+    `;
+}
+
+function showCreditCheckoutModal() {
+    const selectedOffer = _getSelectedCreditOfferDetails();
+    if (!selectedOffer) {
+        showToast("Selecione um plano ou uma recarga para continuar.", "error");
+        return;
+    }
+
+    let overlay = document.getElementById("credit-checkout-modal-overlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "credit-checkout-modal-overlay";
+        overlay.className = "credit-checkout-modal-overlay";
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                closeCreditCheckoutModal();
+            }
+        });
+        document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = _renderCreditCheckoutModalContent();
 }
 
 function _renderCreditsPurchaseModalContent() {
@@ -28021,15 +29043,19 @@ function _renderCreditsPurchaseModalContent() {
     const expiresText = _currentCreditPlanExpiresAt
         ? new Date(_currentCreditPlanExpiresAt).toLocaleDateString("pt-BR")
         : "";
+    const showTopupSection = _shouldShowCreditTopupSection();
+    const pricingIntroText = showTopupSection
+        ? "Plano mensal com créditos inclusos. Como seu saldo atual acabou, as recargas extras estão liberadas abaixo."
+        : "Plano mensal com créditos inclusos. As recargas extras aparecem quando o saldo do ciclo acabar.";
 
     return `
         <div class="credits-modal credits-modal--pricing">
-            <button class="credits-modal-close" type="button" onclick="document.getElementById('credits-modal-overlay').remove()">&times;</button>
+            <button class="credits-modal-close" type="button" onclick="closeCreditsPurchaseModal()">&times;</button>
             <div class="pricing-shell">
                 <div class="pricing-head">
                     <div>
                         <h2>Mude seu plano</h2>
-                        <p>Plano mensal com créditos inclusos e recarga extra sempre disponível quando o saldo acabar.</p>
+                        <p>${pricingIntroText}</p>
                     </div>
                     <div class="pricing-toolbar">
                         <div class="pricing-currency-switch">
@@ -28054,16 +29080,17 @@ function _renderCreditsPurchaseModalContent() {
                 </div>
 
                 <div class="pricing-plan-grid">${_renderPricingPlanCards()}</div>
-                ${_selectedCreditOffer.kind === "plan" ? _renderCreditCheckoutPanel() : ""}
 
+                ${showTopupSection
+                    ? `
                 <section class="pricing-topup-section">
                     <div class="pricing-topup-section-head">
                         <h3>Créditos extras</h3>
-                        <p>Se o saldo acabar antes do fim do ciclo, adicione recargas avulsas sem mexer no plano atual.</p>
+                        <p>Seu saldo atual acabou. Escolha uma recarga avulsa para continuar gerando sem trocar de plano.</p>
                     </div>
                     <div class="pricing-topup-grid">${_renderPricingPackages()}</div>
-                </section>
-                ${_selectedCreditOffer.kind === "package" ? _renderCreditCheckoutPanel() : ""}
+                </section>`
+                    : ""}
 
                 <div class="pricing-comparison-stack">${_renderPricingComparisonSections()}</div>
 
@@ -28096,25 +29123,39 @@ function showCreditsPurchaseModal(preferredKind = "") {
         overlay.className = "credits-modal-overlay";
         overlay.addEventListener("click", (event) => {
             if (event.target === overlay) {
-                overlay.remove();
+                closeCreditsPurchaseModal();
             }
         });
         document.body.appendChild(overlay);
     }
 
-    _selectedCreditOffer = { kind: "", code: "", packageIndex: 0 };
+    closeCreditCheckoutModal();
+    _applyPreferredCreditOffer(preferredKind);
     _ensureCreditOfferSelection();
     overlay.innerHTML = _renderCreditsPurchaseModalContent();
 }
 
-function selectCreditPlan(planCode) {
-    _selectedCreditOffer = { kind: "plan", code: String(planCode || "starter"), packageIndex: 0 };
+function selectCreditPlan(planCode, openCheckout = false) {
+    const normalizedPlanCode = String(planCode || "starter");
+    const isCurrentPlan = _creditBillingPeriod === "monthly"
+        && normalizedPlanCode.trim().toLowerCase() === _currentCreditPlan;
+    _selectedCreditOffer = { kind: "plan", code: normalizedPlanCode, packageIndex: 0 };
     _rerenderCreditsPurchaseModal();
+    if (openCheckout && !isCurrentPlan) {
+        showCreditCheckoutModal();
+        return;
+    }
+    closeCreditCheckoutModal();
 }
 
-function selectCreditPackage(idx) {
+function selectCreditPackage(idx, openCheckout = false) {
     _selectedCreditOffer = { kind: "package", code: "", packageIndex: Math.max(0, parseInt(idx || "0", 10) || 0) };
     _rerenderCreditsPurchaseModal();
+    if (openCheckout) {
+        showCreditCheckoutModal();
+        return;
+    }
+    closeCreditCheckoutModal();
 }
 
 function setCreditDisplayCurrency(currency) {
@@ -28162,7 +29203,7 @@ async function purchaseCredits(method) {
             method: "POST",
             body: JSON.stringify(payload),
         });
-        document.getElementById("credits-modal-overlay")?.remove();
+        closeCreditsPurchaseModal();
 
         if (method === "pix" && data.pixCopiaECola) {
             showPixQrModal(data);
@@ -28231,12 +29272,15 @@ async function pollCreditStatus(reference) {
 // Wire up all page credit badges.
 document.querySelectorAll("[data-credits-trigger]").forEach((el) => {
     el.addEventListener("click", () => {
-        showCreditsPurchaseModal();
+        showCreditsPurchaseModal(el.dataset.creditsPreferred || "");
     });
 });
 
 window.selectCreditPackage = selectCreditPackage;
 window.selectCreditPlan = selectCreditPlan;
+window.showCreditCheckoutModal = showCreditCheckoutModal;
+window.closeCreditCheckoutModal = closeCreditCheckoutModal;
+window.closeCreditsPurchaseModal = closeCreditsPurchaseModal;
 window.setCreditDisplayCurrency = setCreditDisplayCurrency;
 window.setCreditBillingPeriod = setCreditBillingPeriod;
 window.toggleCreditComparisonSection = toggleCreditComparisonSection;
@@ -28259,7 +29303,7 @@ const _editor = {
     sourceAspectRatio: "9:16",
     outputAspectRatio: "source",
     playing: false,
-    activeTool: "text",
+    activeTool: "trim",
     smartCuts: [],
     smartCutsLoading: false,
     smartCutsError: "",
@@ -28297,9 +29341,12 @@ const _editor = {
     timelineTime: 0,
     timelineZoom: 1,
     playbackRate: 1,
+    mobileControlMode: "tools",
+    mobileSubtitleModalOpen: false,
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
+    _playbackFollowRaf: 0,
 };
 
 let _editorClipboard = {
@@ -28312,6 +29359,98 @@ let _editorProjectNameEditState = {
     original: "",
     saving: false,
 };
+
+let _editorMobileBarDragSuppressUntil = 0;
+
+function _editorBindMobileHorizontalBarDrag(container) {
+    if (!container || container.dataset.mobileBarDragBound === "1") return;
+    container.dataset.mobileBarDragBound = "1";
+
+    const drag = {
+        pointerId: null,
+        startX: 0,
+        startScrollLeft: 0,
+        active: false,
+        captured: false,
+    };
+
+    const finishDrag = (pointerId = drag.pointerId) => {
+        if (drag.captured && pointerId != null && typeof container.releasePointerCapture === "function") {
+            try {
+                container.releasePointerCapture(pointerId);
+            } catch (_) {
+                // Ignore missing capture release on browsers that do not support it.
+            }
+        }
+
+        if (drag.active) {
+            _editorMobileBarDragSuppressUntil = Date.now() + 180;
+        }
+
+        drag.pointerId = null;
+        drag.startX = 0;
+        drag.startScrollLeft = 0;
+        drag.active = false;
+        drag.captured = false;
+        container.classList.remove("editor-mobile-bar-dragging");
+    };
+
+    container.addEventListener("pointerdown", (event) => {
+        if (!_editorIsMobileViewport()) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+
+        drag.pointerId = event.pointerId;
+        drag.startX = event.clientX;
+        drag.startScrollLeft = Number(container.scrollLeft || 0);
+        drag.active = false;
+    });
+
+    container.addEventListener("pointermove", (event) => {
+        if (!_editorIsMobileViewport() || drag.pointerId !== event.pointerId) return;
+
+        const deltaX = event.clientX - drag.startX;
+        if (!drag.active && Math.abs(deltaX) < 6) {
+            return;
+        }
+
+        if (!drag.captured && typeof container.setPointerCapture === "function") {
+            try {
+                container.setPointerCapture(event.pointerId);
+                drag.captured = true;
+            } catch (_) {
+                // Ignore browsers that refuse capture for this target.
+            }
+        }
+
+        drag.active = true;
+        container.classList.add("editor-mobile-bar-dragging");
+        container.scrollLeft = Math.max(0, drag.startScrollLeft - deltaX);
+        event.preventDefault();
+    });
+
+    container.addEventListener("pointerup", (event) => {
+        if (drag.pointerId !== event.pointerId) return;
+        finishDrag(event.pointerId);
+    });
+
+    container.addEventListener("pointercancel", (event) => {
+        if (drag.pointerId !== event.pointerId) return;
+        finishDrag(event.pointerId);
+    });
+
+    container.addEventListener("lostpointercapture", () => {
+        if (drag.pointerId == null) return;
+        finishDrag();
+    });
+
+    container.addEventListener("click", (event) => {
+        if (!_editorIsMobileViewport()) return;
+        if (Date.now() >= _editorMobileBarDragSuppressUntil) return;
+        event.preventDefault();
+        event.stopPropagation();
+        _editorMobileBarDragSuppressUntil = 0;
+    }, true);
+}
 
 function _editorAttachPreviewSeekHandlers(videoEl) {
     if (!videoEl || videoEl._editorSeekHandlersAttached) return;
@@ -28367,6 +29506,13 @@ function _editorPreviewSeekTo(videoEl, targetTime, options = {}) {
 let _editorTimelineDrag = null;
 let _editorTimelineScrub = null;
 let _editorMediaLayerDrag = null;
+let _editorTextOverlayDrag = null;
+let _editorTextOverlayIgnoreClick = false;
+let _editorSubtitleOverlayDrag = null;
+let _editorSubtitleOverlayIgnoreClick = false;
+let _editorInlineTextEditId = "";
+let _editorInlineTextEditPendingFocus = "";
+let _editorMobileTrackVolumeOpen = "";
 let _editorMusicPreviewAudio = null;
 let _editorMusicPreviewObjectUrl = "";
 let _editorMusicPreviewSourceKey = "";
@@ -28374,6 +29520,8 @@ let _editorMusicPreviewLoadPromise = null;
 let _editorMusicPreviewRequestId = 0;
 let _editorMusicPreviewWarned = false;
 let _editorMusicPreviewPrimed = false;
+let _editorSourcePreviewAudio = null;
+let _editorSourcePreviewSourceKey = "";
 let _editorMediaImportOrderModal = {
     open: false,
     context: "project",
@@ -28407,9 +29555,132 @@ const _EDITOR_TIMELINE_MAX_ZOOM = 12;
 const _EDITOR_TIMELINE_ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 6, 8, 10, 12];
 const _EDITOR_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 const _EDITOR_TIMELINE_LABEL_WIDTH = 40;
+const _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH = 34;
+const _EDITOR_TIMELINE_MOBILE_FOCUS_BIAS = -10;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
+
+function _editorIsMobileViewport() {
+    return window.innerWidth <= 768;
+}
+
+function _editorResolveInitialActiveTool(toolName = "", selectedClip = null) {
+    const nextTool = String(toolName || "trim");
+    const selectedKind = String(selectedClip?.kind || _editor.selectedClip?.kind || "");
+    if (_editorIsMobileViewport() && nextTool === "text" && selectedKind !== "text") {
+        return "trim";
+    }
+    return nextTool;
+}
+
+function _editorGetTimelineLabelWidth() {
+    return _editorIsMobileViewport() ? _EDITOR_TIMELINE_MOBILE_LABEL_WIDTH : _EDITOR_TIMELINE_LABEL_WIDTH;
+}
+
+function _editorUseFixedMobilePlayhead() {
+    const workspace = document.getElementById("editor-workspace");
+    return _editorIsMobileViewport() && workspace && !workspace.hidden;
+}
+
+function _editorSyncMobileBarsPlacement() {
+    const workspace = document.getElementById("editor-workspace");
+    const main = workspace?.querySelector(".editor-main");
+    const previewArea = workspace?.querySelector(".editor-preview-area");
+    const timeline = document.getElementById("editor-timeline");
+    const toolsPanel = document.getElementById("editor-tools-panel");
+    const quickActions = document.getElementById("editor-quick-actions");
+    if (!workspace || !main || !previewArea || !timeline || !toolsPanel || !quickActions) return;
+
+    _editorBindMobileHorizontalBarDrag(toolsPanel);
+    _editorBindMobileHorizontalBarDrag(quickActions);
+
+    const useBottomBars = _editorIsMobileViewport() && !workspace.hidden;
+    if (useBottomBars) {
+        workspace.appendChild(quickActions);
+        workspace.appendChild(toolsPanel);
+        return;
+    }
+
+    if (toolsPanel.parentElement !== main || toolsPanel.nextElementSibling !== previewArea) {
+        main.insertBefore(toolsPanel, previewArea);
+    }
+    if (quickActions.parentElement !== workspace || quickActions.nextElementSibling !== timeline) {
+        workspace.insertBefore(quickActions, timeline);
+    }
+}
+
+function _editorGetTimelineViewportFocusOffset() {
+    const timelineEl = document.getElementById("editor-timeline");
+    const labelWidth = _editorGetTimelineLabelWidth();
+    if (!timelineEl) return labelWidth + 120;
+    const visibleTrackWidth = Math.max(120, timelineEl.clientWidth - labelWidth - _EDITOR_TIMELINE_RIGHT_GUTTER);
+    const bias = _editorIsMobileViewport() ? _EDITOR_TIMELINE_MOBILE_FOCUS_BIAS : 0;
+    return Math.max(labelWidth + 88, Math.round(labelWidth + (visibleTrackWidth / 2) + bias));
+}
+
+function _editorGetTimelineLeadGutter() {
+    if (!_editorUseFixedMobilePlayhead()) return 0;
+    return Math.max(0, _editorGetTimelineViewportFocusOffset() - _editorGetTimelineLabelWidth());
+}
+
+function _editorGetTimelineTrailingGutter() {
+    if (!_editorUseFixedMobilePlayhead()) return _EDITOR_TIMELINE_RIGHT_GUTTER;
+    const timelineEl = document.getElementById("editor-timeline");
+    const viewportWidth = Math.max(0, Number(timelineEl?.clientWidth || 0));
+    return Math.max(_EDITOR_TIMELINE_RIGHT_GUTTER, Math.round(viewportWidth - _editorGetTimelineViewportFocusOffset()));
+}
+
+function _editorGetTimeAtTimelineViewport(scrollLeft = 0) {
+    const timelineDuration = _editorGetTimelineDuration();
+    if (!timelineDuration) return 0;
+    const trackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
+    const absoluteX = Math.max(0, Number(scrollLeft || 0) + _editorGetTimelineViewportFocusOffset());
+    const trackX = Math.max(0, Math.min(trackWidth, absoluteX - _editorGetTimelineLabelWidth() - _editorGetTimelineLeadGutter()));
+    return (trackX / trackWidth) * timelineDuration;
+}
+
+function _editorApplyMobileControlMode() {
+    const workspace = document.getElementById("editor-workspace");
+    const quickActions = document.getElementById("editor-quick-actions");
+    const mobileActionsToggle = document.getElementById("editor-mobile-actions-toggle");
+    const mobileToolsToggle = document.getElementById("editor-mobile-tools-toggle");
+    const mobileActive = _editorIsMobileViewport() && workspace && !workspace.hidden;
+    const actionsOpen = mobileActive && _editor.mobileControlMode === "actions";
+
+    _editorSyncMobileBarsPlacement();
+
+    if (workspace) {
+        workspace.classList.toggle("editor-mobile-actions-open", actionsOpen);
+    }
+    if (quickActions) {
+        quickActions.hidden = Boolean(mobileActive && !actionsOpen);
+    }
+    if (mobileActionsToggle) {
+        mobileActionsToggle.classList.toggle("active", actionsOpen);
+        mobileActionsToggle.setAttribute("aria-pressed", actionsOpen ? "true" : "false");
+        mobileActionsToggle.setAttribute("aria-expanded", actionsOpen ? "true" : "false");
+    }
+    if (mobileToolsToggle) {
+        mobileToolsToggle.classList.toggle("active", actionsOpen);
+        mobileToolsToggle.setAttribute("aria-pressed", actionsOpen ? "true" : "false");
+    }
+
+    if (mobileActive) {
+        _editorMovePlayhead(Number(_editor.timelineTime || 0));
+    }
+
+    _editorRenderMobileSubtitleSheet();
+}
+
+function _editorSetMobileControlMode(mode = "tools") {
+    _editor.mobileControlMode = mode === "actions" ? "actions" : "tools";
+    _editorApplyMobileControlMode();
+}
+
+function _editorToggleMobileControlMode() {
+    _editorSetMobileControlMode(_editor.mobileControlMode === "actions" ? "tools" : "actions");
+}
 const _EDITOR_SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const _EDITOR_TRANSITION_OPTIONS = [
     { value: "dissolve", label: "Dissolver", desc: "Mistura suave entre os dois clipes", preview: "dissolve" },
@@ -28968,7 +30239,7 @@ function _editorBuildDraftSnapshot() {
         editProjectName: String(_editor.editProjectName || ""),
         sourceAspectRatio: String(_editor.sourceAspectRatio || "9:16"),
         outputAspectRatio: String(_editor.outputAspectRatio || "source"),
-        activeTool: String(_editor.activeTool || "text"),
+        activeTool: String(_editor.activeTool || "trim"),
         smartCuts: _editor.smartCuts || [],
         smartCutSubtitleStyle: String(_editor.smartCutSubtitleStyle || "destaque"),
         timelineTime: Number(_editor.timelineTime || 0),
@@ -29042,7 +30313,7 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
             _editor.sourceAspectRatio = String(draft.sourceAspectRatio);
         }
         _editor.outputAspectRatio = _normalizeAspectValue(String(draft.outputAspectRatio || _editor.outputAspectRatio || "source"));
-        _editor.activeTool = String(draft.activeTool || _editor.activeTool || "text");
+        _editor.activeTool = String(draft.activeTool || _editor.activeTool || "trim");
         _editor.smartCuts = Array.isArray(draft.smartCuts) ? draft.smartCuts : [];
         _editor.smartCutSubtitleStyle = _getSubStyle(String(draft.smartCutSubtitleStyle || "destaque")).name;
         _editor.smartCutWords = [];
@@ -29076,6 +30347,8 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         } else {
             _editor.selectedClip = { kind: "", id: "", track: "" };
         }
+
+        _editor.activeTool = _editorResolveInitialActiveTool(_editor.activeTool, _editor.selectedClip);
 
         _editor.trimStart = Math.max(0, Number(draft.trimStart || 0));
         _editor.trimEnd = Math.max(_editor.trimStart, Number(draft.trimEnd || 0));
@@ -29143,6 +30416,21 @@ const SUBTITLE_STYLES = [
 
 function _getSubStyle(name) {
     return SUBTITLE_STYLES.find(s => s.name === name) || SUBTITLE_STYLES[0];
+}
+
+const EDITOR_TEXT_PRESETS = [
+    { key: "headline_clean", label: "Titulo limpo", preview: "TITULO DO VIDEO", content: "TITULO DO VIDEO", color: "#ffffff", fontFamily: "Manrope, sans-serif", fontSize: 34, bold: true, italic: false, x: 50, y: 18, duration: 5 },
+    { key: "cta_subscribe", label: "Inscricao", preview: "SE INSCREVA", content: "SE INSCREVA", color: "#ff4d4f", fontFamily: "Arial Black, sans-serif", fontSize: 40, bold: true, italic: false, x: 50, y: 78, duration: 5 },
+    { key: "cta_like", label: "Like", preview: "DEIXE SEU LIKE", content: "DEIXE SEU LIKE", color: "#ffd54a", fontFamily: "Arial Black, sans-serif", fontSize: 36, bold: true, italic: false, x: 50, y: 70, duration: 5 },
+    { key: "cta_comment", label: "Comentario", preview: "COMENTA AQUI", content: "COMENTA AQUI", color: "#67e8f9", fontFamily: "Outfit, sans-serif", fontSize: 34, bold: true, italic: false, x: 50, y: 64, duration: 5 },
+    { key: "alert", label: "Alerta", preview: "OLHA ISSO", content: "OLHA ISSO", color: "#ff6b6b", fontFamily: "Arial Black, sans-serif", fontSize: 42, bold: true, italic: false, x: 50, y: 28, duration: 4 },
+    { key: "tutorial", label: "Passo rapido", preview: "PASSO 1", content: "PASSO 1", color: "#5cf0ca", fontFamily: "Outfit, sans-serif", fontSize: 32, bold: true, italic: false, x: 50, y: 24, duration: 4 },
+    { key: "promo", label: "Oferta", preview: "SO HOJE", content: "SO HOJE", color: "#f97316", fontFamily: "Arial Black, sans-serif", fontSize: 38, bold: true, italic: false, x: 50, y: 30, duration: 4 },
+    { key: "elegant", label: "Elegante", preview: "Mensagem suave", content: "Mensagem suave", color: "#f5f5f5", fontFamily: "Georgia, serif", fontSize: 30, bold: false, italic: true, x: 50, y: 82, duration: 5 },
+];
+
+function _editorGetTextPreset(key) {
+    return EDITOR_TEXT_PRESETS.find((preset) => preset.key === String(key || "")) || null;
 }
 
 function _editorSaveState() {
@@ -29268,14 +30556,50 @@ function _editorApplyAspectRatio() {
     }[resolved] || "9 / 16";
     wrapper.style.setProperty("--editor-aspect-ratio", cssVal);
 
-    const sel = document.getElementById("editor-aspect-select");
-    if (sel) sel.value = _normalizeAspectValue(_editor.outputAspectRatio);
+    _editorRefreshAspectControls();
 
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 
     _editorRenderMediaLayers();
 }
+
+function _editorRefreshAspectControls() {
+    const normalized = _normalizeAspectValue(_editor.outputAspectRatio);
+    const resolved = _resolveAspectRatio();
+
+    const sel = document.getElementById("editor-aspect-select");
+    if (sel) {
+        sel.value = normalized;
+        const sourceOption = sel.querySelector('option[value="source"]');
+        if (sourceOption) {
+            sourceOption.textContent = resolved;
+        }
+    }
+
+    const btn = document.getElementById("editor-aspect-btn");
+    if (!btn) return;
+
+    const title = normalized === "source"
+        ? `Proporção automática (${resolved})`
+        : `Proporção ${resolved}`;
+    const valueEl = btn.querySelector(".editor-aspect-icon-value");
+    if (valueEl) valueEl.textContent = resolved;
+    btn.dataset.aspectLabel = "";
+    btn.classList.toggle("auto", normalized === "source");
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+}
+
+function _editorCycleAspectRatio() {
+    const values = ["source", "9:16", "16:9", "1:1"];
+    const current = _normalizeAspectValue(_editor.outputAspectRatio);
+    const index = values.indexOf(current);
+    const next = values[(index + 1 + values.length) % values.length];
+    _editorSaveState();
+    _editorSetOutputAspectRatio(next);
+}
+window._editorCycleAspectRatio = _editorCycleAspectRatio;
 
 function _editorSetOutputAspectRatio(value) {
     _editor.outputAspectRatio = _normalizeAspectValue(value);
@@ -29558,10 +30882,8 @@ function _editorSegSourceTimeAtTimelineTime(seg, timelineTime) {
 }
 
 function _editorGetTrackSegmentAtTimelineTime(track = "video", timelineTime = 0) {
-    const sorted = [...
-        (_editorIsAudioTrack(track) ? _editorGetSegments(track) : _editor.videoSegments)
-    ].sort((a, b) => a.start - b.start);
-    return sorted.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
+    const segments = _editorIsAudioTrack(track) ? _editorGetSegments(track) : _editor.videoSegments;
+    return segments.find((seg) => timelineTime >= Number(seg.start || 0) - 0.01 && timelineTime <= Number(seg.end || 0) + 0.01) || null;
 }
 
 function _editorTimelineToTrackSourceTime(timelineTime, track = "video") {
@@ -29570,11 +30892,124 @@ function _editorTimelineToTrackSourceTime(timelineTime, track = "video") {
     return _editorSegSourceTimeAtTimelineTime(seg, timelineTime);
 }
 
-function _editorSyncBaseVideoPreviewVolume(timelineTime = 0) {
+function _editorShouldUseDetachedSourceAudioPreview() {
+    if (_editorShouldShowAudioTrack()) return false;
+    if (_editorHasReversedVideoSegments()) return false;
+    if (!_editor.videoSegments.length) return false;
+
+    const video = document.getElementById("editor-video");
+    const sourceUrl = _editorNormalizeMediaUrl(video?.currentSrc || video?.src || _editor.videoUrl || "");
+    if (!sourceUrl) return false;
+
+    return _editor.videoSegments.length > 1 || _editorHasSpeedAdjustedVideoSegments();
+}
+
+function _editorGetSourcePreviewAudio() {
+    if (!_editorSourcePreviewAudio) {
+        _editorSourcePreviewAudio = new Audio();
+        _editorSourcePreviewAudio.preload = "auto";
+        _editorSourcePreviewAudio.loop = true;
+        _editorSourcePreviewAudio.setAttribute("playsinline", "true");
+        _editorSourcePreviewAudio.playbackRate = Math.max(0.25, Math.min(2, Number(_editor.playbackRate || 1)));
+    }
+    return _editorSourcePreviewAudio;
+}
+
+function _editorSetSourcePreviewAudioSource(url = "") {
+    const audio = _editorGetSourcePreviewAudio();
+    const normalizedUrl = _editorNormalizeMediaUrl(url);
+
+    if (!normalizedUrl) {
+        if (audio.src) {
+            audio.pause();
+            audio.removeAttribute("src");
+            audio.load();
+        }
+        _editorSourcePreviewSourceKey = "";
+        return false;
+    }
+
+    if (_editorSourcePreviewSourceKey === normalizedUrl && audio.src) {
+        return true;
+    }
+
+    audio.pause();
+    audio.src = normalizedUrl;
+    audio.load();
+    _editorSourcePreviewSourceKey = normalizedUrl;
+    return true;
+}
+
+function _editorSyncSourcePreviewPlayback(timelineTime = 0, shouldPlay = false, activeSegment = null, volumeOverride = null) {
+    if (!_editorShouldUseDetachedSourceAudioPreview()) {
+        if (_editorSourcePreviewAudio && !_editorSourcePreviewAudio.paused) {
+            _editorSourcePreviewAudio.pause();
+        }
+        return false;
+    }
+
+    const video = document.getElementById("editor-video");
+    const sourceUrl = video?.currentSrc || video?.src || _editor.videoUrl || "";
+    if (!_editorSetSourcePreviewAudioSource(sourceUrl)) {
+        return false;
+    }
+
+    const audio = _editorGetSourcePreviewAudio();
+    const segment = activeSegment || _editorGetTrackSegmentAtTimelineTime("video", Number(timelineTime || 0));
+    const nextVolume = Number.isFinite(volumeOverride)
+        ? Math.max(0, Math.min(1, Number(volumeOverride || 0)))
+        : _editorGetTrackEffectiveSegmentVolumeFactor("video", segment);
+    const nextRate = Math.max(0.25, Math.min(8, Number(_editor.playbackRate || 1) * _editorSegmentPlaybackSpeed(segment)));
+    let targetTime = Math.max(0, _editorTimelineToSourceTime(timelineTime));
+    const duration = Number(audio.duration || 0);
+
+    if (Number.isFinite(duration) && duration > 0.05) {
+        targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
+    }
+
+    audio.volume = nextVolume;
+    audio.playbackRate = nextRate;
+
+    const seekTolerance = shouldPlay ? 0.32 : 0.18;
+    if (audio.readyState >= 1 && Math.abs(Number(audio.currentTime || 0) - targetTime) > seekTolerance) {
+        try {
+            audio.currentTime = targetTime;
+        } catch {
+            // Ignore seek errors while metadata is loading.
+        }
+    }
+
+    if (shouldPlay) {
+        if (audio.paused) {
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {
+                    // Keep the preview silent rather than surfacing autoplay noise.
+                });
+            }
+        }
+        return true;
+    }
+
+    if (!audio.paused) {
+        audio.pause();
+    }
+    return true;
+}
+
+function _editorSyncBaseVideoPreviewVolume(timelineTime = 0, shouldPlay = false) {
     const video = document.getElementById("editor-video");
     if (!video) return;
     const activeSegment = _editorGetTrackSegmentAtTimelineTime("video", Number(timelineTime || 0));
     const nextVolume = _editorGetTrackEffectiveSegmentVolumeFactor("video", activeSegment);
+    const usingDetachedAudio = _editorSyncSourcePreviewPlayback(timelineTime, shouldPlay, activeSegment, nextVolume);
+
+    if (usingDetachedAudio) {
+        video.volume = 0;
+        video.muted = true;
+        return;
+    }
+
     video.volume = nextVolume;
     video.muted = nextVolume <= 0.0001;
 }
@@ -29585,8 +31020,7 @@ function _editorTimelineToSourceTime(timelineTime) {
 
 function _editorSourceToTimelineTime(sourceTime) {
     if (!_editor.videoSegments.length) return sourceTime;
-    const sorted = [..._editor.videoSegments].sort((a, b) => a.start - b.start);
-    for (const seg of sorted) {
+    for (const seg of _editor.videoSegments) {
         const ss = _editorSegSourceStart(seg);
         const se = _editorSegSourceEnd(seg);
         if (sourceTime >= ss - 0.01 && sourceTime <= se + 0.01) {
@@ -29750,8 +31184,12 @@ function _editorGetOverlayTrackEndTime() {
 
 function _editorGetVisibleTimelineEndTime() {
     const baseEnd = _editor.hideBaseVideoTrack ? 0 : _editorGetVideoTrackEndTime();
+    const hiddenBaseAudioEnd = _editor.hideBaseVideoTrack && Number(_editor.originalVolume || 0) > 0
+        ? _editorGetVideoTrackEndTime()
+        : 0;
     return Math.max(
         baseEnd,
+        hiddenBaseAudioEnd,
         _editorGetLayerTrackEndTime(),
         _editorGetAudioTrackEndTime(),
         _editorGetOverlayTrackEndTime(),
@@ -29829,6 +31267,9 @@ function _editorMapTimeAcrossRemovedGaps(timeValue, gaps = []) {
 function _editorCollapseHiddenBaseTimelineGaps() {
     if (!_editor.hideBaseVideoTrack) return false;
 
+    const currentBaseEnd = Math.max(0.1, Number(_editorGetVideoTrackEndTime() || _editor.duration || 0.1));
+    const retainedBaseAudioEnd = Number(_editor.originalVolume || 0) > 0 ? currentBaseEnd : 0;
+
     const mergedRanges = _editorCollectNonBaseTimelineRanges();
     const gaps = [];
     for (let index = 0; index < mergedRanges.length - 1; index += 1) {
@@ -29856,9 +31297,10 @@ function _editorCollapseHiddenBaseTimelineGaps() {
     }
 
     const recalculatedRanges = _editorCollectNonBaseTimelineRanges();
-    const activeEnd = recalculatedRanges.length
+    const calculatedEnd = recalculatedRanges.length
         ? Math.max(0.1, Number(recalculatedRanges[recalculatedRanges.length - 1][1] || 0.1))
         : 0.1;
+    const activeEnd = Math.max(calculatedEnd, retainedBaseAudioEnd);
     const seedSegment = _editor.videoSegments[0] || { id: _editorGenId(), sourceStart: 0, reversed: false, volume: 100 };
     _editor.videoSegments = [{
         id: seedSegment.id || _editorGenId(),
@@ -29889,11 +31331,7 @@ function _editorClearExternalAudioTrack() {
 
 function _editorGetTimelineDuration() {
     const visibleEnd = Math.max(0.1, Number(_editorGetVisibleTimelineEndTime() || 0.1));
-    if (_editor.hideBaseVideoTrack) {
-        return visibleEnd;
-    }
-    const baseDuration = Math.max(0.1, Number(_editor.duration || 0.1));
-    return Math.max(baseDuration, visibleEnd);
+    return visibleEnd;
 }
 
 function _editorGetLayerVideoAppendStart() {
@@ -29914,6 +31352,58 @@ function _editorStopVirtualTimelinePlayback() {
     _editor._virtualPlaybackLastTs = 0;
 }
 
+function _editorStopPlaybackFollowLoop() {
+    if (_editor._playbackFollowRaf) {
+        cancelAnimationFrame(_editor._playbackFollowRaf);
+        _editor._playbackFollowRaf = 0;
+    }
+}
+
+function _editorStartPlaybackFollowLoop() {
+    _editorStopPlaybackFollowLoop();
+
+    const initialVideo = document.getElementById("editor-video");
+    let lastSourceTime = Number(initialVideo?.currentTime || 0);
+    let lastAdvanceTs = performance.now();
+
+    const tick = (ts) => {
+        if (!_editor.playing || _editor._virtualPlaybackActive) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const video = document.getElementById("editor-video");
+        if (!video || !video.src) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const sourceTime = Number(video.currentTime || 0);
+        if (Math.abs(sourceTime - lastSourceTime) > 0.003) {
+            lastSourceTime = sourceTime;
+            lastAdvanceTs = ts;
+        }
+
+        _editorTimeUpdate();
+
+        if (!_editor.playing || _editor._virtualPlaybackActive) {
+            _editor._playbackFollowRaf = 0;
+            return;
+        }
+
+        const stalledForMs = ts - lastAdvanceTs;
+        const canFallbackToVirtual = !video.ended && !video.seeking && (video.paused || video.readyState >= 2);
+        if (canFallbackToVirtual && stalledForMs > 240) {
+            _editorStartVirtualTimelinePlayback(Number(_editor.timelineTime || sourceTime || 0));
+            return;
+        }
+
+        _editor._playbackFollowRaf = requestAnimationFrame(tick);
+    };
+
+    _editor._playbackFollowRaf = requestAnimationFrame(tick);
+}
+
 function _editorGetVideoPlaybackEndTime() {
     const trackEnd = Math.max(0, Number(_editorGetVideoTrackEndTime() || 0));
     const mediaDuration = Math.max(0, Number(_editor.duration || 0));
@@ -29930,7 +31420,7 @@ function _editorHasSpeedAdjustedVideoSegments() {
 }
 
 function _editorShouldUseVirtualVideoPlayback() {
-    return _editorHasReversedVideoSegments() || _editorHasSpeedAdjustedVideoSegments();
+    return _editor.videoSegments.length > 1 || _editorHasReversedVideoSegments() || _editorHasSpeedAdjustedVideoSegments();
 }
 
 function _editorGetVideoTailAnchorTime() {
@@ -29967,7 +31457,7 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
         }
     }
 
-    _editorSyncBaseVideoPreviewVolume(safeTime);
+    _editorSyncBaseVideoPreviewVolume(safeTime, Boolean(shouldPlay));
 
     const timeEl = document.getElementById("editor-time-current");
     if (timeEl) timeEl.textContent = _fmtTime(safeTime);
@@ -29979,6 +31469,7 @@ function _editorApplyTimelineFrame(timeSec, shouldPlay = false) {
 }
 
 function _editorStartVirtualTimelinePlayback(startTime = 0) {
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = true;
 
@@ -30730,7 +32221,8 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
         targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
     }
 
-    if (Math.abs(Number(audio.currentTime || 0) - targetTime) > 0.25) {
+    const seekTolerance = shouldPlay ? 0.45 : 0.25;
+    if (Math.abs(Number(audio.currentTime || 0) - targetTime) > seekTolerance) {
         if (audio.readyState >= 1) {
             try {
                 audio.currentTime = targetTime;
@@ -31218,6 +32710,15 @@ async function _editorUploadVideo(input) {
     }
 
     try {
+        if (selection.audioFiles.length) {
+            if (selection.audioFiles.length > 1 || selection.imageFiles.length || selection.videoFiles.length) {
+                showToast("Para iniciar com áudio, envie apenas 1 arquivo de áudio por vez.", "error");
+                return;
+            }
+            await _editorStartWithUploadedAudioFiles(selection.audioFiles);
+            return;
+        }
+
         const orderedEntries = await _editorResolveMediaImportOrder(selection.orderedEntries, "project");
         if (!orderedEntries?.length) return;
         await _editorStartWithOrderedMediaEntries(orderedEntries);
@@ -31233,9 +32734,11 @@ function _editorGetLocalMediaKind(file) {
     const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
     const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp"]);
     const videoExts = new Set([".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"]);
+    const audioExts = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus", ".weba"]);
 
     if (mime.startsWith("image/") || imageExts.has(ext)) return "image";
     if (mime.startsWith("video/") || videoExts.has(ext)) return "video";
+    if (mime.startsWith("audio/") || audioExts.has(ext)) return "audio";
     return "";
 }
 
@@ -31266,6 +32769,7 @@ function _editorSortOrderedMediaEntries(entries = []) {
 function _editorClassifyLocalMediaFiles(files = []) {
     const imageFiles = [];
     const videoFiles = [];
+    const audioFiles = [];
     const invalidFiles = [];
     const orderedEntries = [];
 
@@ -31281,30 +32785,120 @@ function _editorClassifyLocalMediaFiles(files = []) {
             orderedEntries.push({ kind, file });
             return;
         }
+        if (kind === "audio") {
+            audioFiles.push(file);
+            orderedEntries.push({ kind, file });
+            return;
+        }
         invalidFiles.push(file);
     });
 
     if (invalidFiles.length) {
         return {
             orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+            audioFiles: [...audioFiles].sort(_editorCompareMediaFileNames),
             imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
             videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
-            error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI ou imagens JPG/PNG/WebP.",
+            error: "Selecione apenas vídeos MP4/MOV/WEBM/MKV/AVI, áudios MP3/WAV/M4A/AAC/OGG/FLAC/OPUS ou imagens JPG/PNG/WebP.",
         };
     }
 
     return {
         orderedEntries: _editorSortOrderedMediaEntries(orderedEntries),
+        audioFiles: [...audioFiles].sort(_editorCompareMediaFileNames),
         imageFiles: [...imageFiles].sort(_editorCompareMediaFileNames),
         videoFiles: [...videoFiles].sort(_editorCompareMediaFileNames),
         error: "",
     };
 }
 
-async function _editorUploadSingleVideoProject(file) {
+function _editorDescribeImportFiles(files = []) {
+    const validFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+    if (!validFiles.length) return "";
+    if (validFiles.length === 1) {
+        return String(validFiles[0].name || "mídia").trim();
+    }
+
+    const firstName = String(validFiles[0].name || "mídia").trim() || "mídia";
+    return `${firstName} + ${validFiles.length - 1} arquivo(s)`;
+}
+
+function _setEditorImportProgress({ active = false, progress = 0, title = "", message = "", fileName = "", processing = false } = {}) {
+    const wrapEl = document.getElementById("editor-import-loading");
+    const titleEl = document.getElementById("editor-import-loading-title");
+    const fillEl = document.getElementById("editor-import-loading-fill");
+    const percentEl = document.getElementById("editor-import-loading-percent");
+    const statusEl = document.getElementById("editor-import-loading-status");
+    const fileEl = document.getElementById("editor-import-loading-file");
+    const boundedProgress = Math.max(0, Math.min(100, Number(progress || 0)));
+    const nextTitle = String(title || "Carregando mídia no editor").trim() || "Carregando mídia no editor";
+    const nextMessage = String(message || "Preparando upload...").trim() || "Preparando upload...";
+    const nextFileName = String(fileName || "").trim();
+
+    if (wrapEl) {
+        wrapEl.hidden = !active;
+        wrapEl.classList.toggle("is-processing", Boolean(active && processing));
+    }
+    if (titleEl) {
+        titleEl.textContent = active ? nextTitle : "";
+    }
+    if (fillEl) {
+        fillEl.style.width = `${boundedProgress}%`;
+    }
+    if (percentEl) {
+        percentEl.textContent = active ? `${Math.round(boundedProgress)}%` : "";
+    }
+    if (statusEl) {
+        statusEl.textContent = active ? nextMessage : "";
+    }
+    if (fileEl) {
+        fileEl.textContent = active && nextFileName ? `Arquivo: ${nextFileName}` : "";
+    }
+}
+
+function _editorCreateImportProgressOptions({ title = "", fileName = "", uploadMessage = "", processingMessage = "" } = {}) {
+    const nextTitle = String(title || "Carregando mídia no editor").trim() || "Carregando mídia no editor";
+    const nextFileName = String(fileName || "").trim();
+    const nextUploadMessage = String(uploadMessage || "Enviando mídia para o editor...").trim() || "Enviando mídia para o editor...";
+    const nextProcessingMessage = String(processingMessage || "Upload concluído. Decodificando mídia...").trim() || "Upload concluído. Decodificando mídia...";
+
+    return {
+        onUploadProgress: ({ progress, lengthComputable }) => {
+            const percent = lengthComputable
+                ? Math.max(6, Math.min(88, Math.round(Number(progress || 0) * 100)))
+                : 32;
+            _setEditorImportProgress({
+                active: true,
+                progress: percent,
+                title: nextTitle,
+                message: nextUploadMessage,
+                fileName: nextFileName,
+            });
+        },
+        onUploadProcessing: () => {
+            _setEditorImportProgress({
+                active: true,
+                progress: 92,
+                title: nextTitle,
+                message: nextProcessingMessage,
+                fileName: nextFileName,
+                processing: true,
+            });
+        },
+    };
+}
+
+async function _editorUploadSingleVideoProject(file, options = {}) {
     const formData = new FormData();
     formData.append("file", file);
-    return apiForm("/video/editor/upload-video", formData, { method: "POST" });
+    return apiFormWithProgress("/video/editor/upload-video", formData, { method: "POST", ...(options || {}) });
+}
+
+async function _editorUploadSingleAudioProject(file, options = {}) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("aspect_ratio", "9:16");
+    return apiFormWithProgress("/video/editor/upload-audio-project", formData, { method: "POST", ...(options || {}) });
 }
 
 async function _editorUploadSingleLayerImage(file) {
@@ -31325,7 +32919,7 @@ async function _editorUploadSingleLayerAudio(file) {
     return apiForm("/video/editor/upload-layer-audio", formData, { method: "POST" });
 }
 
-async function _editorUploadMediaSequenceProject(entries = []) {
+async function _editorUploadMediaSequenceProject(entries = [], options = {}) {
     const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
     if (!orderedEntries.length) {
         throw new Error("Nenhuma mídia válida foi enviada para o editor.");
@@ -31333,7 +32927,20 @@ async function _editorUploadMediaSequenceProject(entries = []) {
 
     const formData = new FormData();
     orderedEntries.forEach((entry) => formData.append("files", entry.file));
-    return apiForm("/video/editor/upload-media-sequence", formData, { method: "POST" });
+    return apiFormWithProgress("/video/editor/upload-media-sequence", formData, { method: "POST", ...(options || {}) });
+}
+
+async function _editorUploadImageSequenceProject(files = [], options = {}) {
+    const imageFiles = Array.isArray(files)
+        ? files.filter((file) => _editorGetLocalMediaKind(file) === "image")
+        : [];
+    if (!imageFiles.length) {
+        throw new Error("Nenhuma imagem válida foi enviada para o editor.");
+    }
+
+    const formData = new FormData();
+    imageFiles.forEach((file) => formData.append("images", file));
+    return apiFormWithProgress("/video/editor/upload-image-sequence", formData, { method: "POST", ...(options || {}) });
 }
 
 async function _editorAppendOrderedMediaEntries(entries = [], options = {}) {
@@ -31386,49 +32993,120 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
         return;
     }
 
-    if (orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video")) {
-        closeModal("modal-editor-start");
-        showToast(`Preparando ${orderedEntries.length} mídia(s) no editor...`);
-        const payload = await _editorUploadMediaSequenceProject(orderedEntries);
-        await loadEditorVideosList();
-        if (!payload?.project_id) {
-            throw new Error("Projeto do editor não foi criado para a sequência de mídias.");
-        }
-        await openEditor(payload.project_id, {
-            restoreDraft: false,
-            initialMediaLayers: payload.layers || [],
-            initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
-            hideBaseVideoTrack: true,
-        });
-        showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
-        return;
-    }
+    const progressTitle = orderedEntries.length > 1
+        ? "Carregando mídias no editor"
+        : "Carregando vídeo no editor";
+    const progressFileName = _editorDescribeImportFiles(orderedEntries.map((entry) => entry.file));
 
-    const [firstEntry, ...restEntries] = orderedEntries;
-    if (firstEntry.kind === "image") {
-        await _editorStartWithUploadedImages([firstEntry.file]);
-    } else {
-        showToast(`Enviando ${orderedEntries.length} mídia(s) para o editor...`);
-        const payload = await _editorUploadSingleVideoProject(firstEntry.file);
+    closeModal("modal-editor-start");
+    _setEditorImportProgress({
+        active: true,
+        progress: 4,
+        title: progressTitle,
+        message: orderedEntries.length > 1
+            ? "Preparando envio das mídias..."
+            : "Preparando envio do vídeo...",
+        fileName: progressFileName,
+    });
+
+    try {
+        if (orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video")) {
+            const payload = await _editorUploadMediaSequenceProject(
+                orderedEntries,
+                _editorCreateImportProgressOptions({
+                    title: progressTitle,
+                    fileName: progressFileName,
+                    uploadMessage: "Enviando mídias para o editor...",
+                    processingMessage: "Upload concluído. Decodificando e organizando mídias...",
+                })
+            );
+            await loadEditorVideosList();
+            if (!payload?.project_id) {
+                throw new Error("Projeto do editor não foi criado para a sequência de mídias.");
+            }
+            _setEditorImportProgress({
+                active: true,
+                progress: 97,
+                title: progressTitle,
+                message: "Montando timeline e abrindo o editor...",
+                fileName: progressFileName,
+                processing: true,
+            });
+            await openEditor(payload.project_id, {
+                restoreDraft: false,
+                initialMediaLayers: payload.layers || [],
+                initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
+                hideBaseVideoTrack: true,
+            });
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: "Mídias prontas no editor.",
+                fileName: progressFileName,
+            });
+            showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+            return;
+        }
+
+        const [firstEntry, ...restEntries] = orderedEntries;
+        if (firstEntry.kind === "image") {
+            await _editorStartWithUploadedImages([firstEntry.file]);
+            return;
+        }
+
+        const payload = await _editorUploadSingleVideoProject(
+            firstEntry.file,
+            _editorCreateImportProgressOptions({
+                title: progressTitle,
+                fileName: progressFileName,
+                uploadMessage: "Enviando vídeo para o editor...",
+                processingMessage: "Upload concluído. Decodificando vídeo...",
+            })
+        );
         await loadEditorVideosList();
         if (!payload?.project_id) {
             throw new Error("Projeto do editor não foi criado para o primeiro vídeo.");
         }
+        _setEditorImportProgress({
+            active: true,
+            progress: 97,
+            title: progressTitle,
+            message: "Montando timeline e abrindo o editor...",
+            fileName: progressFileName,
+            processing: true,
+        });
         await openEditor(payload.project_id, { restoreDraft: false });
-    }
 
-    if (!restEntries.length) {
-        showToast("Mídia enviada com sucesso.", "success");
-        return;
-    }
+        if (!restEntries.length) {
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: "Vídeo pronto no editor.",
+                fileName: progressFileName,
+            });
+            showToast("Mídia enviada com sucesso.", "success");
+            return;
+        }
 
-    _editorSaveState();
-    const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
-    await _editorAppendOrderedMediaEntries(restEntries, { startTime });
-    _editorRenderTimeline();
-    _editorRenderMediaLayers();
-    _editorRenderProps();
-    showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+        _editorSaveState();
+        const startTime = Math.max(0, Number(_editorGetTimelineDuration() || 0));
+        await _editorAppendOrderedMediaEntries(restEntries, { startTime });
+        _editorRenderTimeline();
+        _editorRenderMediaLayers();
+        _editorRenderProps();
+        _setEditorImportProgress({
+            active: true,
+            progress: 100,
+            title: progressTitle,
+            message: "Mídias prontas no editor.",
+            fileName: progressFileName,
+        });
+        showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+    } finally {
+        _setEditorImportProgress({ active: false });
+    }
 }
 
 function _editorShouldConfirmMediaImportOrder(entries = []) {
@@ -31656,17 +33334,23 @@ function _editorApplyImageSequenceLayers(layers, options = {}) {
     let cursor = Math.max(0, Number(options.startTime || 0));
 
     sequence.forEach((payload, idx) => {
-        const layerKind = String(payload.kind || "image") === "video" ? "video" : "image";
-        const layerSpan = layerKind === "video"
+        const rawKind = String(payload.kind || "image").trim().toLowerCase();
+        const layerKind = rawKind === "audio"
+            ? "audio"
+            : (rawKind === "video" ? "video" : "image");
+        const layerSpan = layerKind === "video" || layerKind === "audio"
             ? Math.max(0.1, Number(payload.duration || 0) || clipSeconds)
             : clipSeconds;
         const startTime = cursor;
         const endTime = startTime + layerSpan;
-        _editorPushMediaLayer(layerKind, payload, {
+        const layer = _editorPushMediaLayer(layerKind, payload, {
             startTime,
             endTime,
             select: idx === sequence.length - 1,
         });
+        if (layerKind === "audio" && layer) {
+            layer.volume = Math.max(0, Math.min(200, Number(_editor.musicVolume || 100)));
+        }
         cursor = endTime;
     });
 }
@@ -31682,27 +33366,132 @@ async function _editorStartWithUploadedImages(files) {
 
     try {
         closeModal("modal-editor-start");
-        showToast(`Preparando ${imageFiles.length} imagem(ns) no editor...`);
-        const formData = new FormData();
-        imageFiles.forEach((file) => formData.append("images", file));
-        const payload = await apiForm("/video/editor/upload-image-sequence", formData, { method: "POST" });
+        const progressTitle = imageFiles.length > 1 ? "Carregando imagens no editor" : "Carregando imagem no editor";
+        const progressFileName = _editorDescribeImportFiles(imageFiles);
+        _setEditorImportProgress({
+            active: true,
+            progress: 4,
+            title: progressTitle,
+            message: imageFiles.length > 1 ? "Preparando envio das imagens..." : "Preparando envio da imagem...",
+            fileName: progressFileName,
+        });
+        const payload = await _editorUploadImageSequenceProject(
+            imageFiles,
+            _editorCreateImportProgressOptions({
+                title: progressTitle,
+                fileName: progressFileName,
+                uploadMessage: imageFiles.length > 1 ? "Enviando imagens para o editor..." : "Enviando imagem para o editor...",
+                processingMessage: imageFiles.length > 1 ? "Upload concluído. Decodificando imagens..." : "Upload concluído. Decodificando imagem...",
+            })
+        );
         await loadEditorVideosList();
 
         if (payload?.project_id) {
-            showToast(`${imageFiles.length} imagem(ns) enviada(s)! Abrindo editor...`, "success");
+            _setEditorImportProgress({
+                active: true,
+                progress: 97,
+                title: progressTitle,
+                message: "Montando timeline e abrindo o editor...",
+                fileName: progressFileName,
+                processing: true,
+            });
             await openEditor(payload.project_id, {
                 restoreDraft: false,
                 initialMediaLayers: payload.layers || [],
                 initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
             });
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: imageFiles.length > 1 ? "Imagens prontas no editor." : "Imagem pronta no editor.",
+                fileName: progressFileName,
+            });
+            showToast(`${imageFiles.length} imagem(ns) enviada(s)! Abrindo editor...`, "success");
             return;
         }
 
         showToast("Sequência de imagens enviada com sucesso.", "success");
     } catch (err) {
         showToast("Erro ao preparar imagens no editor: " + (err?.message || "erro desconhecido"), "error");
+    } finally {
+        _setEditorImportProgress({ active: false });
     }
 }
+
+async function _editorStartWithUploadedAudioFiles(files) {
+    const audioFiles = Array.isArray(files)
+        ? files.filter((file) => _editorGetLocalMediaKind(file) === "audio")
+        : [];
+    if (!audioFiles.length) {
+        showToast("Selecione 1 áudio MP3, WAV, M4A, AAC, OGG, FLAC ou OPUS para continuar.", "error");
+        return;
+    }
+
+    const [audioFile] = audioFiles;
+
+    try {
+        closeModal("modal-editor-start");
+        const progressTitle = "Carregando áudio no editor";
+        const progressFileName = _editorDescribeImportFiles([audioFile]);
+        _setEditorImportProgress({
+            active: true,
+            progress: 4,
+            title: progressTitle,
+            message: "Preparando envio do áudio...",
+            fileName: progressFileName,
+        });
+        const payload = await _editorUploadSingleAudioProject(
+            audioFile,
+            _editorCreateImportProgressOptions({
+                title: progressTitle,
+                fileName: progressFileName,
+                uploadMessage: "Enviando áudio para o editor...",
+                processingMessage: "Upload concluído. Decodificando áudio...",
+            })
+        );
+        await loadEditorVideosList();
+
+        if (payload?.project_id) {
+            _setEditorImportProgress({
+                active: true,
+                progress: 97,
+                title: progressTitle,
+                message: "Montando timeline e abrindo o editor...",
+                fileName: progressFileName,
+                processing: true,
+            });
+            await openEditor(payload.project_id, {
+                restoreDraft: false,
+                initialMediaLayers: payload.layers || [],
+                hideBaseVideoTrack: true,
+            });
+            _setEditorImportProgress({
+                active: true,
+                progress: 100,
+                title: progressTitle,
+                message: "Áudio pronto no editor.",
+                fileName: progressFileName,
+            });
+            showToast("Áudio enviado! Abrindo editor...", "success");
+            return;
+        }
+
+        showToast("Áudio enviado com sucesso.", "success");
+    } catch (err) {
+        showToast("Erro ao preparar áudio no editor: " + (err?.message || "erro desconhecido"), "error");
+    } finally {
+        _setEditorImportProgress({ active: false });
+    }
+}
+
+async function _editorStartWithAudio(input) {
+    const files = Array.from(input?.files || []);
+    if (input) input.value = "";
+    if (!files.length) return;
+    await _editorStartWithUploadedAudioFiles(files);
+}
+window._editorStartWithAudio = _editorStartWithAudio;
 
 function _editorRecorderUsesScreen(mode) {
     return mode === "screen" || mode === "screen_camera" || mode === "window";
@@ -32503,7 +34292,6 @@ async function _editorPrepareRecorderSession(mode) {
                 ctx.drawImage(webcamVideoEl, x, y, overlayWidth, overlayHeight);
                 ctx.restore();
             }
-
             _editorRecorderRuntime.drawRaf = nextFrame(drawFrame);
         };
         drawFrame();
@@ -32847,6 +34635,12 @@ function _editorChooseStartMode(mode) {
 
     if (selectedMode === "image_pc") {
         document.getElementById("editor-start-image-upload-input")?.click();
+        return;
+    }
+
+    if (selectedMode === "audio_pc") {
+        closeModal("modal-editor-start");
+        document.getElementById("editor-start-audio-upload-input")?.click();
         return;
     }
 
@@ -33672,9 +35466,12 @@ function _editorSyncMediaLayersWithTime(timeSec) {
         const maxTime = sourceEnd > 0 ? Math.max(0, sourceEnd - 0.05) : playbackTime;
         const targetTime = Math.max(0, Math.min(playbackTime, maxTime));
         const useSmoothReverseSeek = Boolean(shouldPlay && normalizedLayer.reversed && normalizedLayer.kind === "video");
+        const syncTolerance = normalizedLayer.kind === "audio"
+            ? (shouldPlay ? 0.45 : 0.12)
+            : ((normalizedLayer.kind === "video" && normalizedLayer.audioOnly && shouldPlay) ? 0.28 : 0.1);
         if (useSmoothReverseSeek) {
             _editorPreviewSeekTo(mediaEl, targetTime, { nowMs: performance.now() });
-        } else if (Math.abs((mediaEl.currentTime || 0) - targetTime) > 0.1) {
+        } else if (Math.abs((mediaEl.currentTime || 0) - targetTime) > syncTolerance) {
             try {
                 mediaEl.currentTime = targetTime;
             } catch {
@@ -34244,7 +36041,7 @@ async function openEditor(projectId, options = {}) {
         _editor.sourceAspectRatio = ["9:16", "16:9", "1:1"].includes(detail.aspect_ratio) ? detail.aspect_ratio : "9:16";
         _editor.outputAspectRatio = "source";
         _editor.playing = false;
-        _editor.activeTool = "text";
+        _editor.activeTool = "trim";
         _editor.smartCuts = [];
         _editor.smartCutsLoading = false;
         _editor.smartCutsError = "";
@@ -34279,7 +36076,12 @@ async function openEditor(projectId, options = {}) {
         _editor.timelineTime = 0;
         _editor.timelineZoom = 1;
         _editor.playbackRate = 1;
+        _editor.mobileControlMode = "tools";
         _editor._virtualPlaybackActive = false;
+        _editorStopPlaybackFollowLoop();
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+        _editorMobileTrackVolumeOpen = "";
         _editorStopVirtualTimelinePlayback();
         _editorResetSourceWaveformState();
         _editorCloseAIMusicModal(true);
@@ -34290,8 +36092,13 @@ async function openEditor(projectId, options = {}) {
         document.getElementById("editor-select-view").hidden = true;
         document.getElementById("editor-workspace").hidden = false;
         document.getElementById("page-editor")?.classList.add("editor-fullscreen");
+        _editorSetMobileControlMode("tools");
 
         const video = document.getElementById("editor-video");
+        video.preload = "auto";
+        video.playsInline = true;
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
         video.src = _editor.videoUrl;
         video.load();
         let editorReady = false;
@@ -34299,6 +36106,15 @@ async function openEditor(projectId, options = {}) {
         const readyPromise = new Promise((resolve) => {
             resolveOpen = resolve;
         });
+        const refreshEditorPreviewFrame = () => {
+            if (!editorReady) return;
+            requestAnimationFrame(() => {
+                const previewTime = Number(_editor.timelineTime || 0);
+                _editorApplyAspectRatio();
+                _editorRenderMediaLayers();
+                _editorApplyTimelineFrame(previewTime, false);
+            });
+        };
         const finalizeEditorOpen = () => {
             if (editorReady) return;
             editorReady = true;
@@ -34340,13 +36156,21 @@ async function openEditor(projectId, options = {}) {
             _editorRefreshQuickActions();
             _editorRenderTimeline();
             _editorCenterTimelineOnTime(Number(_editor.timelineTime || 0));
-            _editorSelectTool(restored ? _editor.activeTool : "text");
+            _editorSelectTool(_editorResolveInitialActiveTool(restored ? _editor.activeTool : "trim", _editor.selectedClip));
             if (shouldRestoreDraft && restored) {
                 showToast("Edição restaurada de onde você parou.", "success");
             }
+            refreshEditorPreviewFrame();
             resolveOpen?.();
         };
         video.onloadedmetadata = finalizeEditorOpen;
+        video.onloadeddata = () => {
+            if (!editorReady) {
+                finalizeEditorOpen();
+            }
+            refreshEditorPreviewFrame();
+        };
+        video.oncanplay = refreshEditorPreviewFrame;
         video.onerror = finalizeEditorOpen;
         setTimeout(finalizeEditorOpen, 1500);
         _updateUndoRedoBtns();
@@ -34388,6 +36212,7 @@ function closeEditor() {
     _editorCloseAudioVideoSourceModal(true);
     _editorCloseRecorderModal(true);
     const video = document.getElementById("editor-video");
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
     video.pause();
@@ -34410,7 +36235,9 @@ function closeEditor() {
     _editor.timelineTime = 0;
     _editor.timelineZoom = 1;
     _editor.playbackRate = 1;
+    _editor.mobileControlMode = "tools";
     _editorResetSourceWaveformState();
+    _editorApplyMobileControlMode();
 }
 
 // ---------- Format time ----------
@@ -34436,7 +36263,7 @@ function _editorGetTimelineTrackWidth(durationSec = 0) {
     const timelineEl = document.getElementById("editor-timeline");
     const parentWidth = Number(timelineEl?.parentElement?.clientWidth || 0);
     const viewportWidth = parentWidth > 0 ? parentWidth : Number(timelineEl?.clientWidth || 0);
-    const viewportTrackWidth = Math.max(560, viewportWidth - (_EDITOR_TIMELINE_LABEL_WIDTH + _EDITOR_TIMELINE_RIGHT_GUTTER));
+    const viewportTrackWidth = Math.max(560, viewportWidth - (_editorGetTimelineLabelWidth() + _EDITOR_TIMELINE_RIGHT_GUTTER));
     const zoom = _editorClampTimelineZoom(_editor.timelineZoom || 1);
     const baseWidth = Math.max(420, viewportTrackWidth);
     return Math.round(baseWidth * zoom);
@@ -34456,8 +36283,10 @@ function _editorCenterTimelineOnTime(timeSec) {
         if (!timelineDuration) return;
         const trackWidth = Math.max(document.getElementById("editor-track-video")?.offsetWidth || 0, _editorGetTimelineTrackWidth(timelineDuration));
         const safeTime = Math.max(0, Math.min(timelineDuration, Number(timeSec || 0)));
-        const x = _EDITOR_TIMELINE_LABEL_WIDTH + (safeTime / timelineDuration) * trackWidth;
-        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - (timelineEl.clientWidth / 2)));
+        const leadGutter = _editorGetTimelineLeadGutter();
+        const x = _editorGetTimelineLabelWidth() + leadGutter + (safeTime / timelineDuration) * trackWidth;
+        const viewportTarget = _editorUseFixedMobilePlayhead() ? _editorGetTimelineViewportFocusOffset() : (timelineEl.clientWidth / 2);
+        const targetScroll = Math.max(0, Math.min(timelineEl.scrollWidth - timelineEl.clientWidth, x - viewportTarget));
         timelineEl.scrollLeft = targetScroll;
     });
 }
@@ -34469,12 +36298,17 @@ function _editorPreserveTimelineFocusViewport(focusTime, previousTrackWidth = 0)
 
     const safeFocus = Math.max(0, Math.min(timelineDuration, Number(focusTime || 0)));
     const oldTrackWidth = Math.max(1, Number(previousTrackWidth || _editorGetTimelineTrackWidth(timelineDuration)));
-    const oldFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * oldTrackWidth);
-    const viewportOffset = oldFocusX - Number(timelineEl.scrollLeft || 0);
+    const oldLeadGutter = _editorGetTimelineLeadGutter();
+    const labelWidth = _editorGetTimelineLabelWidth();
+    const oldFocusX = labelWidth + oldLeadGutter + ((safeFocus / timelineDuration) * oldTrackWidth);
+    const viewportOffset = _editorUseFixedMobilePlayhead()
+        ? _editorGetTimelineViewportFocusOffset()
+        : (oldFocusX - Number(timelineEl.scrollLeft || 0));
 
     requestAnimationFrame(() => {
         const nextTrackWidth = Math.max(1, _editorGetTimelineTrackWidth(timelineDuration));
-        const nextFocusX = _EDITOR_TIMELINE_LABEL_WIDTH + ((safeFocus / timelineDuration) * nextTrackWidth);
+        const nextLeadGutter = _editorGetTimelineLeadGutter();
+        const nextFocusX = labelWidth + nextLeadGutter + ((safeFocus / timelineDuration) * nextTrackWidth);
         const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
         const targetScroll = Math.max(0, Math.min(maxScroll, nextFocusX - viewportOffset));
         timelineEl.scrollLeft = targetScroll;
@@ -34571,6 +36405,10 @@ function _editorApplyPlaybackRate(nextRate, options = {}) {
         _editorMusicPreviewAudio.playbackRate = safeRate;
     }
 
+    if (_editorSourcePreviewAudio) {
+        _editorSourcePreviewAudio.playbackRate = safeRate;
+    }
+
     const speedBtn = document.getElementById("editor-quick-speed");
     if (speedBtn) {
         const label = _editorFormatRateLabel(safeRate);
@@ -34600,6 +36438,7 @@ function _editorTogglePlay() {
 
     if (_editor.playing) {
         _editor.playing = false;
+        _editorStopPlaybackFollowLoop();
         _editorStopVirtualTimelinePlayback();
         video.pause();
         _editorApplyTimelineFrame(_editor.timelineTime || video.currentTime || 0, false);
@@ -34631,6 +36470,7 @@ function _editorTogglePlay() {
     if (!_editorMusicPreviewPrimed) {
         _editorPrimeMusicPreviewPlayback(startTime);
     }
+    _editorSyncBaseVideoPreviewVolume(startTime, true);
 
     const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
     if (_editorShouldUseVirtualVideoPlayback() || startTime > videoPlaybackEnd + 0.01) {
@@ -34646,6 +36486,7 @@ function _editorTogglePlay() {
             });
         }
         _editorApplyTimelineFrame(startTime, true);
+        _editorStartPlaybackFollowLoop();
     }
 
     _updatePlayIcon();
@@ -34664,6 +36505,7 @@ function _editorResetPlaybackToStart() {
     const video = document.getElementById("editor-video");
     if (!video) return;
 
+    _editorStopPlaybackFollowLoop();
     _editorStopVirtualTimelinePlayback();
     _editor._virtualPlaybackActive = false;
     video.pause();
@@ -34728,13 +36570,28 @@ function _editorTimeUpdate() {
 
 function _editorMovePlayhead(t) {
     const playhead = document.getElementById("editor-timeline-playhead");
+    const timelineEl = document.getElementById("editor-timeline");
     const timelineDuration = _editorGetTimelineDuration();
-    if (!playhead || !timelineDuration) return;
+    if (!playhead || !timelineEl || !timelineDuration) return;
     const trackWidth = _editorGetTimelineTrackWidth(timelineDuration);
     const safeTime = Math.max(0, Math.min(timelineDuration, t || 0));
     const pct = timelineDuration > 0 ? (safeTime / timelineDuration) : 0;
     const x = Math.max(0, Math.min(trackWidth - 2, pct * trackWidth));
-    playhead.style.left = (_EDITOR_TIMELINE_LABEL_WIDTH + x) + "px";
+    const leadGutter = _editorGetTimelineLeadGutter();
+    const absoluteX = _editorGetTimelineLabelWidth() + leadGutter + x;
+
+    if (_editorUseFixedMobilePlayhead()) {
+        const fixedOffset = _editorGetTimelineViewportFocusOffset();
+        const maxScroll = Math.max(0, timelineEl.scrollWidth - timelineEl.clientWidth);
+        const targetScroll = Math.max(0, Math.min(maxScroll, absoluteX - fixedOffset));
+        if (Math.abs(Number(timelineEl.scrollLeft || 0) - targetScroll) > 0.5) {
+            timelineEl.scrollLeft = targetScroll;
+        }
+        playhead.style.left = `${targetScroll + fixedOffset}px`;
+        return;
+    }
+
+    playhead.style.left = `${absoluteX}px`;
 }
 
 function _editorClampToVideoSegments(timeSec) {
@@ -34771,6 +36628,7 @@ function _editorSeekByClientX(clientX) {
                     // Ignore autoplay interruptions in preview.
                 });
             }
+            _editorStartPlaybackFollowLoop();
         }
         _editorApplyTimelineFrame(nextTime, _editor.playing);
         return;
@@ -34796,26 +36654,124 @@ function _editorSeekByClientX(clientX) {
     _editorApplyTimelineFrame(nextTime, false);
 }
 
+function _editorCapturePointer(target, pointerId) {
+    if (!target || pointerId === undefined || typeof target.setPointerCapture !== "function") return;
+    try {
+        target.setPointerCapture(pointerId);
+    } catch {
+        // Touch browsers may reject capture while a native scroll is active.
+    }
+}
+
+function _editorReleasePointerCapture(target, pointerId) {
+    if (!target || pointerId === undefined || typeof target.releasePointerCapture !== "function") return;
+    try {
+        target.releasePointerCapture(pointerId);
+    } catch {
+        // Ignore if the pointer was already released.
+    }
+}
+
 function _editorStartTimelineScrub(event) {
     if (!_editorGetTimelineDuration()) return false;
     if (event.button !== undefined && event.button !== 0) return false;
     if (event.target.closest(".editor-track-clip")) return false;
     if (event.target.closest(".editor-track-label")) return false;
 
-    _editorTimelineScrub = { active: true };
-    _editorSeekByClientX(event.clientX);
+    const timelineEl = document.getElementById("editor-timeline");
+    const pointerType = String(event.pointerType || "mouse");
+    const rulerEl = document.getElementById("editor-timeline-ruler");
+    const playheadEl = document.getElementById("editor-timeline-playhead");
+    const timelineRect = timelineEl?.getBoundingClientRect?.();
+    const playheadRect = playheadEl?.getBoundingClientRect?.();
+    const localY = timelineRect ? (Number(event.clientY || 0) - timelineRect.top) : 0;
+    const rulerHeight = Math.max(24, Number(rulerEl?.offsetHeight || 24));
+    const pointerNearRuler = Boolean(rulerEl && (event.target === rulerEl || event.target.closest?.(".editor-timeline-ruler")));
+    const pointerNearPlayhead = Boolean(
+        playheadRect
+        && Math.abs(Number(event.clientX || 0) - (playheadRect.left + (playheadRect.width / 2))) <= 18
+        && localY <= (rulerHeight + 18)
+    );
+    const prefersDirectScrub = pointerType === "touch" && (pointerNearRuler || pointerNearPlayhead || localY <= (rulerHeight + 6));
+
+    if (pointerType === "touch" && !prefersDirectScrub) {
+        return false;
+    }
+
+    _editorTimelineScrub = {
+        active: true,
+        pointerId: event.pointerId,
+        pointerType,
+        pointerTarget: timelineEl,
+        startX: Number(event.clientX || 0),
+        startY: Number(event.clientY || 0),
+        startScrollLeft: Number(timelineEl?.scrollLeft || 0),
+        mode: prefersDirectScrub ? "scrub" : pointerType === "touch" ? "pending" : "scrub",
+        moved: false,
+    };
+
+    if (_editorTimelineScrub.mode === "scrub") {
+        _editorSeekByClientX(event.clientX);
+    }
+
+    _editorCapturePointer(timelineEl, event.pointerId);
     document.addEventListener("pointermove", _editorOnTimelineScrubMove);
-    document.addEventListener("pointerup", _editorOnTimelineScrubEnd, { once: true });
+    document.addEventListener("pointerup", _editorOnTimelineScrubEnd);
+    document.addEventListener("pointercancel", _editorOnTimelineScrubEnd);
     return true;
 }
 
 function _editorOnTimelineScrubMove(event) {
-    if (!_editorTimelineScrub?.active) return;
+    const scrub = _editorTimelineScrub;
+    if (!scrub?.active) return;
+    if (scrub.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== scrub.pointerId) return;
+
+    const dx = Number(event.clientX || 0) - scrub.startX;
+    const dy = Number(event.clientY || 0) - scrub.startY;
+
+    if (scrub.mode === "pending") {
+        const threshold = scrub.pointerType === "touch" ? 6 : 0;
+        if (Math.abs(dx) < threshold && Math.abs(dy) < threshold) {
+            return;
+        }
+
+        scrub.moved = true;
+        scrub.mode = Math.abs(dx) >= Math.abs(dy) ? "pan" : "scrub";
+        if (scrub.mode === "scrub") {
+            _editorSeekByClientX(event.clientX);
+        }
+        return;
+    }
+
+    if (scrub.mode === "pan") {
+        const timelineEl = document.getElementById("editor-timeline");
+        if (!timelineEl) return;
+        timelineEl.scrollLeft = Math.max(0, scrub.startScrollLeft - dx);
+        if (_editorUseFixedMobilePlayhead()) {
+            const nextTime = _editorGetTimeAtTimelineViewport(timelineEl.scrollLeft);
+            _editorApplyTimelineFrame(nextTime, _editor.playing);
+        }
+        scrub.moved = true;
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+        return;
+    }
+
+    scrub.moved = true;
     _editorSeekByClientX(event.clientX);
 }
 
-function _editorOnTimelineScrubEnd() {
+function _editorOnTimelineScrubEnd(event) {
     document.removeEventListener("pointermove", _editorOnTimelineScrubMove);
+    document.removeEventListener("pointerup", _editorOnTimelineScrubEnd);
+    document.removeEventListener("pointercancel", _editorOnTimelineScrubEnd);
+
+    const scrub = _editorTimelineScrub;
+    if (scrub?.active && scrub.pointerType === "touch" && scrub.mode === "pending" && event?.clientX !== undefined) {
+        _editorSeekByClientX(event.clientX);
+    }
+    _editorReleasePointerCapture(scrub?.pointerTarget, scrub?.pointerId);
     _editorTimelineScrub = null;
 }
 
@@ -34834,6 +36790,9 @@ function _editorDrawOverlays(t) {
     video.style.filter = _getCSSFilter(_editor.filter);
 
     // Draw texts
+    const selectedText = _editorGetSelectedTextItem();
+    const inlineEditingTextId = String(_editorInlineTextEditId || "");
+    let selectedTextBounds = null;
     for (const txt of _editor.texts) {
         if (t >= txt.startTime && t <= txt.endTime) {
             const fs = txt.fontSize * (canvas.height / 720);
@@ -34852,10 +36811,64 @@ function _editorDrawOverlays(t) {
             ctx.shadowOffsetY = 1;
             const x = (txt.x / 100) * canvas.width;
             const y = (txt.y / 100) * canvas.height;
-            ctx.fillText(txt.content, x, y);
+            const isInlineEditing = inlineEditingTextId && String(txt.id) === inlineEditingTextId;
+            if (!isInlineEditing) {
+                ctx.fillText(txt.content, x, y);
+            }
             ctx.shadowColor = "transparent";
+
+            if (_editorIsMobileViewport() && _editor.activeTool === "text" && selectedText && String(selectedText.id) === String(txt.id)) {
+                selectedTextBounds = _editorGetTextCanvasBounds(txt, canvas, ctx);
+            }
         }
     }
+
+    if (selectedTextBounds && _editorIsMobileViewport() && _editor.activeTool === "text") {
+        const scale = canvas.height / 720;
+        ctx.save();
+        ctx.setLineDash([Math.max(4, 6 * scale), Math.max(3, 4 * scale)]);
+        ctx.lineWidth = Math.max(1.6, 2 * scale);
+        ctx.strokeStyle = "rgba(238, 246, 255, 0.92)";
+        ctx.strokeRect(
+            selectedTextBounds.left,
+            selectedTextBounds.top,
+            selectedTextBounds.right - selectedTextBounds.left,
+            selectedTextBounds.bottom - selectedTextBounds.top,
+        );
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255, 92, 112, 0.96)";
+        ctx.beginPath();
+        ctx.arc(selectedTextBounds.handleX, selectedTextBounds.handleY, selectedTextBounds.handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2, 1.6 * scale);
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.82)";
+        ctx.stroke();
+        const trashW = selectedTextBounds.handleRadius * 0.95;
+        const trashH = selectedTextBounds.handleRadius * 1.02;
+        const trashX = selectedTextBounds.handleX - (trashW / 2);
+        const trashY = selectedTextBounds.handleY - (trashH / 2) + 0.5;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.beginPath();
+        ctx.moveTo(trashX + trashW * 0.2, trashY + trashH * 0.22);
+        ctx.lineTo(trashX + trashW * 0.8, trashY + trashH * 0.22);
+        ctx.moveTo(trashX + trashW * 0.35, trashY + trashH * 0.14);
+        ctx.lineTo(trashX + trashW * 0.65, trashY + trashH * 0.14);
+        ctx.moveTo(trashX + trashW * 0.28, trashY + trashH * 0.26);
+        ctx.lineTo(trashX + trashW * 0.34, trashY + trashH * 0.82);
+        ctx.lineTo(trashX + trashW * 0.66, trashY + trashH * 0.82);
+        ctx.lineTo(trashX + trashW * 0.72, trashY + trashH * 0.26);
+        ctx.moveTo(trashX + trashW * 0.44, trashY + trashH * 0.38);
+        ctx.lineTo(trashX + trashW * 0.44, trashY + trashH * 0.68);
+        ctx.moveTo(trashX + trashW * 0.56, trashY + trashH * 0.38);
+        ctx.lineTo(trashX + trashW * 0.56, trashY + trashH * 0.68);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _editorRenderInlineTextEditor(selectedText, selectedTextBounds);
+
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    let selectedSubtitleBounds = null;
 
     // Draw subtitles
     for (const sub of _editor.subtitles) {
@@ -34900,7 +36913,41 @@ function _editorDrawOverlays(t) {
             ctx.shadowOffsetY = 1;
             ctx.fillText(sub.text, sx, sy);
             ctx.shadowColor = "transparent";
+
+            if (_editor.activeTool === "subtitles" && selectedSubtitle && String(selectedSubtitle.id) === String(sub.id)) {
+                selectedSubtitleBounds = _editorGetSubtitleCanvasBounds(sub, canvas, ctx);
+            }
         }
+    }
+
+    if (selectedSubtitleBounds && _editor.activeTool === "subtitles") {
+        const scale = canvas.height / 720;
+        ctx.save();
+        ctx.setLineDash([Math.max(4, 6 * scale), Math.max(3, 4 * scale)]);
+        ctx.lineWidth = Math.max(1.6, 2 * scale);
+        ctx.strokeStyle = "rgba(238, 246, 255, 0.92)";
+        ctx.strokeRect(
+            selectedSubtitleBounds.left,
+            selectedSubtitleBounds.top,
+            selectedSubtitleBounds.right - selectedSubtitleBounds.left,
+            selectedSubtitleBounds.bottom - selectedSubtitleBounds.top,
+        );
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(255, 184, 77, 0.96)";
+        ctx.beginPath();
+        ctx.arc(selectedSubtitleBounds.handleX, selectedSubtitleBounds.handleY, selectedSubtitleBounds.handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.2, 1.6 * scale);
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.82)";
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(4, 14, 24, 0.92)";
+        ctx.beginPath();
+        ctx.moveTo(selectedSubtitleBounds.handleX - selectedSubtitleBounds.handleRadius * 0.34, selectedSubtitleBounds.handleY + selectedSubtitleBounds.handleRadius * 0.18);
+        ctx.lineTo(selectedSubtitleBounds.handleX + selectedSubtitleBounds.handleRadius * 0.18, selectedSubtitleBounds.handleY - selectedSubtitleBounds.handleRadius * 0.34);
+        ctx.lineTo(selectedSubtitleBounds.handleX + selectedSubtitleBounds.handleRadius * 0.18, selectedSubtitleBounds.handleY + selectedSubtitleBounds.handleRadius * 0.18);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
     }
 
     // Draw stickers
@@ -34923,7 +36970,7 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
 
     const video = document.getElementById("editor-video");
     if (!video) return null;
-    const currentTime = Number(video.currentTime || 0);
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
 
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
@@ -34938,25 +36985,9 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
 
     for (let i = activeSubs.length - 1; i >= 0; i -= 1) {
         const sub = activeSubs[i];
-        const scale = canvas.height / 720;
-        const fs = (sub.fontSize || 28) * scale;
-        let fontStr = "";
-        if (sub.italic) fontStr += "italic ";
-        if (sub.bold) fontStr += "bold ";
-        fontStr += fs + "px " + (sub.fontFamily || "Arial, sans-serif");
-        ctx.font = fontStr;
+        const bounds = _editorGetSubtitleCanvasBounds(sub, canvas, ctx);
 
-        const sx = (sub.x / 100) * canvas.width;
-        const sy = (sub.y / 100) * canvas.height;
-        const textW = ctx.measureText(sub.text || "").width;
-        const pad = sub.bgColor ? 8 * scale : 4 * scale;
-
-        const left = sx - textW / 2 - pad;
-        const right = sx + textW / 2 + pad;
-        const top = sy - fs / 2 - pad * 0.7;
-        const bottom = sy + fs / 2 + pad * 0.7;
-
-        if (x >= left && x <= right && y >= top && y <= bottom) {
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
             return sub;
         }
     }
@@ -34964,13 +36995,567 @@ function _editorFindSubtitleAtCanvasPoint(clientX, clientY) {
     return null;
 }
 
+function _editorGetSubtitleCanvasBounds(item, canvas, ctx) {
+    const scale = canvas.height / 720;
+    const fs = Number(item.fontSize || 28) * scale;
+    let fontStr = "";
+    if (item.italic) fontStr += "italic ";
+    if (item.bold) fontStr += "bold ";
+    fontStr += `${fs}px ${item.fontFamily || "Arial, sans-serif"}`;
+    ctx.font = fontStr;
+
+    const content = String(item.text || "");
+    const textW = ctx.measureText(content).width;
+    const pad = item.bgColor ? 8 * scale : 4 * scale;
+    const tx = (Number(item.x || 50) / 100) * canvas.width;
+    const ty = (Number(item.y || 82) / 100) * canvas.height;
+    const handleRadius = Math.max(10, fs * 0.24);
+    const left = tx - textW / 2 - pad;
+    const right = tx + textW / 2 + pad;
+    const top = ty - fs / 2 - pad * 0.7;
+    const bottom = ty + fs / 2 + pad * 0.7;
+    const handleX = Math.min(canvas.width - handleRadius - 4, right + handleRadius * 0.45);
+    const handleY = Math.min(canvas.height - handleRadius - 4, bottom + handleRadius * 0.15);
+
+    return {
+        left,
+        right,
+        top,
+        bottom,
+        handleX,
+        handleY,
+        handleRadius,
+        widthPct: ((right - left) / Math.max(1, canvas.width)) * 100,
+        heightPct: ((bottom - top) / Math.max(1, canvas.height)) * 100,
+    };
+}
+
+function _editorFindTextAtCanvasPoint(clientX, clientY) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.texts.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeTexts = _editor.texts.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeTexts.length) return null;
+
+    for (let i = activeTexts.length - 1; i >= 0; i -= 1) {
+        const item = activeTexts[i];
+        const bounds = _editorGetTextCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return item;
+        }
+    }
+
+    return null;
+}
+
+function _editorGetTextCanvasBounds(item, canvas, ctx) {
+    const scale = canvas.height / 720;
+    const fs = Number(item.fontSize || 36) * scale;
+    let fontStr = "";
+    if (item.italic) fontStr += "italic ";
+    if (item.bold) fontStr += "bold ";
+    fontStr += `${fs}px ${item.fontFamily || "Manrope, sans-serif"}`;
+    ctx.font = fontStr;
+
+    const content = String(item.content || "");
+    const textW = ctx.measureText(content).width;
+    const pad = Math.max(6 * scale, fs * 0.18);
+    const tx = (Number(item.x || 50) / 100) * canvas.width;
+    const ty = (Number(item.y || 50) / 100) * canvas.height;
+    const handleRadius = Math.max(9, fs * 0.24);
+    const left = tx - textW / 2 - pad;
+    const right = tx + textW / 2 + pad;
+    const top = ty - fs / 2 - pad;
+    const bottom = ty + fs / 2 + pad;
+    const handleX = Math.min(canvas.width - handleRadius - 4, right + handleRadius * 0.7);
+    const handleY = ty;
+
+    return {
+        left,
+        right,
+        top,
+        bottom,
+        handleX,
+        handleY,
+        handleRadius,
+        widthPct: ((right - left) / Math.max(1, canvas.width)) * 100,
+        heightPct: ((bottom - top) / Math.max(1, canvas.height)) * 100,
+    };
+}
+
+function _editorShouldShowInlineTextEditor(item = null) {
+    const selectedText = item || _editorGetSelectedTextItem();
+    return Boolean(
+        selectedText
+        && _editorIsMobileViewport()
+        && _editor.activeTool === "text"
+        && String(_editorInlineTextEditId || "") === String(selectedText.id || "")
+    );
+}
+
+function _editorFocusInlineTextEditor(selectAll = false) {
+    const input = document.querySelector("#editor-inline-text-host .editor-inline-text-editor");
+    if (!input) return;
+    try {
+        input.focus({ preventScroll: true });
+    } catch {
+        input.focus();
+    }
+    if (selectAll && typeof input.select === "function") {
+        input.select();
+        return;
+    }
+    if (typeof input.setSelectionRange === "function") {
+        const len = String(input.value || "").length;
+        input.setSelectionRange(len, len);
+    }
+}
+
+function _editorRenderInlineTextEditor(item = null, bounds = null) {
+    const host = document.getElementById("editor-inline-text-host");
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!host || !canvas) return;
+
+    const selectedText = item || _editorGetSelectedTextItem();
+    if (!_editorShouldShowInlineTextEditor(selectedText)) {
+        if (host.innerHTML) {
+            host.innerHTML = "";
+        }
+        host.hidden = true;
+        return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx || !selectedText) {
+        host.innerHTML = "";
+        host.hidden = true;
+        return;
+    }
+
+    const resolvedBounds = bounds || _editorGetTextCanvasBounds(selectedText, canvas, ctx);
+    const scale = canvas.height / 720;
+    const width = Math.max(72, resolvedBounds.right - resolvedBounds.left);
+    const height = Math.max(32, resolvedBounds.bottom - resolvedBounds.top);
+    const left = Math.max(4, Math.min(canvas.width - width - 4, resolvedBounds.left));
+    const top = Math.max(4, Math.min(canvas.height - height - 4, resolvedBounds.top));
+
+    let input = host.querySelector(".editor-inline-text-editor");
+    const currentId = String(selectedText.id || "");
+    if (!input || String(input.dataset.textId || "") !== currentId) {
+        host.innerHTML = '<input class="editor-inline-text-editor" type="text" spellcheck="false" autocomplete="off" autocapitalize="sentences">';
+        input = host.querySelector(".editor-inline-text-editor");
+        input.addEventListener("pointerdown", (event) => {
+            event.stopPropagation();
+        });
+        input.addEventListener("click", (event) => {
+            event.stopPropagation();
+        });
+        input.addEventListener("focus", () => {
+            _editorInlineTextEditId = String(input.dataset.textId || "");
+        });
+        input.addEventListener("blur", () => {
+            if (String(_editorInlineTextEditId || "") !== String(input.dataset.textId || "")) return;
+            if (!String(input.value || "").trim().length) {
+                _editorDeleteText(input._editorTextId);
+                return;
+            }
+            _editorInlineTextEditId = "";
+            _editorInlineTextEditPendingFocus = "";
+            const video = document.getElementById("editor-video");
+            _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+        });
+        input.addEventListener("keydown", (event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") {
+                event.preventDefault();
+                input.blur();
+                return;
+            }
+            if ((event.key === "Backspace" || event.key === "Delete") && !String(input.value || "").length) {
+                event.preventDefault();
+                _editorDeleteText(input._editorTextId);
+                return;
+            }
+            if (event.key === "Escape") {
+                event.preventDefault();
+                _editorInlineTextEditId = "";
+                _editorInlineTextEditPendingFocus = "";
+                input.blur();
+            }
+        });
+        input.addEventListener("input", () => {
+            _editorUpdateTextProp(input._editorTextId, "content", input.value);
+        });
+    }
+
+    input._editorTextId = selectedText.id;
+    input.dataset.textId = currentId;
+    input.placeholder = "Digite aqui";
+    input.style.left = `${left}px`;
+    input.style.top = `${top}px`;
+    input.style.width = `${width}px`;
+    input.style.height = `${height}px`;
+    input.style.lineHeight = `${height}px`;
+    input.style.fontSize = `${Math.max(16, Number(selectedText.fontSize || 36) * scale)}px`;
+    input.style.fontFamily = String(selectedText.fontFamily || "Manrope, sans-serif");
+    input.style.fontWeight = selectedText.bold ? "700" : "500";
+    input.style.fontStyle = selectedText.italic ? "italic" : "normal";
+    input.style.color = String(selectedText.color || "#ffffff");
+    host.hidden = false;
+
+    if (document.activeElement !== input && input.value !== String(selectedText.content || "")) {
+        input.value = String(selectedText.content || "");
+    }
+
+    if (_editorInlineTextEditPendingFocus && _editorInlineTextEditPendingFocus === currentId) {
+        _editorInlineTextEditPendingFocus = "";
+        requestAnimationFrame(() => _editorFocusInlineTextEditor(true));
+    }
+}
+
+function _editorResolveTextOverlayInteraction(clientX, clientY) {
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.texts.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeTexts = _editor.texts.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeTexts.length) return null;
+
+    const selectedText = _editorGetSelectedTextItem();
+    if (selectedText && activeTexts.some((item) => String(item.id) === String(selectedText.id))) {
+        const bounds = _editorGetTextCanvasBounds(selectedText, canvas, ctx);
+        const handleDx = x - bounds.handleX;
+        const handleDy = y - bounds.handleY;
+        if ((handleDx * handleDx) + (handleDy * handleDy) <= (bounds.handleRadius * bounds.handleRadius)) {
+            return { item: selectedText, bounds, mode: "delete" };
+        }
+    }
+
+    for (let i = activeTexts.length - 1; i >= 0; i -= 1) {
+        const item = activeTexts[i];
+        const bounds = _editorGetTextCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return { item, bounds, mode: "move" };
+        }
+    }
+
+    return null;
+}
+
+function _editorResolveSubtitleOverlayInteraction(clientX, clientY) {
+    if (_editor.activeTool !== "subtitles") return null;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas || !_editor.subtitles.length) return null;
+
+    const video = document.getElementById("editor-video");
+    if (!video) return null;
+    const currentTime = Number(_editor.timelineTime || video.currentTime || 0);
+
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const activeSubs = _editor.subtitles.filter((item) => currentTime >= item.startTime && currentTime <= item.endTime);
+    if (!activeSubs.length) return null;
+
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    if (selectedSubtitle && activeSubs.some((item) => String(item.id) === String(selectedSubtitle.id))) {
+        const bounds = _editorGetSubtitleCanvasBounds(selectedSubtitle, canvas, ctx);
+        const handleDx = x - bounds.handleX;
+        const handleDy = y - bounds.handleY;
+        if ((handleDx * handleDx) + (handleDy * handleDy) <= (bounds.handleRadius * bounds.handleRadius)) {
+            return { item: selectedSubtitle, bounds, mode: "resize" };
+        }
+    }
+
+    for (let i = activeSubs.length - 1; i >= 0; i -= 1) {
+        const item = activeSubs[i];
+        const bounds = _editorGetSubtitleCanvasBounds(item, canvas, ctx);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom) {
+            return { item, bounds, mode: "move" };
+        }
+    }
+
+    return null;
+}
+
+function _editorStartSubtitleOverlayDrag(event) {
+    const interaction = _editorResolveSubtitleOverlayInteraction(event.clientX, event.clientY);
+    if (!interaction?.item) return false;
+
+    if (!_editorIsMobileViewport() && String(_editor.selectedClip.id || "") !== String(interaction.item.id)) {
+        return false;
+    }
+
+    _editorSelectSubtitle(interaction.item.id, false);
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return false;
+
+    _editorSubtitleOverlayDrag = {
+        id: String(interaction.item.id),
+        mode: interaction.mode,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: Number(interaction.item.x || 50),
+        startY: Number(interaction.item.y || 82),
+        startFontSize: Number(interaction.item.fontSize || 28),
+        widthPct: Number(interaction.bounds.widthPct || 0),
+        heightPct: Number(interaction.bounds.heightPct || 0),
+        pointerId: event.pointerId,
+        pointerTarget: canvas,
+        saved: false,
+        moved: false,
+    };
+
+    _editorCapturePointer(canvas, event.pointerId);
+    document.addEventListener("pointermove", _editorOnSubtitleOverlayDragMove);
+    document.addEventListener("pointerup", _editorOnSubtitleOverlayDragEnd);
+    document.addEventListener("pointercancel", _editorOnSubtitleOverlayDragEnd);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function _editorOnSubtitleOverlayDragMove(event) {
+    if (!_editorSubtitleOverlayDrag) return;
+    if (_editorSubtitleOverlayDrag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== _editorSubtitleOverlayDrag.pointerId) return;
+
+    const drag = _editorSubtitleOverlayDrag;
+    const item = _editor.subtitles.find((entry) => String(entry.id) === String(drag.id));
+    if (!item) return;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return;
+
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        drag.moved = true;
+    }
+    if (drag.moved && !drag.saved) {
+        _editorSaveState();
+        drag.saved = true;
+    }
+
+    if (drag.mode === "resize") {
+        const delta = (dx / Math.max(1, canvas.width)) * 180;
+        item.fontSize = Math.max(14, Math.min(120, Math.round(drag.startFontSize + delta)));
+    } else {
+        const halfWidthPct = drag.widthPct / 2;
+        const halfHeightPct = drag.heightPct / 2;
+        item.x = Math.max(halfWidthPct + 2, Math.min(98 - halfWidthPct, drag.startX + ((dx / Math.max(1, canvas.width)) * 100)));
+        item.y = Math.max(halfHeightPct + 2, Math.min(98 - halfHeightPct, drag.startY + ((dy / Math.max(1, canvas.height)) * 100)));
+    }
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    if (event.cancelable) {
+        event.preventDefault();
+    }
+}
+
+function _editorOnSubtitleOverlayDragEnd() {
+    document.removeEventListener("pointermove", _editorOnSubtitleOverlayDragMove);
+    document.removeEventListener("pointerup", _editorOnSubtitleOverlayDragEnd);
+    document.removeEventListener("pointercancel", _editorOnSubtitleOverlayDragEnd);
+    if (!_editorSubtitleOverlayDrag) return;
+
+    _editorReleasePointerCapture(_editorSubtitleOverlayDrag.pointerTarget, _editorSubtitleOverlayDrag.pointerId);
+    const moved = Boolean(_editorSubtitleOverlayDrag.moved);
+    _editorSubtitleOverlayDrag = null;
+    if (!moved) return;
+
+    _editorSubtitleOverlayIgnoreClick = true;
+    _editorRenderProps();
+    _editorRenderTimeline();
+    _editorScheduleDraftPersist(120);
+}
+
+function _editorStartTextOverlayDrag(event) {
+    if (!_editorIsMobileViewport()) return false;
+    const interaction = _editorResolveTextOverlayInteraction(event.clientX, event.clientY);
+    if (!interaction?.item) return false;
+
+    if (interaction.mode === "delete") {
+        _editorTextOverlayIgnoreClick = true;
+        _editorDeleteText(interaction.item.id);
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+    }
+
+    _editorInlineTextEditId = "";
+    _editorInlineTextEditPendingFocus = "";
+    _editorSelectText(interaction.item.id);
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return false;
+
+    _editorTextOverlayDrag = {
+        id: String(interaction.item.id),
+        mode: interaction.mode,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: Number(interaction.item.x || 50),
+        startY: Number(interaction.item.y || 50),
+        startFontSize: Number(interaction.item.fontSize || 36),
+        widthPct: Number(interaction.bounds.widthPct || 0),
+        heightPct: Number(interaction.bounds.heightPct || 0),
+        pointerId: event.pointerId,
+        pointerTarget: canvas,
+        saved: false,
+        moved: false,
+    };
+
+    _editorCapturePointer(canvas, event.pointerId);
+    document.addEventListener("pointermove", _editorOnTextOverlayDragMove);
+    document.addEventListener("pointerup", _editorOnTextOverlayDragEnd);
+    document.addEventListener("pointercancel", _editorOnTextOverlayDragEnd);
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+}
+
+function _editorOnTextOverlayDragMove(event) {
+    if (!_editorTextOverlayDrag) return;
+    if (_editorTextOverlayDrag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== _editorTextOverlayDrag.pointerId) return;
+
+    const drag = _editorTextOverlayDrag;
+    const item = _editor.texts.find((entry) => String(entry.id) === String(drag.id));
+    if (!item) return;
+
+    const canvas = document.getElementById("editor-overlay-canvas");
+    if (!canvas) return;
+
+    const dx = event.clientX - drag.startClientX;
+    const dy = event.clientY - drag.startClientY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        drag.moved = true;
+    }
+    if (drag.moved && !drag.saved) {
+        _editorSaveState();
+        drag.saved = true;
+    }
+
+    if (drag.mode === "resize") {
+        const delta = (dx / Math.max(1, canvas.width)) * 180;
+        item.fontSize = Math.max(14, Math.min(120, Math.round(drag.startFontSize + delta)));
+    } else {
+        const halfWidthPct = drag.widthPct / 2;
+        const halfHeightPct = drag.heightPct / 2;
+        item.x = Math.max(halfWidthPct + 2, Math.min(98 - halfWidthPct, drag.startX + ((dx / Math.max(1, canvas.width)) * 100)));
+        item.y = Math.max(halfHeightPct + 2, Math.min(98 - halfHeightPct, drag.startY + ((dy / Math.max(1, canvas.height)) * 100)));
+    }
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
+    if (event.cancelable) {
+        event.preventDefault();
+    }
+}
+
+function _editorOnTextOverlayDragEnd() {
+    document.removeEventListener("pointermove", _editorOnTextOverlayDragMove);
+    document.removeEventListener("pointerup", _editorOnTextOverlayDragEnd);
+    document.removeEventListener("pointercancel", _editorOnTextOverlayDragEnd);
+    if (!_editorTextOverlayDrag) return;
+
+    _editorReleasePointerCapture(_editorTextOverlayDrag.pointerTarget, _editorTextOverlayDrag.pointerId);
+    const moved = Boolean(_editorTextOverlayDrag.moved);
+    _editorTextOverlayDrag = null;
+    if (!moved) return;
+
+    _editorTextOverlayIgnoreClick = true;
+    _editorRenderMobileStagePanel();
+    _editorRenderProps();
+    _editorScheduleDraftPersist(120);
+}
+
 function _editorHandleOverlayClick(event) {
+    if (_editorTextOverlayIgnoreClick || _editorSubtitleOverlayIgnoreClick) {
+        _editorTextOverlayIgnoreClick = false;
+        _editorSubtitleOverlayIgnoreClick = false;
+        return;
+    }
+
+    const hitText = _editorFindTextAtCanvasPoint(event.clientX, event.clientY);
+    if (hitText) {
+        event.preventDefault();
+        event.stopPropagation();
+        const alreadySelected = String(_editor.selectedClip.id || "") === String(hitText.id);
+        _editorSelectText(hitText.id);
+        if (_editorIsMobileViewport() && alreadySelected) {
+            _editorInlineTextEditId = String(hitText.id);
+            _editorInlineTextEditPendingFocus = String(hitText.id);
+            const video = document.getElementById("editor-video");
+            _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+        }
+        return;
+    }
+
+    if (_editorInlineTextEditId) {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+        const video = document.getElementById("editor-video");
+        _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    }
+
     const hitSubtitle = _editorFindSubtitleAtCanvasPoint(event.clientX, event.clientY);
     if (!hitSubtitle) return;
 
     event.preventDefault();
     event.stopPropagation();
-    _editorSelectSubtitle(hitSubtitle.id, true);
+    const alreadySelected = String(_editor.selectedClip.id || "") === String(hitSubtitle.id);
+    if (_editor.activeTool !== "subtitles") {
+        _editorSelectSubtitle(hitSubtitle.id, true);
+        return;
+    }
+
+    _editorSelectSubtitle(hitSubtitle.id, false);
+
+    if (_editorIsMobileViewport()) {
+        if (!_editor.mobileSubtitleModalOpen) {
+            _editor.mobileSubtitleModalOpen = true;
+            _editorRenderMobileSubtitleSheet();
+            return;
+        }
+        if (alreadySelected) {
+            _editorOpenSubtitleTextModal(hitSubtitle.id);
+        }
+        return;
+    }
+
+    if (alreadySelected) {
+        _editorOpenSubtitleTextModal(hitSubtitle.id);
+    }
 }
 
 function _getCSSFilter(name) {
@@ -35315,6 +37900,18 @@ window._editorApplyTransitionTypeToAllVideoSlots = _editorApplyTransitionTypeToA
 
 // ---------- Tool selection ----------
 function _editorSelectTool(toolName) {
+    if (toolName !== "text") {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+    }
+    if (toolName !== "trim") {
+        _editorMobileTrackVolumeOpen = "";
+    }
+    if (toolName === "subtitles" && _editorIsMobileViewport()) {
+        _editor.mobileSubtitleModalOpen = true;
+    } else if (toolName !== "subtitles") {
+        _editor.mobileSubtitleModalOpen = false;
+    }
     _editor.activeTool = toolName;
     document.querySelectorAll(".editor-tool-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.tool === toolName);
@@ -35340,14 +37937,18 @@ function _editorSelectTool(toolName) {
     }
 
     _editorRenderProps();
-    // On mobile, toggle props panel
     const pp = document.getElementById("editor-props-panel");
-    if (pp && window.innerWidth <= 768) {
-        pp.classList.toggle("open", true);
-        pp.style.display = "block";
+    if (pp && _editorIsMobileViewport()) {
+        pp.classList.remove("open");
+        pp.style.removeProperty("display");
     } else if (pp) {
         pp.style.removeProperty("display");
     }
+
+    _editorApplyMobileControlMode();
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
 }
 
 function _editorGetApprovedSmartCuts() {
@@ -35460,6 +38061,159 @@ window._editorSeekToSmartCut = _editorSeekToSmartCut;
 window._editorToggleSmartCut = _editorToggleSmartCut;
 window._editorClearSmartCuts = _editorClearSmartCuts;
 
+function _editorBuildSubtitlesPanelMarkup() {
+    const isGenerating = _editor._subtitleGenerating;
+    const hasSubs = _editor.subtitles.length > 0;
+    const bulkApplyMarkup = hasSubs ? _editorBuildSubtitleBulkApplyMarkup() : "";
+
+    return `
+        <div class="editor-sub-toolbar editor-sub-actions-row">
+            <button
+                class="editor-sub-icon-btn editor-sub-action-btn editor-sub-action-btn-labeled"
+                type="button"
+                onclick="_editorAutoSubtitles()"
+                ${isGenerating ? "disabled" : ""}
+                title="Gerar legendas automáticas"
+                aria-label="Gerar legendas automáticas"
+            >
+                ${isGenerating
+                    ? '<div class="spinner-small" style="width:14px;height:14px"></div>'
+                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>'}
+                <span class="editor-sub-action-btn-label">Criar automático</span>
+            </button>
+            <button
+                class="editor-sub-icon-btn editor-sub-action-btn editor-sub-action-btn-labeled"
+                type="button"
+                onclick="_editorAddSubtitle()"
+                title="Adicionar legenda manual"
+                aria-label="Adicionar legenda manual"
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14"/>
+                    <path d="M5 12h14"/>
+                </svg>
+                <span class="editor-sub-action-btn-label">Criar manual</span>
+            </button>
+            ${hasSubs ? `
+                <button
+                    class="editor-sub-icon-btn editor-sub-action-btn${_editor.subtitleListOpen ? " active" : ""}"
+                    type="button"
+                    onclick="_editorToggleSubtitleList()"
+                    title="Editar trechos"
+                    aria-label="Editar trechos"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"/>
+                        <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                    </svg>
+                </button>
+                <button
+                    class="editor-sub-icon-btn editor-sub-action-btn editor-sub-icon-btn-danger"
+                    type="button"
+                    onclick="_editorClearSubtitles()"
+                    title="Limpar todas"
+                    aria-label="Limpar todas"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                        <path d="M10 11v6"/>
+                        <path d="M14 11v6"/>
+                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                    </svg>
+                </button>
+            ` : ""}
+        </div>
+        ${hasSubs && _editor.subtitleListOpen ? `
+            <div class="editor-props-group" style="margin-top:8px;max-height:200px;overflow-y:auto">
+                ${_editor.subtitles.map(s => `
+                    <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
+                        <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
+                        <span class="sub-text">${esc(s.text)}</span>
+                        <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
+                    </div>
+                `).join("")}
+            </div>
+        ` : ""}
+        ${hasSubs ? `
+            <div class="editor-props-title" style="margin-top:12px">Estilos</div>
+            <div class="editor-subtitle-styles-grid">
+                ${SUBTITLE_STYLES.map(st => `
+                    <div class="editor-sub-style-card${(_editor.subtitles.find(s => s._selected) || {}).styleName === st.name ? ' active' : ''}" onclick="_editorApplySubStyle('${st.name}')">
+                        <div class="editor-sub-style-preview" style="font-family:${st.fontFamily};color:${st.fontColor};font-size:11px;font-weight:${st.bold ? 'bold' : 'normal'};font-style:${st.italic ? 'italic' : 'normal'};${st.bgColor ? 'background:' + st.bgColor + ';padding:2px 4px;border-radius:3px;' : ''}${st.outlineColor ? 'text-shadow:-1px -1px 0 ' + st.outlineColor + ',1px -1px 0 ' + st.outlineColor + ',-1px 1px 0 ' + st.outlineColor + ',1px 1px 0 ' + st.outlineColor + ';' : ''}">Abc</div>
+                        <span>${st.label}</span>
+                    </div>
+                `).join("")}
+            </div>
+        ` : ""}
+        ${bulkApplyMarkup}
+        ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
+    `;
+}
+
+function _editorBuildSubtitleBulkApplyMarkup() {
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    const otherCount = Math.max(0, _editor.subtitles.length - 1);
+    if (!selectedSubtitle || otherCount < 1) return "";
+
+    return `
+        <div class="editor-sub-bulk-actions">
+            <div class="editor-sub-bulk-copy">
+                <strong>Aplicar para todas</strong>
+                <span>Replicar a posição ou o tamanho desta legenda nas outras ${otherCount}.</span>
+            </div>
+            <div class="editor-sub-bulk-buttons">
+                <button class="editor-sub-bulk-btn" type="button" onclick="_editorApplySelectedSubtitleToAll('position')">Aplicar posição</button>
+                <button class="editor-sub-bulk-btn" type="button" onclick="_editorApplySelectedSubtitleToAll('size')">Aplicar tamanho</button>
+            </div>
+        </div>
+    `;
+}
+
+function _editorRenderMobileSubtitleSheet() {
+    const sheet = document.getElementById("editor-mobile-subtitles-sheet");
+    if (!sheet) return;
+
+    const shouldOpen = _editorIsMobileViewport()
+        && _editor.activeTool === "subtitles"
+        && _editor.mobileSubtitleModalOpen;
+
+    if (!shouldOpen) {
+        sheet.hidden = true;
+        sheet.classList.remove("open");
+        sheet.innerHTML = "";
+        return;
+    }
+
+    sheet.hidden = false;
+    sheet.classList.add("open");
+    sheet.innerHTML = `
+        <div class="editor-mobile-subtitles-sheet-header">
+            <div class="editor-mobile-subtitles-sheet-title">Legendas</div>
+            <button
+                class="editor-mobile-subtitles-sheet-close"
+                type="button"
+                onclick="_editorCloseMobileSubtitleSheet()"
+                aria-label="Fechar painel de legendas"
+            >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18"/>
+                    <path d="m6 6 12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="editor-mobile-subtitles-sheet-body">
+            ${_editorBuildSubtitlesPanelMarkup()}
+        </div>
+    `;
+}
+
+function _editorCloseMobileSubtitleSheet() {
+    _editor.mobileSubtitleModalOpen = false;
+    _editorRenderMobileSubtitleSheet();
+}
+window._editorCloseMobileSubtitleSheet = _editorCloseMobileSubtitleSheet;
+
 // ---------- Render properties panel based on tool ----------
 function _editorRenderProps() {
     const container = document.getElementById("editor-props-content");
@@ -35469,7 +38223,28 @@ function _editorRenderProps() {
     if (tool === "text") {
         container.innerHTML = `
             <div class="editor-props-title">Textos</div>
-            <button class="editor-add-btn" onclick="_editorAddText()">+ Adicionar texto</button>
+            <button class="editor-add-btn" onclick="_editorAddText()">+ Criar texto manual</button>
+            <div class="editor-props-title" style="margin-top:12px">Modelos prontos</div>
+            <p class="editor-text-presets-intro">Toque em um modelo para inserir no video e depois editar o texto como quiser.</p>
+            <div class="editor-text-presets-grid">
+                ${EDITOR_TEXT_PRESETS.map((preset) => {
+                    const previewStyle = [
+                        `font-family:${preset.fontFamily}`,
+                        `color:${preset.color}`,
+                        `font-size:${Math.max(16, Math.min(22, Math.round(Number(preset.fontSize || 28) * 0.55)))}px`,
+                        `font-weight:${preset.bold ? "700" : "500"}`,
+                        `font-style:${preset.italic ? "italic" : "normal"}`,
+                    ].join(";");
+                    return `
+                        <button class="editor-text-preset-card" type="button" onclick="_editorAddTextPreset('${preset.key}')">
+                            <span class="editor-text-preset-badge">${esc(preset.label)}</span>
+                            <span class="editor-text-preset-preview" style="${previewStyle}">${esc(preset.preview)}</span>
+                            <span class="editor-text-preset-meta">Adicionar e editar</span>
+                        </button>
+                    `;
+                }).join("")}
+            </div>
+            <div class="editor-props-title" style="margin-top:12px">Textos adicionados</div>
             <div id="editor-text-list" class="editor-props-group">
                 ${_editor.texts.map(t => `
                     <div class="editor-subtitle-item${t._selected ? ' active' : ''}" onclick="_editorSelectText(${t.id})">
@@ -35546,81 +38321,9 @@ function _editorRenderProps() {
             ${cuts.length ? '<button class="editor-add-btn editor-smartcuts-clear" onclick="_editorClearSmartCuts()">Limpar cortes</button>' : ""}
         `;
     } else if (tool === "subtitles") {
-        const isGenerating = _editor._subtitleGenerating;
-        const hasSubs = _editor.subtitles.length > 0;
-        const selectedSub = _editor.subtitles.find(s => s._selected) || _editor.subtitles[0] || null;
-        const subtitleY = Math.round(selectedSub?.y ?? 82);
-        const subtitleSize = Math.round(selectedSub?.fontSize ?? 28);
         container.innerHTML = `
             <div class="editor-props-title">Legendas</div>
-            <button class="editor-add-btn" onclick="_editorAutoSubtitles()" ${isGenerating ? "disabled" : ""}>
-                ${isGenerating
-                    ? '<div class="spinner-small" style="width:14px;height:14px"></div> Gerando legendas...'
-                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg> Gerar legendas automaticas'}
-            </button>
-            <button class="editor-add-btn" onclick="_editorAddSubtitle()" style="margin-top:4px">+ Adicionar legenda manual</button>
-            ${hasSubs ? `
-                <button class="editor-add-btn" onclick="_editorClearSubtitles()" style="margin-top:4px;border-color:rgba(239,68,68,0.3);color:#ef4444">Limpar todas</button>
-            ` : ""}
-            ${hasSubs ? `
-                <div class="editor-sub-toolbar" style="margin-top:8px">
-                    <span class="editor-sub-count">${_editor.subtitles.length} trecho(s) gerado(s)</span>
-                    <button
-                        class="editor-sub-icon-btn${_editor.subtitleListOpen ? " active" : ""}"
-                        onclick="_editorToggleSubtitleList()"
-                        title="Editar trechos"
-                        aria-label="Editar trechos"
-                    >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 20h9"/>
-                            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="editor-sub-quick-card">
-                    <div class="editor-sub-quick-row">
-                        <span class="editor-sub-quick-label">Posicao</span>
-                        <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(-2)" aria-label="Subir legenda">↑</button>
-                            <input type="range" min="5" max="95" value="${subtitleY}" oninput="_editorSetSubtitlesY(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesY(2)" aria-label="Descer legenda">↓</button>
-                        </div>
-                        <span class="editor-sub-quick-value" id="editor-sub-global-y-value">${subtitleY}%</span>
-                    </div>
-                    <div class="editor-sub-quick-row">
-                        <span class="editor-sub-quick-label">Tamanho</span>
-                        <div class="editor-sub-stepper">
-                            <button type="button" onclick="_editorNudgeSubtitlesSize(-2)" aria-label="Reduzir legenda">-</button>
-                            <input type="range" min="14" max="72" value="${subtitleSize}" oninput="_editorSetSubtitlesFontSize(this.value, true)">
-                            <button type="button" onclick="_editorNudgeSubtitlesSize(2)" aria-label="Aumentar legenda">+</button>
-                        </div>
-                        <span class="editor-sub-quick-value" id="editor-sub-global-size-value">${subtitleSize}px</span>
-                    </div>
-                </div>
-            ` : ""}
-            ${hasSubs && _editor.subtitleListOpen ? `
-                <div class="editor-props-group" id="editor-subtitle-list" style="margin-top:8px;max-height:200px;overflow-y:auto">
-                    ${_editor.subtitles.map(s => `
-                        <div class="editor-subtitle-item${s._selected ? ' active' : ''}" onclick="_editorSelectSubtitle(${s.id})">
-                            <span class="sub-time">${_fmtTime(s.startTime)}-${_fmtTime(s.endTime)}</span>
-                            <span class="sub-text">${esc(s.text)}</span>
-                            <button class="sub-delete" onclick="event.stopPropagation();_editorDeleteSubtitle(${s.id})">✕</button>
-                        </div>
-                    `).join("")}
-                </div>
-            ` : ""}
-            ${hasSubs ? `
-                <div class="editor-props-title" style="margin-top:12px">Estilos</div>
-                <div class="editor-subtitle-styles-grid" id="editor-sub-styles-grid">
-                    ${SUBTITLE_STYLES.map(st => `
-                        <div class="editor-sub-style-card${(_editor.subtitles.find(s=>s._selected)||{}).styleName === st.name ? ' active' : ''}" onclick="_editorApplySubStyle('${st.name}')">
-                            <div class="editor-sub-style-preview" style="font-family:${st.fontFamily};color:${st.fontColor};font-size:11px;font-weight:${st.bold?'bold':'normal'};font-style:${st.italic?'italic':'normal'};${st.bgColor?'background:'+st.bgColor+';padding:2px 4px;border-radius:3px;':''}${st.outlineColor?'text-shadow:-1px -1px 0 '+st.outlineColor+',1px -1px 0 '+st.outlineColor+',-1px 1px 0 '+st.outlineColor+',1px 1px 0 '+st.outlineColor+';':''}">Abc</div>
-                            <span>${st.label}</span>
-                        </div>
-                    `).join("")}
-                </div>
-            ` : ""}
-            ${_editor.subtitleListOpen ? _editorSubtitleEditForm() : ""}
+            ${_editorBuildSubtitlesPanelMarkup()}
         `;
     } else if (tool === "trim") {
         const hasExternalAudio = _editorShouldShowAudioTrack();
@@ -35923,6 +38626,9 @@ function _editorRenderProps() {
             </div>
         `;
     }
+
+    _editorRenderMobileStagePanel();
+    _editorRenderMobileSubtitleSheet();
 }
 
 // Text edit form
@@ -36035,28 +38741,127 @@ function _editorSubtitleEditForm() {
 }
 
 // ---------- Text actions ----------
+function _editorBuildTrackLabelMarkup(row) {
+    const trackId = String(row.track || "").trim();
+    const usesAudioMasterVolume = trackId === "audio" || /^layer-audio-\d+$/i.test(trackId);
+    const controlTrack = usesAudioMasterVolume ? "audio" : trackId;
+    const iconHtml = `<span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>`;
+    const showMobileVolume = _editorIsMobileViewport() && (trackId === "video" || usesAudioMasterVolume);
+    if (!showMobileVolume) {
+        return iconHtml;
+    }
+
+    const volumePct = Math.max(0, Math.min(100, Math.round(_editorGetTrackMasterVolumePercent(controlTrack))));
+    const volumeTitle = `Volume da faixa ${String(row.label || trackId || "").toLowerCase()}`;
+    const mutedClass = volumePct <= 0 ? " muted" : "";
+    const openClass = _editorMobileTrackVolumeOpen === trackId ? " open" : "";
+
+    return `
+        <span class="editor-track-label-controls" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+            ${iconHtml}
+            <span class="editor-track-label-volume-wrap${openClass}${mutedClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+            <button
+                class="editor-track-label-volume${mutedClass}"
+                type="button"
+                title="${esc(volumeTitle)}"
+                aria-label="${esc(volumeTitle)}"
+                aria-expanded="${_editorMobileTrackVolumeOpen === trackId ? "true" : "false"}"
+                onclick="event.stopPropagation();_editorToggleMobileTrackVolume('${trackId}')"
+            >
+                ${_editorTimelineVolumeIcon(controlTrack)}
+            </button>
+            <span class="editor-track-label-volume-popover${openClass}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation()">
+                <input
+                    class="editor-track-label-slider${mutedClass}"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value="${volumePct}"
+                    title="${esc(volumeTitle)}"
+                    aria-label="${esc(volumeTitle)}"
+                    onpointerdown="event.stopPropagation()"
+                    onclick="event.stopPropagation()"
+                    oninput="_editorSetTrackVolumeFromTrim('${controlTrack}', this.value); this.closest('.editor-track-label-volume-wrap')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0); this.closest('.editor-track-label-volume-wrap')?.querySelector('.editor-track-label-volume')?.classList.toggle('muted', (parseInt(this.value, 10) || 0) <= 0);"
+                >
+            </span>
+            </span>
+        </span>
+    `;
+}
+
+function _editorBuildTrackInlineVolumeMarkup(row) {
+    return "";
+}
+
+function _editorToggleMobileTrackVolume(track) {
+    const nextTrack = String(track || "");
+    _editorMobileTrackVolumeOpen = _editorMobileTrackVolumeOpen === nextTrack ? "" : nextTrack;
+    _editorRenderTimeline();
+}
+window._editorToggleMobileTrackVolume = _editorToggleMobileTrackVolume;
+
 function _editorAddText() {
+    let options = null;
+    if (arguments.length && arguments[0] && typeof arguments[0] === "object") {
+        options = arguments[0];
+    }
     _editorSaveState();
     const video = document.getElementById("editor-video");
     const t = Number(_editor.timelineTime || video?.currentTime || 0);
+    const duration = Math.max(1, Number(options?.duration || 5));
+    const maxEnd = Math.max(t + 0.1, Number(_editor.duration || (t + duration)));
+    const shouldStartInlineEdit = options?.inlineEdit !== undefined ? Boolean(options.inlineEdit) : !options;
     _editor.texts.forEach(x => x._selected = false);
     const newText = {
-        id: _editorGenId(), content: "Seu texto aqui", startTime: t, endTime: Math.min(t + 5, _editor.duration),
-        x: 50, y: 50, fontSize: 36, color: "#ffffff", fontFamily: "Manrope, sans-serif", bold: true, italic: false, _selected: true,
+        id: _editorGenId(),
+        content: String(options?.content || "Digite aqui"),
+        startTime: t,
+        endTime: Math.min(t + duration, maxEnd),
+        x: Math.max(0, Math.min(100, Number(options?.x ?? 50))),
+        y: Math.max(0, Math.min(100, Number(options?.y ?? 50))),
+        fontSize: Math.max(12, Math.min(120, Number(options?.fontSize || 36))),
+        color: String(options?.color || "#ffffff"),
+        fontFamily: String(options?.fontFamily || "Manrope, sans-serif"),
+        bold: options?.bold !== undefined ? Boolean(options.bold) : true,
+        italic: Boolean(options?.italic),
+        _selected: true,
     };
     _editor.texts.push(newText);
     _editor.selectedClip = { kind: "text", id: String(newText.id) };
+    _editorInlineTextEditId = shouldStartInlineEdit ? String(newText.id) : "";
+    _editorInlineTextEditPendingFocus = shouldStartInlineEdit ? String(newText.id) : "";
     _editorRefreshQuickActions();
-    _editorRenderProps();
+    if (_editor.activeTool !== "text") {
+        _editorSelectTool("text");
+    } else {
+        _editorRenderProps();
+    }
     _editorRenderTimeline();
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorAddText = _editorAddText;
+
+function _editorAddTextPreset(presetKey) {
+    const preset = _editorGetTextPreset(presetKey);
+    if (!preset) return;
+    _editorAddText(preset);
+}
+window._editorAddTextPreset = _editorAddTextPreset;
 
 function _editorSelectText(id) {
     _editor.texts.forEach(t => t._selected = (t.id === id));
     _editor.selectedClip = { kind: "text", id: String(id) };
     _editorRefreshQuickActions();
-    _editorRenderProps();
+    if (_editor.activeTool !== "text") {
+        _editorSelectTool("text");
+    } else {
+        _editorRenderProps();
+    }
+    _editorRenderTimeline();
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorSelectText = _editorSelectText;
 
@@ -36066,9 +38871,16 @@ function _editorDeleteText(id) {
     if (_editor.selectedClip.kind === "text" && _editor.selectedClip.id === String(id)) {
         _editor.selectedClip = { kind: "", id: "" };
     }
+    if (String(_editorInlineTextEditId || "") === String(id)) {
+        _editorInlineTextEditId = "";
+        _editorInlineTextEditPendingFocus = "";
+    }
     _editorRefreshQuickActions();
     _editorRenderProps();
     _editorRenderTimeline();
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderMobileStagePanel();
 }
 window._editorDeleteText = _editorDeleteText;
 
@@ -36082,6 +38894,62 @@ function _editorUpdateTextProp(id, prop, val) {
     _editorRenderTimeline();
 }
 window._editorUpdateTextProp = _editorUpdateTextProp;
+
+function _editorToggleTextFlag(id, prop) {
+    const target = _editor.texts.find((item) => item.id === id);
+    if (!target) return;
+    target[prop] = !Boolean(target[prop]);
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderTimeline();
+    _editorRenderMobileStagePanel();
+}
+window._editorToggleTextFlag = _editorToggleTextFlag;
+
+function _editorGetSelectedTextItem() {
+    return _editor.texts.find((item) => item._selected)
+        || _editor.texts.find((item) => String(item.id) === String(_editor.selectedClip.id || ""))
+        || null;
+}
+
+function _editorGetSelectedSubtitleItem() {
+    return _editor.subtitles.find((item) => item._selected)
+        || _editor.subtitles.find((item) => String(item.id) === String(_editor.selectedClip.id || ""))
+        || null;
+}
+
+function _editorShouldShowMobileTextStageEditor() {
+    return _editorIsMobileViewport() && _editor.activeTool === "text";
+}
+
+function _editorRenderMobileStagePanel() {
+    const panel = document.getElementById("editor-mobile-stage-panel");
+    const workspace = document.getElementById("editor-workspace");
+    if (!panel || !workspace) return;
+
+    const showPanel = _editorShouldShowMobileTextStageEditor();
+    const selectedText = showPanel ? _editorGetSelectedTextItem() : null;
+    const shouldShowAddPanel = showPanel && !selectedText;
+
+    workspace.classList.toggle("editor-mobile-stage-text-open", shouldShowAddPanel);
+    panel.hidden = !shouldShowAddPanel;
+
+    if (!showPanel || selectedText) {
+        panel.innerHTML = "";
+        return;
+    }
+
+    if (!selectedText) {
+        panel.innerHTML = `
+            <div class="editor-mobile-stage-card editor-mobile-stage-card-compact">
+                <button class="editor-add-btn editor-mobile-stage-add-btn" type="button" onclick="_editorAddText()">+ Adicionar texto</button>
+            </div>
+        `;
+        return;
+    }
+
+}
 
 function _editorOpenSubtitleTextModal(subtitleId) {
     const normalizedId = String(subtitleId || "");
@@ -36296,6 +39164,7 @@ function _editorSelectSubtitle(id, openEditor = false) {
     _editor.selectedClip = { kind: "subtitle", id: String(id), track: "text" };
     if (openEditor) {
         _editor.subtitleListOpen = true;
+        _editor.mobileSubtitleModalOpen = true;
     }
 
     if (openEditor && _editor.activeTool !== "subtitles") {
@@ -36309,7 +39178,8 @@ function _editorSelectSubtitle(id, openEditor = false) {
 
     if (openEditor) {
         requestAnimationFrame(() => {
-            const textarea = document.querySelector("#editor-props-content textarea");
+            const textarea = document.querySelector("#editor-mobile-subtitles-sheet textarea")
+                || document.querySelector("#editor-props-content textarea");
             if (textarea) {
                 textarea.focus();
                 textarea.select();
@@ -36341,12 +39211,47 @@ function _editorUpdateSubProp(id, prop, val) {
 }
 window._editorUpdateSubProp = _editorUpdateSubProp;
 
+function _editorApplySelectedSubtitleToAll(scope = "position") {
+    const selectedSubtitle = _editorGetSelectedSubtitleItem();
+    const otherCount = Math.max(0, _editor.subtitles.length - 1);
+    if (!selectedSubtitle || otherCount < 1) return;
+
+    const shouldApplyPosition = scope === "position" || scope === "layout";
+    const shouldApplySize = scope === "size" || scope === "layout";
+    if (!shouldApplyPosition && !shouldApplySize) return;
+
+    _editorSaveState();
+    _editor.subtitles.forEach((subtitle) => {
+        if (String(subtitle.id) === String(selectedSubtitle.id)) return;
+        if (shouldApplyPosition) {
+            subtitle.x = Number(selectedSubtitle.x || 50);
+            subtitle.y = Number(selectedSubtitle.y || 82);
+        }
+        if (shouldApplySize) {
+            subtitle.fontSize = Number(selectedSubtitle.fontSize || 28);
+        }
+    });
+
+    const video = document.getElementById("editor-video");
+    _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
+    _editorRenderTimeline();
+    _editorRenderProps();
+    _editorScheduleDraftPersist(120);
+
+    const appliedParts = [];
+    if (shouldApplyPosition) appliedParts.push("posição");
+    if (shouldApplySize) appliedParts.push("tamanho");
+    showToast(`${appliedParts.join(" e ")} aplicada às outras ${otherCount} legenda(s).`, "success");
+}
+window._editorApplySelectedSubtitleToAll = _editorApplySelectedSubtitleToAll;
+
 function _editorSetSubtitlesY(val, noRender = false) {
     if (!_editor.subtitles.length) return;
     const targetY = Math.max(5, Math.min(95, parseInt(val, 10) || 82));
     _editor.subtitles.forEach(s => { s.y = targetY; });
-    const yLabel = document.getElementById("editor-sub-global-y-value");
-    if (yLabel) yLabel.textContent = `${targetY}%`;
+    document.querySelectorAll("[data-editor-sub-y-value]").forEach((label) => {
+        label.textContent = `${targetY}%`;
+    });
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
@@ -36365,8 +39270,9 @@ function _editorSetSubtitlesFontSize(val, noRender = false) {
     if (!_editor.subtitles.length) return;
     const targetSize = Math.max(14, Math.min(72, parseInt(val, 10) || 28));
     _editor.subtitles.forEach(s => { s.fontSize = targetSize; });
-    const sizeLabel = document.getElementById("editor-sub-global-size-value");
-    if (sizeLabel) sizeLabel.textContent = `${targetSize}px`;
+    document.querySelectorAll("[data-editor-sub-size-value]").forEach((label) => {
+        label.textContent = `${targetSize}px`;
+    });
     const video = document.getElementById("editor-video");
     _editorDrawOverlays(Number(_editor.timelineTime || video?.currentTime || 0));
     _editorRenderTimeline();
@@ -37091,6 +39997,15 @@ function _editorSetTrackVolumeFromTrim(track, val) {
 }
 window._editorSetTrackVolumeFromTrim = _editorSetTrackVolumeFromTrim;
 
+function _editorOpenTrackVolumeControls(track) {
+    if (!_editorIsTrackSelectable(track)) return;
+    _editorToggleTrackSelection(track);
+    if (!_editorIsMobileViewport()) {
+        document.getElementById("editor-props-panel")?.classList.add("open");
+    }
+}
+window._editorOpenTrackVolumeControls = _editorOpenTrackVolumeControls;
+
 function _editorSetSegmentVolume(track, id, val) {
     const targetTrack = _editorIsAudioTrack(track)
         ? "audio"
@@ -37336,8 +40251,15 @@ function _editorRenderTimeline() {
     const trackRowSelection = selectedKind === "track" ? _editorGetSelectedSegmentTracks() : [];
     const rows = [];
     const trackW = _editorGetTimelineTrackWidth(dur);
-    const timelineInnerWidth = Math.max(120, Math.round(_EDITOR_TIMELINE_LABEL_WIDTH + trackW + _EDITOR_TIMELINE_RIGHT_GUTTER));
+    const leadGutter = _editorGetTimelineLeadGutter();
+    const trailingGutter = _editorGetTimelineTrailingGutter();
+    const labelWidth = _editorGetTimelineLabelWidth();
+    const timelineInnerWidth = Math.max(120, Math.round(labelWidth + leadGutter + trackW + trailingGutter));
     const transitionMarkersByTrack = new Map();
+
+    if (timelineEl) {
+        timelineEl.style.setProperty("--editor-timeline-label-width", `${labelWidth}px`);
+    }
 
     if (dur > 0.05) {
         _editorGetTransitionSlots().forEach((slot) => {
@@ -37587,9 +40509,9 @@ function _editorRenderTimeline() {
         return `
             <div class="editor-track" data-track="${row.track}">
                 <div class="editor-track-label">
-                    <span class="editor-track-label-main">${_editorTimelineTrackIcon(row.kind)}</span>
+                    ${_editorBuildTrackLabelMarkup(row)}
                 </div>
-                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px">${row.clipsHtml || ""}</div>
+                <div class="editor-track-content"${row.contentId ? ` id="${row.contentId}"` : ""} style="width:${trackW}px;min-width:${trackW}px;${leadGutter ? `margin-left:${leadGutter}px;` : ""}">${row.clipsHtml || ""}</div>
             </div>
         `;
     }).join("");
@@ -37633,9 +40555,9 @@ function _editorRenderTimeline() {
         const tickClass = showLabel ? " major" : "";
         if (showLabel) {
             const minuteClass = dur >= 600 && step >= 60 ? " minute" : "";
-            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
+            rulerHtml += `<span class="editor-ruler-mark${minuteClass}" style="left:${labelWidth + leadGutter + pct}px">${_editorFormatRulerTime(t, dur, step)}</span>`;
         }
-        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${_EDITOR_TIMELINE_LABEL_WIDTH + pct}px"></span>`;
+        rulerHtml += `<span class="editor-ruler-tick${tickClass}" style="left:${labelWidth + leadGutter + pct}px"></span>`;
     });
     ruler.innerHTML = rulerHtml;
 
@@ -37648,6 +40570,17 @@ function _editorRenderTimeline() {
 
 function _editorSelectionCanDelete() {
     return ["segment", "text", "subtitle", "sticker", "music", "audio", "media-layer", "transition"].includes(_editor.selectedClip.kind);
+}
+
+function _editorCanSwitchLastVideoToAudioOnly() {
+    if (Number(_editor.originalVolume || 0) > 0) return true;
+    if (_editorShouldShowAudioTrack()) return true;
+
+    return (_editor.mediaLayers || []).some((layer) => {
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        if (normalizedLayer.kind === "audio") return true;
+        return normalizedLayer.kind === "video" && Boolean(normalizedLayer.audioOnly || normalizedLayer.hasAudio);
+    });
 }
 
 function _editorSelectionCanDuplicate() {
@@ -37985,6 +40918,8 @@ function _editorRefreshQuickActions() {
         speedBtn.setAttribute("aria-label", `Velocidade de reprodução ${rateLabel}`);
         speedBtn.setAttribute("data-rate-label", rateLabel);
     }
+
+    _editorApplyMobileControlMode();
 }
 
 function _editorSelectTimelineClip(kind, id, renderProps = true, track = "") {
@@ -38086,6 +41021,19 @@ function _editorDeleteSelectedClip() {
                 const currentVideo = document.getElementById("editor-video");
                 _editorApplyTimelineFrame(Number(_editor.timelineTime || currentVideo?.currentTime || 0), false);
                 showToast("Áudio removido.", "success");
+                return;
+            }
+            if (_editorIsVideoTrack(selTrack) && _editorCanSwitchLastVideoToAudioOnly()) {
+                _editorSaveState();
+                _editor.hideBaseVideoTrack = true;
+                _editorCollapseHiddenBaseTimelineGaps();
+                _editor.selectedClip = { kind: "", id: "", track: "" };
+                _editorRenderProps();
+                _editorRenderTimeline();
+                _editorRenderMediaLayers();
+                const currentVideo = document.getElementById("editor-video");
+                _editorApplyTimelineFrame(Number(_editor.timelineTime || currentVideo?.currentTime || 0), false);
+                showToast("Vídeo removido. O editor vai manter apenas o áudio com fundo preto.", "success");
                 return;
             }
             const trackLabel = selTrack === "audio" ? "audio" : "video";
@@ -38534,12 +41482,18 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
     let mode = "move";
     if (_editorTimelineCanResize(kind, track) && frozenClipRect) {
         const handleEdge = event.target?.closest?.(".editor-track-clip-handle")?.dataset?.resizeEdge || "";
-        const localX = event.clientX - frozenClipRect.left;
-        const edgeSize = Math.max(10, Math.min(20, frozenClipRect.width * 0.24));
-        if (handleEdge === "start" || localX <= edgeSize) {
+        if (handleEdge === "start") {
             mode = "resize-start";
-        } else if (handleEdge === "end" || localX >= frozenClipRect.width - edgeSize) {
+        } else if (handleEdge === "end") {
             mode = "resize-end";
+        } else if (event.pointerType !== "touch") {
+            const localX = event.clientX - frozenClipRect.left;
+            const edgeSize = Math.max(10, Math.min(20, frozenClipRect.width * 0.24));
+            if (localX <= edgeSize) {
+                mode = "resize-start";
+            } else if (localX >= frozenClipRect.width - edgeSize) {
+                mode = "resize-end";
+            }
         }
     }
 
@@ -38578,10 +41532,15 @@ function _editorStartTimelineDrag(kind, id, track, event, trackEl, clipEl) {
         minDuration: kind === "sticker" ? 0.5 : 0.2,
         moved: false,
         saved: false,
+        pointerId: event.pointerId,
+        pointerTarget: clipEl,
+        pointerType: String(event.pointerType || "mouse"),
     };
 
+    _editorCapturePointer(clipEl, event.pointerId);
     document.addEventListener("pointermove", _editorOnTimelineDragMove);
-    document.addEventListener("pointerup", _editorOnTimelineDragEnd, { once: true });
+    document.addEventListener("pointerup", _editorOnTimelineDragEnd);
+    document.addEventListener("pointercancel", _editorOnTimelineDragEnd);
     return true;
 }
 
@@ -38637,6 +41596,7 @@ function _editorOnTimelineDragMove(event) {
     if (!_editorTimelineDrag) return;
 
     const drag = _editorTimelineDrag;
+    if (drag.pointerId !== undefined && event.pointerId !== undefined && event.pointerId !== drag.pointerId) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
     const deltaSec = (dx / drag.trackWidth) * Math.max(0.1, Number(drag.pixelDuration || drag.duration || 0.1));
@@ -38699,7 +41659,8 @@ function _editorOnTimelineDragMove(event) {
         }
     }
 
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+    const moveThreshold = drag.pointerType === "touch" ? 4 : 1;
+    if (Math.abs(dx) > moveThreshold || Math.abs(dy) > moveThreshold) {
         drag.moved = true;
     }
     if (drag.moved && !drag.saved) {
@@ -38721,8 +41682,11 @@ function _editorOnTimelineDragMove(event) {
 
 function _editorOnTimelineDragEnd() {
     document.removeEventListener("pointermove", _editorOnTimelineDragMove);
+    document.removeEventListener("pointerup", _editorOnTimelineDragEnd);
+    document.removeEventListener("pointercancel", _editorOnTimelineDragEnd);
     if (!_editorTimelineDrag) return;
 
+    _editorReleasePointerCapture(_editorTimelineDrag.pointerTarget, _editorTimelineDrag.pointerId);
     const moved = _editorTimelineDrag.moved;
     const kind = _editorTimelineDrag.kind;
     const id = _editorTimelineDrag.id;
@@ -38843,6 +41807,7 @@ async function _editorExport() {
         aspect_ratio: _resolveAspectRatio(),
         trim_start: _editor.trimStart,
         trim_end: _editor.trimEnd,
+        hide_base_video_track: Boolean(_editor.hideBaseVideoTrack),
         trim_video_segments: _editor.videoSegments
             .map(seg => ({
                 start: _editorSegSourceStart(seg),
@@ -39064,8 +42029,13 @@ function _bindEditorEvents() {
             _editorResetPlaybackToStart();
         });
     }
+    document.getElementById("editor-overlay-canvas")?.addEventListener("pointerdown", (event) => {
+        if (_editorStartTextOverlayDrag(event)) return;
+        _editorStartSubtitleOverlayDrag(event);
+    });
     document.getElementById("editor-overlay-canvas")?.addEventListener("click", _editorHandleOverlayClick);
     document.getElementById("editor-play-btn")?.addEventListener("click", _editorTogglePlay);
+    document.getElementById("editor-aspect-btn")?.addEventListener("click", _editorCycleAspectRatio);
     document.getElementById("editor-back-btn")?.addEventListener("click", closeEditor);
     document.getElementById("editor-new-btn")?.addEventListener("click", _editorOpenStartModal);
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
@@ -39114,6 +42084,7 @@ function _bindEditorEvents() {
     document.addEventListener("pointerup", _editorOnMediaLayerDragEnd);
     window.addEventListener("resize", _editorRenderMediaLayers);
     window.addEventListener("resize", _editorRenderTimeline);
+    window.addEventListener("resize", _editorRenderMobileStagePanel);
     document.getElementById("editor-quick-add-text")?.addEventListener("click", _editorAddText);
     document.getElementById("editor-quick-add-subtitle")?.addEventListener("click", _editorAddSubtitle);
     document.getElementById("editor-quick-cut")?.addEventListener("click", _editorSplitAtCurrentTime);
@@ -39129,6 +42100,12 @@ function _bindEditorEvents() {
     document.getElementById("editor-quick-delete")?.addEventListener("click", _editorDeleteSelectedClip);
     document.getElementById("editor-quick-duplicate")?.addEventListener("click", _editorCopySelectedClip);
     document.getElementById("editor-quick-paste")?.addEventListener("click", _editorPasteClipboard);
+    document.getElementById("editor-mobile-actions-toggle")?.addEventListener("click", () => {
+        _editorToggleMobileControlMode();
+    });
+    document.getElementById("editor-mobile-tools-toggle")?.addEventListener("click", () => {
+        _editorSetMobileControlMode("tools");
+    });
     document.getElementById("editor-project-name")?.addEventListener("click", (event) => {
         event.stopPropagation();
         _editorStartProjectNameEdit();
@@ -39168,6 +42145,13 @@ function _bindEditorEvents() {
         const tool = btn.dataset.tool;
         if (!tool) return;
         btn.addEventListener("click", () => _editorSelectTool(tool));
+    });
+
+    document.addEventListener("click", (event) => {
+        if (!_editorMobileTrackVolumeOpen) return;
+        if (event.target.closest(".editor-track-label-volume-wrap")) return;
+        _editorMobileTrackVolumeOpen = "";
+        _editorRenderTimeline();
     });
 
     document.getElementById("editor-timeline-tracks")?.addEventListener("pointerdown", (e) => {
@@ -39243,12 +42227,13 @@ function _bindEditorEvents() {
     // Timeline click-and-hold scrub
     document.getElementById("editor-timeline")?.addEventListener("pointerdown", (e) => {
         const started = _editorStartTimelineScrub(e);
-        if (started) {
+        if (started && e.pointerType !== "touch") {
             e.preventDefault();
         }
     });
     document.getElementById("editor-timeline")?.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
     document.addEventListener("wheel", _editorHandleTimelineWheel, { passive: false });
+    window.addEventListener("resize", _editorApplyMobileControlMode);
 
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
@@ -39261,6 +42246,7 @@ function _bindEditorEvents() {
 
     _editorRefreshQuickActions();
     _editorRefreshTrackSelectionUI();
+    _editorApplyMobileControlMode();
 }
 
 // Init editor bindings when DOM ready

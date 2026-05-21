@@ -170,7 +170,7 @@ _DIALOGUE_TIMING_LINE_RE = re.compile(
 
 def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     if not scene:
-        return float(max(5, int(settings.similar_scene_default_seconds or 5)))
+        return float(max(2, int(settings.similar_scene_default_seconds or 2)))
 
     try:
         start_time = float(scene.start_time or 0)
@@ -184,7 +184,7 @@ def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     duration = end_time - start_time
     if duration > 0.1:
         return max(1.0, duration)
-    return float(max(5, int(settings.similar_scene_default_seconds or 5)))
+    return float(max(2, int(settings.similar_scene_default_seconds or 2)))
 
 
 def _ensure_reference_image_instruction(prompt: str, reference_mode: str = "") -> str:
@@ -272,6 +272,16 @@ def _normalize_wan_duration_seconds(value: int) -> int:
     if raw in allowed:
         return raw
     return min(allowed, key=lambda candidate: (abs(candidate - raw), candidate))
+
+
+def _normalize_lite2_duration_seconds(value: int) -> int:
+    """Normalize Lite 2.0 duration to the Seedance v1.5 Fast window."""
+    return max(5, min(int(value or 5), 12))
+
+
+_REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "viduq3", "avatar31"}
+_SIMILAR_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "viduq3"}
+_SEEDANCE_FAMILY_ENGINES = {"seedance", "lite2", "viduq3"}
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
@@ -1861,6 +1871,43 @@ def _extract_similar_reference_end_frame_map(raw_tags: object) -> dict[str, str]
     return resolved
 
 
+def _extract_similar_reference_text_detected_map(raw_tags: object) -> dict[str, bool]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_frame_text_detected") if isinstance(tags.get("similar_reference_frame_text_detected"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, bool] = {}
+    for key, raw_value in raw_map.items():
+        if isinstance(raw_value, bool):
+            resolved[str(key)] = raw_value
+            continue
+        if isinstance(raw_value, (int, float)):
+            resolved[str(key)] = bool(raw_value)
+            continue
+        if isinstance(raw_value, str):
+            normalized = raw_value.strip().lower()
+            if normalized in {"true", "1", "yes", "sim"}:
+                resolved[str(key)] = True
+            elif normalized in {"false", "0", "no", "nao", "não"}:
+                resolved[str(key)] = False
+    return resolved
+
+
+def _extract_similar_reference_text_excerpt_map(raw_tags: object) -> dict[str, str]:
+    tags = _safe_tags_dict(raw_tags)
+    raw_map = tags.get("similar_reference_frame_text_excerpt") if isinstance(tags.get("similar_reference_frame_text_excerpt"), dict) else {}
+    if not isinstance(raw_map, dict):
+        return {}
+
+    resolved: dict[str, str] = {}
+    for key, raw_value in raw_map.items():
+        text = re.sub(r"\s+", " ", str(raw_value or "")).strip()
+        if text:
+            resolved[str(key)] = text[:240]
+    return resolved
+
+
 def _collect_similar_unified_video_reference_paths(
     scenes: list[VideoScene],
     tags_data: dict[str, Any],
@@ -2251,12 +2298,84 @@ def _clear_similar_generated_frame_variants(tags_data: dict[str, Any], scene_id:
         tags_data.pop("similar_generated_frame_variants", None)
 
 
+def _clear_similar_reference_text_metadata(tags_data: dict[str, Any], scene_key: str) -> None:
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(tags_data)
+    reference_text_detected_map.pop(scene_key, None)
+    if reference_text_detected_map:
+        tags_data["similar_reference_frame_text_detected"] = reference_text_detected_map
+    else:
+        tags_data.pop("similar_reference_frame_text_detected", None)
+
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(tags_data)
+    reference_text_excerpt_map.pop(scene_key, None)
+    if reference_text_excerpt_map:
+        tags_data["similar_reference_frame_text_excerpt"] = reference_text_excerpt_map
+    else:
+        tags_data.pop("similar_reference_frame_text_excerpt", None)
+
+
+def _promote_similar_scene_boundary_frame(
+    tags_data: dict[str, Any],
+    scene: VideoScene | Any,
+    *,
+    frame_kind: str = "start",
+    reference_path: object = "",
+    next_scene: VideoScene | Any | None = None,
+) -> None:
+    promoted_path = str(reference_path or getattr(scene, "image_path", "") or "").strip()
+    if not (promoted_path and os.path.exists(promoted_path)):
+        return
+
+    normalized_frame_kind = _normalize_similar_unified_boundary_frame_kind(frame_kind)
+    scene_index = int(getattr(scene, "scene_index", 0) or 0)
+    scene_key = str(scene_index)
+
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    reference_end_map = _extract_similar_reference_end_frame_map(tags_data)
+
+    if normalized_frame_kind == "end":
+        reference_end_map[scene_key] = promoted_path
+        tags_data["similar_reference_end_frames"] = reference_end_map
+
+        next_scene_index = int(getattr(next_scene, "scene_index", 0) or 0)
+        if next_scene is not None and next_scene_index > scene_index:
+            reference_frame_map[str(next_scene_index)] = promoted_path
+            tags_data["similar_reference_frames"] = reference_frame_map
+            _clear_similar_reference_text_metadata(tags_data, str(next_scene_index))
+        return
+
+    reference_frame_map[scene_key] = promoted_path
+    tags_data["similar_reference_frames"] = reference_frame_map
+
+    if scene_index > 0:
+        reference_end_map[str(scene_index - 1)] = promoted_path
+        tags_data["similar_reference_end_frames"] = reference_end_map
+
+    _clear_similar_reference_text_metadata(tags_data, scene_key)
+
+
+def _promote_similar_scene_reference_frame(
+    tags_data: dict[str, Any],
+    scene: VideoScene | Any,
+    *,
+    reference_path: object = "",
+) -> None:
+    _promote_similar_scene_boundary_frame(
+        tags_data,
+        scene,
+        frame_kind="start",
+        reference_path=reference_path,
+    )
+
+
 def _serialize_project_scene(
     scene: VideoScene,
     reference_frame_map: dict[str, str] | None = None,
     reference_frame_end_map: dict[str, str] | None = None,
     generated_frame_variant_map: dict[str, list[str]] | None = None,
     detected_scene_duration_map: dict[str, float] | None = None,
+    reference_text_detected_map: dict[str, bool] | None = None,
+    reference_text_excerpt_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     reference_frame_path = ""
     reference_frame_end_path = ""
@@ -2279,6 +2398,10 @@ def _serialize_project_scene(
     generated_frame_variants: list[dict[str, Any]] = []
     variant_scene_key = str(int(scene.id or 0))
     active_image_path = str(scene.image_path or "").strip()
+    reference_frame_text_detected = bool((reference_text_detected_map or {}).get(scene_key))
+    reference_frame_text_excerpt = str((reference_text_excerpt_map or {}).get(scene_key) or "").strip()
+    if reference_frame_text_excerpt:
+        reference_frame_text_detected = True
     detected_duration_seconds = float(
         (detected_scene_duration_map or {}).get(scene_key) or _similar_scene_duration_seconds(scene)
     )
@@ -2313,6 +2436,8 @@ def _serialize_project_scene(
         "reference_frame_end_url": _to_media_url(reference_frame_end_path),
         "reference_frame_paths": reference_frame_paths,
         "reference_frame_urls": reference_frame_urls,
+        "reference_frame_text_detected": reference_frame_text_detected,
+        "reference_frame_text_excerpt": reference_frame_text_excerpt,
         "start_time": scene.start_time,
         "end_time": scene.end_time,
         "detected_duration_seconds": detected_duration_seconds,
@@ -2426,6 +2551,28 @@ def _pick_similar_scene_clause(raw: object, fallback: str) -> str:
     return text[0].lower() + text[1:] if len(text) > 1 else text.lower()
 
 
+def _build_similar_unified_scene_sequence(scene_prompts: list[str], context_summary: str = "") -> str:
+    source_items = [str(prompt or "").strip() for prompt in scene_prompts if str(prompt or "").strip()]
+    if not source_items and str(context_summary or "").strip():
+        source_items = [str(context_summary or "").strip()]
+
+    clauses = [_pick_similar_scene_clause(item, "") for item in source_items]
+    clauses = [clause for clause in clauses if clause]
+    if not clauses:
+        return "acompanha a mesma acao principal do video de referencia do inicio ao fim"
+    if len(clauses) == 1:
+        return f"comeca com {clauses[0]} e sustenta essa mesma acao ate a conclusao"
+    if len(clauses) == 2:
+        return f"comeca com {clauses[0]} e termina com {clauses[1]}"
+
+    parts = [f"comeca com {clauses[0]}"]
+    for idx, clause in enumerate(clauses[1:-1], start=1):
+        connector = "depois mostra" if idx == 1 else "em seguida mostra"
+        parts.append(f"{connector} {clause}")
+    parts.append(f"termina com {clauses[-1]}")
+    return ", ".join(parts)
+
+
 def _infer_similar_unified_camera_mode(text_blob: str, tags_data: dict[str, Any] | None = None) -> str:
     explicit_mode = str((tags_data or {}).get("similar_camera_mode") or "").strip().lower()
     if explicit_mode in {"fixed", "moving", "unspecified"}:
@@ -2496,15 +2643,15 @@ def _infer_similar_unified_soundscape(text_blob: str, transcript_text: str) -> s
     lowered = f"{text_blob} {transcript_text}".lower()
     sound_parts: list[str] = []
     if any(token in lowered for token in ("rain", "water", "ocean", "wave")):
-        sound_parts.append("rainfall, water movement")
+        sound_parts.append("chuva e agua em movimento")
     if any(token in lowered for token in ("street", "traffic", "city", "road", "car")):
-        sound_parts.append("distant traffic")
+        sound_parts.append("trafego distante")
     if any(token in lowered for token in ("workshop", "wood", "hammer", "tool", "table saw", "drill")):
-        sound_parts.append("subtle tool and material handling sounds")
+        sound_parts.append("sons sutis de ferramentas e manipulacao de materiais")
     if transcript_text:
-        sound_parts.append("any spoken dialogue present in the original clip")
+        sound_parts.append("qualquer fala presente no clipe original")
     if not sound_parts:
-        sound_parts.append("the original ambient soundscape")
+        sound_parts.append("a paisagem sonora ambiente original")
     return ", ".join(dict.fromkeys(sound_parts))
 
 
@@ -2512,93 +2659,105 @@ def _infer_similar_unified_lighting(text_blob: str) -> tuple[str, str]:
     lowered = text_blob.lower()
     if any(token in lowered for token in ("night", "neon", "club", "streetlight", "city at night")):
         return (
-            "mixed practical light, neon spill, and directional contrast",
-            "specular highlights, deep contrast, and reflective texture",
+            "luz pratica mista, reflexos de neon e contraste direcional",
+            "realces especulares, contraste profundo e textura refletiva",
         )
     if any(token in lowered for token in ("sunset", "golden hour", "dusk", "sunrise")):
         return (
-            "golden-hour sunlight with soft directional falloff",
-            "warm skin tones, gentle flare, and cinematic depth separation",
+            "luz de golden hour com caimento direcional suave",
+            "tons quentes, flare suave e separacao cinematografica de profundidade",
         )
     if any(token in lowered for token in ("indoor", "interior", "studio", "room", "kitchen", "office")):
         return (
-            "soft diffused interior light with natural practical highlights",
-            "clean skin detail, balanced contrast, and grounded realism",
+            "luz interna difusa com pontos praticos naturais",
+            "detalhe limpo, contraste equilibrado e realismo convincente",
         )
     return (
-        "natural daylight with directional softness",
-        "realistic contrast, soft shadows, and gentle depth separation",
+        "luz natural diurna com direcao suave",
+        "contraste realista, sombras suaves e separacao delicada de profundidade",
     )
 
 
 def _infer_similar_unified_subject(text_blob: str) -> str:
     lowered = text_blob.lower()
     if any(token in lowered for token in ("woman", "female", "girl")):
-        return "the same woman from the reference video, preserving age cues, body language, and identity"
+        return "a mesma mulher do video de referencia, preservando idade aparente, linguagem corporal e identidade"
     if any(token in lowered for token in ("man", "male", "boy")):
-        return "the same man from the reference video, preserving age cues, body language, and identity"
+        return "o mesmo homem do video de referencia, preservando idade aparente, linguagem corporal e identidade"
     if any(token in lowered for token in ("couple", "two people", "duo", "pair")):
-        return "the same pair of subjects from the reference video, preserving facial identity, proportions, and chemistry"
-    return "the main subject from the reference video, preserving identity cues, body language, and proportions"
+        return "a mesma dupla do video de referencia, preservando identidade facial, proporcoes e dinamica entre os personagens"
+    return "o personagem principal do video de referencia, preservando identidade, linguagem corporal e proporcoes"
 
 
 def _infer_similar_unified_camera_behavior(text_blob: str, camera_mode: str = "unspecified") -> str:
     lowered = text_blob.lower()
     if camera_mode == "fixed":
-        return "locked-off static framing, tripod-stable perspective, no pan, tilt, orbit, camera travel, or invented zoom"
+        return "enquadramento fixo, perspectiva estavel de tripe, sem pan, tilt, orbita, deslocamento de camera ou zoom inventado"
 
     behavior_parts: list[str] = []
     if any(token in lowered for token in ("handheld", "shake", "shaky", "micro-shake")):
-        behavior_parts.append("handheld micro-shakes")
+        behavior_parts.append("micro-tremores naturais de handheld")
     if any(token in lowered for token in ("tracking", "follow", "moving camera", "push in", "push-in")):
-        behavior_parts.append("subtle tracking adjustments")
+        behavior_parts.append("ajustes sutis de acompanhamento")
     if any(token in lowered for token in ("focus", "rack focus", "close-up", "close up", "macro")):
-        behavior_parts.append("natural focus breathing")
+        behavior_parts.append("respiracao natural de foco")
     if any(token in lowered for token in ("zoom", "zoom-in", "zoom out", "zoom-out")):
-        behavior_parts.append("gentle zoom corrections")
+        behavior_parts.append("correcoes suaves de zoom")
     if any(token in lowered for token in ("pan", "tilt", "low angle", "high angle", "orbit")):
-        behavior_parts.append("small pan and tilt corrections")
+        behavior_parts.append("pequenas correcoes de pan e tilt")
     if not behavior_parts:
         if camera_mode == "moving":
             behavior_parts = [
-                "natural camera movement matching the reference clip",
-                "minor reframing",
-                "natural focus breathing",
+                "movimento de camera natural seguindo o video de referencia",
+                "pequenos reenquadramentos",
+                "respiracao natural de foco",
             ]
         else:
             behavior_parts = [
-                "locked-off static framing",
-                "stable tripod perspective",
-                "no invented pan, tilt, orbit, or zoom",
+                "enquadramento fixo",
+                "perspectiva estavel de tripe",
+                "sem pan, tilt, orbita ou zoom inventado",
             ]
     return ", ".join(dict.fromkeys(behavior_parts))
 
 
 def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[Any], tags_data: dict[str, Any]) -> str:
+    scene_prompts = [
+        _normalize_similar_unified_prompt_text(_scene_field(scene, "prompt", ""), limit=420)
+        for scene in (scenes or [])
+    ]
+    scene_prompts = [prompt for prompt in scene_prompts if prompt]
     lines = [
-        f"Project title: {str(project.title or '').strip() or 'Video Semelhante'}",
+        f"Titulo do projeto: {str(project.title or '').strip() or 'Video Semelhante'}",
         f"Aspect ratio: {str(project.aspect_ratio or '').strip() or '16:9'}",
+        f"Quantidade de cenas analisadas: {len(scenes or [])}",
     ]
     speech_detected = _similar_transcript_speech_detected(tags_data)
 
     camera_label = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_label"), limit=120)
     camera_guidance = _normalize_similar_unified_prompt_text(tags_data.get("similar_camera_guidance"), limit=320)
     if camera_label:
-        lines.extend(["", f"Detected camera profile: {camera_label}"])
+        lines.extend(["", f"Perfil de camera detectado: {camera_label}"])
     if camera_guidance:
-        lines.extend(["Camera guidance:", camera_guidance])
+        lines.extend(["Orientacao de camera:", camera_guidance])
 
     context_summary = _normalize_similar_unified_prompt_text(tags_data.get("similar_context_summary"), limit=1400)
     transcript_excerpt = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_excerpt"), limit=900)
-    transcript_language = _normalize_similar_unified_prompt_text(tags_data.get("similar_transcript_language_label_en"), limit=80)
+    transcript_language = _normalize_similar_unified_prompt_text(
+        tags_data.get("similar_transcript_language_label_pt") or tags_data.get("similar_transcript_language_label_en"),
+        limit=80,
+    )
+    story_sequence = _build_similar_unified_scene_sequence(scene_prompts, context_summary)
     if context_summary:
-        lines.extend(["", "Global visual context:", context_summary])
+        lines.extend(["", "Contexto visual global:", context_summary])
+    if story_sequence:
+        lines.extend(["", "Fluxo narrativo obrigatorio a preservar:", story_sequence])
     if speech_detected is not False and transcript_language:
-        lines.extend(["", f"Detected spoken language: {transcript_language}"])
+        lines.extend(["", f"Idioma falado detectado: {transcript_language}"])
     if speech_detected is not False and transcript_excerpt:
-        lines.extend(["", "Transcript/audio context:", transcript_excerpt])
+        lines.extend(["", "Contexto de fala/audio:", transcript_excerpt])
 
-    lines.extend(["", "Analyzed scene breakdown:"])
+    lines.extend(["", "Quebra cronologica por cena:"])
     for idx, scene in enumerate(scenes, start=1):
         start = float(_scene_field(scene, "start_time", 0.0) or 0.0)
         end = float(_scene_field(scene, "end_time", start) or start)
@@ -2606,11 +2765,11 @@ def _build_similar_unified_prompt_context(project: VideoProject, scenes: list[An
         spoken_text = ""
         if speech_detected is not False:
             spoken_text = _normalize_similar_unified_prompt_text(_scene_field(scene, "lyrics_segment", ""), limit=180)
-        lines.append(f"Scene {idx} | {start:.1f}s - {end:.1f}s")
+        lines.append(f"Cena {idx} | {start:.1f}s - {end:.1f}s")
         if prompt_text:
-            lines.append(f"Prompt: {prompt_text}")
+            lines.append(f"Prompt da cena: {prompt_text}")
         if spoken_text:
-            lines.append(f"Spoken context{f' ({transcript_language})' if transcript_language else ''}: {spoken_text}")
+            lines.append(f"Contexto falado{f' ({transcript_language})' if transcript_language else ''}: {spoken_text}")
         lines.append("")
 
     return "\n".join(lines).strip()
@@ -2640,40 +2799,29 @@ def _build_similar_unified_prompt_fallback(project: VideoProject, scenes: list[A
     soundscape = _infer_similar_unified_soundscape(combined_text, transcript_excerpt)
     lighting, visual_effects = _infer_similar_unified_lighting(combined_text)
     subject = _infer_similar_unified_subject(combined_text)
-    location = "the same environment, spatial layout, and atmosphere seen in the reference video"
-    outfit = "the original wardrobe and styling visible in the reference"
-    accessories = "all props, work tools, and handheld objects already visible in the reference"
+    location = "o mesmo ambiente, a mesma disposicao espacial e a mesma atmosfera vistos no video de referencia"
+    outfit = "o figurino original e a mesma composicao visual vistos na referencia"
+    accessories = "todos os objetos, ferramentas e itens de mao que ja aparecem na referencia"
     camera_behavior = _infer_similar_unified_camera_behavior(combined_text, camera_mode)
-    dialogue_clause = _build_similar_unified_dialogue_clause(scenes, tags_data, locale="en")
-
-    intro_clause = _pick_similar_scene_clause(
-        scene_prompts[0] if scene_prompts else context_summary,
-        "the main subject enters the frame and establishes the core action",
-    )
-    middle_clause = _pick_similar_scene_clause(
-        scene_prompts[1] if len(scene_prompts) > 1 else scene_prompts[0] if scene_prompts else context_summary,
-        "the action develops with the same rhythm and environment",
-    )
-    climax_clause = _pick_similar_scene_clause(
-        scene_prompts[-2] if len(scene_prompts) > 2 else scene_prompts[-1] if scene_prompts else context_summary,
-        "the central visual beat peaks with clear momentum",
-    )
-    ending_clause = _pick_similar_scene_clause(
-        scene_prompts[-1] if scene_prompts else context_summary,
-        "the shot resolves on the same subject and atmosphere",
+    dialogue_clause = _build_similar_unified_dialogue_clause(scenes, tags_data, locale="pt")
+    story_sequence = _build_similar_unified_scene_sequence(scene_prompts, context_summary)
+    highlight_sentence = (
+        "A abertura precisa chamar atencao logo nos primeiros instantes, sem quebrar a cronologia da historia. "
+        if scene_prompts or context_summary
+        else ""
     )
 
     prompt = (
-        f"Ultra-realistic cinematic {camera} video set in {location}. "
-        f"Natural environmental audio including {soundscape}. "
-        f"Lighting consists of {lighting}, creating {visual_effects}. "
-        f"Main character is {subject}, maintaining consistent facial features. "
-        f"Outfit is {outfit} (strict lock). "
-        f"Accessories include {accessories}.\n\n"
-        f"The scene unfolds in one continuous shot: {intro_clause}, then {middle_clause}, "
-        f"followed by {climax_clause}, ending with {ending_clause}. "
+        f"Video cinematografico ultra-realista {camera} ambientado em {location}. "
+        f"Audio ambiente natural com {soundscape}. "
+        f"A iluminacao traz {lighting}, criando {visual_effects}. "
+        f"O personagem principal e {subject}. "
+        f"Figurino: {outfit} (travamento obrigatorio). "
+        f"Acessorios: {accessories}. "
+        f"{highlight_sentence}\n\n"
+        f"A cena se desenrola em um unico plano continuo: {story_sequence}. "
         f"{dialogue_clause + ' ' if dialogue_clause else ''}"
-        f"Camera behavior includes {camera_behavior}, maintaining a natural and immersive perspective."
+        f"Comportamento de camera: {camera_behavior}."
     )
     return _normalize_similar_unified_prompt_text(prompt, limit=2200)
 
@@ -2683,9 +2831,9 @@ def _is_similar_unified_prompt_valid(raw: object) -> bool:
     if len(text) < 120:
         return False
     required_parts = (
-        "Ultra-realistic cinematic ",
-        "The scene unfolds in one continuous shot:",
-        "Camera behavior includes ",
+        "Video cinematografico ultra-realista ",
+        "A cena se desenrola em um unico plano continuo:",
+        "Comportamento de camera:",
     )
     if any(part not in text for part in required_parts):
         return False
@@ -2703,20 +2851,29 @@ async def _generate_similar_unified_prompt(
     prompt_context = _build_similar_unified_prompt_context(project, scenes, tags_data)
     preferred_model = (settings.similar_analysis_model or "gpt-4o-mini").strip() or "gpt-4o-mini"
     system_prompt = (
-        "You transform a scene-by-scene reference video analysis into one single cinematic recreation prompt. "
-        "Return plain text only in English, never markdown, never JSON, never bullet lists, never surrounding quotes. "
-        "Follow this structure strictly: first paragraph starts with 'Ultra-realistic cinematic' and fills camera, location, sound, lighting, subject, outfit, and accessories. "
-        "Second paragraph starts with 'The scene unfolds in one continuous shot:' and describes beginning, middle, climax, ending, then camera behavior. "
-        "If spoken audio is present in the analysis, explicitly include who is speaking, the spoken language or locale, and the key dialogue or narration. "
-        "If the reference analysis indicates a fixed or locked-off camera, state that clearly and do not invent pans, tilts, zooms, handheld shake, or camera travel. "
-        "Never leave placeholders like [camera] or [location]. Infer missing details from the analysis."
+        "Voce transforma uma analise de video cena a cena em um unico prompt cinematografico em portugues do Brasil. "
+        "Retorne somente texto puro em portugues do Brasil, sem markdown, sem JSON, sem listas, sem comentarios extras e sem aspas externas. "
+        "Use obrigatoriamente dois paragrafos. O primeiro deve comecar com 'Video cinematografico ultra-realista' e preencher camera, ambiente, audio, iluminacao, personagem principal, figurino e acessorios. "
+        "O segundo deve comecar com 'A cena se desenrola em um unico plano continuo:' e reconstruir a historia inteira em ordem cronologica, incorporando TODAS as cenas analisadas, inclusive as cenas do meio. "
+        "A abertura do segundo paragrafo precisa ser forte e chamativa, aproveitando o melhor gancho visual que ja existe nas cenas analisadas, sem inventar eventos novos. "
+        "Se houver audio falado, diga quem fala, em qual idioma ou variante e qual e a fala, narracao ou assunto principal. "
+        "Feche o segundo paragrafo com 'Comportamento de camera:' seguido do comportamento de camera. "
+        "Se a analise indicar camera fixa ou locked-off, deixe isso explicito e nao invente pan, tilt, travelling, orbita, handheld, shake ou zoom. "
+        "Nunca deixe placeholders como [camera] ou [local]. Preencha tudo com base na analise."
     )
     user_prompt = (
-        "Use the analyzed video breakdown below to generate one unified prompt for recreating the whole video as a single continuous shot.\n\n"
-        "Output template to follow:\n"
-        "Ultra-realistic cinematic [camera type] video set in [location]. Natural environmental audio including [sounds]. Lighting consists of [lighting], creating [visual effects]. Main character is [full description], maintaining consistent facial features. Outfit is [description] (strict lock). Accessories include [description].\n\n"
-        "The scene unfolds in one continuous shot: [beginning], then [middle], followed by [climax], ending with [ending]. If there is spoken audio, add one sentence stating who speaks, in which language or locale, and the key spoken line or topic. Camera behavior includes [movement, imperfections, focus, zoom], maintaining a natural and immersive perspective.\n\n"
-        "Analyzed data:\n"
+        "Use a analise detalhada abaixo para criar um unico prompt em portugues do Brasil que recrie todo o video como um unico plano continuo.\n\n"
+        "Regras obrigatorias:\n"
+        "- Use todo o contexto global, a transcricao e a quebra cronologica por cena.\n"
+        "- Todas as cenas analisadas precisam aparecer na historia final, mesmo que condensadas.\n"
+        "- Preserve a mesma continuidade visual, o mesmo personagem, o mesmo figurino, o mesmo ambiente e a mesma progressao dramatica.\n"
+        "- A abertura precisa chamar atencao usando o melhor gancho visual que ja existe na analise.\n"
+        "- Nao invente movimento de camera se a analise indicar camera fixa ou travada.\n"
+        "- Retorne somente dois paragrafos em texto puro.\n\n"
+        "Formato obrigatorio:\n"
+        "Video cinematografico ultra-realista [tipo de camera] ambientado em [local]. Audio ambiente natural com [sons]. A iluminacao traz [descricao], criando [efeito visual]. O personagem principal e [descricao completa]. Figurino: [descricao] (travamento obrigatorio). Acessorios: [descricao].\n\n"
+        "A cena se desenrola em um unico plano continuo: [recontar a historia inteira em ordem cronologica, usando todas as cenas analisadas]. Se houver fala, inclua quem fala, em qual idioma ou variante e qual e a linha ou o assunto principal. Comportamento de camera: [movimento, estabilidade, foco e pequenas imperfeicoes].\n\n"
+        "Dados analisados:\n"
         f"{prompt_context}"
     )
 
@@ -2800,6 +2957,7 @@ class StartSimilarAnalysisRequest(BaseModel):
     aspect_ratio: str = "16:9"
     analysis_mode: str = "scene"
     analysis_limit_seconds: int = 0
+    hide_from_create_list: bool = False
 
 
 class SimilarUpdateSceneRequest(BaseModel):
@@ -2815,6 +2973,7 @@ class SimilarSceneImageRequest(BaseModel):
     generate_from_prompt: bool = False
     prompt_override: str = ""
     edit_instruction: str = ""
+    promote_reference_frame: bool = False
     aspect_ratio: str = "16:9"
 
 
@@ -2822,21 +2981,25 @@ class SimilarUnifiedBoundaryFrameRequest(SimilarSceneImageRequest):
     frame_kind: str = "start"
 
 
+class SimilarSceneBoundaryFrameRequest(SimilarSceneImageRequest):
+    frame_kind: str = "end"
+
+
 class SimilarGeneratePreviewsRequest(BaseModel):
-    engine: str = "grok"
+    engine: str = "lite2"
     aspect_ratio: str = "16:9"
 
 
 class SimilarRegenerateSceneRequest(BaseModel):
     scene_id: int
-    engine: str = "grok"
+    engine: str = "lite2"
     aspect_ratio: str = "16:9"
     prompt_override: str = ""
     generation_mode: str = "image"
 
 
 class SimilarGenerateUnifiedSceneRequest(BaseModel):
-    engine: str = "seedance"
+    engine: str = "lite2"
     aspect_ratio: str = "16:9"
     duration_seconds: int = 10
     prompt_override: str = ""
@@ -2955,6 +3118,7 @@ async def start_similar_analysis(
         "similar_analysis_mode": analysis_mode,
         "similar_analysis_limit_seconds": analysis_limit_seconds,
         "similar_scene_seconds": max(int(settings.similar_scene_default_seconds or 5), 5),
+        "hide_from_create_list": bool(req.hide_from_create_list),
     }
 
     project = VideoProject(
@@ -3077,6 +3241,7 @@ async def list_projects(
                 "workflow_type": workflow_type,
                 "workflow_stage": str(tags_data.get("similar_stage") or "").strip(),
                 "is_editor_project": is_editor_project,
+                "hide_from_create_list": bool(tags_data.get("hide_from_create_list")),
             }
         )
 
@@ -3109,6 +3274,8 @@ async def get_project(
     response_tags = project.tags
     reference_frame_map: dict[str, str] = {}
     reference_frame_end_map: dict[str, str] = {}
+    reference_text_detected_map: dict[str, bool] = {}
+    reference_text_excerpt_map: dict[str, str] = {}
     generated_frame_variant_map: dict[str, list[str]] = {}
     detected_scene_duration_map: dict[str, float] = {}
     if _is_similar_project(project):
@@ -3130,6 +3297,8 @@ async def get_project(
             response_tags["similar_unified_end_frame_url"] = _to_media_url(unified_end_frame_path)
         reference_frame_map = _extract_similar_reference_frame_map(response_tags)
         reference_frame_end_map = _extract_similar_reference_end_frame_map(response_tags)
+        reference_text_detected_map = _extract_similar_reference_text_detected_map(response_tags)
+        reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(response_tags)
         generated_frame_variant_map = _extract_similar_generated_frame_variant_map(response_tags)
         detected_scene_duration_map = _extract_similar_detected_scene_duration_map(response_tags)
 
@@ -3147,7 +3316,15 @@ async def get_project(
         "error_message": project.error_message,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "scenes": [
-            _serialize_project_scene(s, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)
+            _serialize_project_scene(
+                s,
+                reference_frame_map,
+                reference_frame_end_map,
+                generated_frame_variant_map,
+                detected_scene_duration_map,
+                reference_text_detected_map=reference_text_detected_map,
+                reference_text_excerpt_map=reference_text_excerpt_map,
+            )
             for s in scenes
         ],
         "renders": [
@@ -3342,12 +3519,15 @@ async def generate_similar_unified_scene(
     if project.status in {VideoStatus.GENERATING_SCENES, VideoStatus.GENERATING_CLIPS, VideoStatus.RENDERING}:
         raise HTTPException(status_code=400, detail="Projeto ainda esta processando")
 
-    engine = str(req.engine or "seedance").strip().lower() or "seedance"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    engine = str(req.engine or "lite2").strip().lower() or "lite2"
+    if engine not in _SIMILAR_ENGINES:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     duration_seconds = int(req.duration_seconds or 0)
-    if duration_seconds not in {5, 10, 15}:
+    if engine == "viduq3":
+        if duration_seconds < 1 or duration_seconds > 16:
+            raise HTTPException(status_code=400, detail="Duracao invalida. Use de 1 a 16 segundos")
+    elif duration_seconds not in {5, 10, 15}:
         raise HTTPException(status_code=400, detail="Duracao invalida. Use 5, 10 ou 15 segundos")
 
     tags_data = _safe_tags_dict(project.tags)
@@ -3402,7 +3582,7 @@ async def generate_similar_unified_scene(
         tags_data["similar_unified_reference_frame_count"] = len({path for path in (start_frame_path, end_frame_path) if path})
 
     tags_data["similar_unified_upload_image_paths"] = unified_upload_paths
-    tags_data["similar_unified_use_last_image_as_final_frame"] = engine == "seedance" and (
+    tags_data["similar_unified_use_last_image_as_final_frame"] = engine in _SEEDANCE_FAMILY_ENGINES and (
         has_boundary_pair or (bool(req.use_last_image_as_final_frame) and len(unified_upload_paths) > 1)
     )
 
@@ -3782,8 +3962,20 @@ async def update_similar_scene(
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
     reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(project.tags)
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, None, detected_scene_duration_map)}
+    return {
+        "scene": _serialize_project_scene(
+            scene,
+            reference_frame_map,
+            reference_frame_end_map,
+            None,
+            detected_scene_duration_map,
+            reference_text_detected_map=reference_text_detected_map,
+            reference_text_excerpt_map=reference_text_excerpt_map,
+        )
+    }
 
 
 @router.post("/projects/{project_id}/similar/scenes/{scene_id}/image")
@@ -3832,15 +4024,17 @@ async def upsert_similar_scene_image(
     )
     tags_data = _safe_tags_dict(project.tags)
     reference_frame_map = _extract_similar_reference_frame_map(tags_data)
-    source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
+    source_reference_image = str(scene.image_path or "").strip()
+    if source_reference_image and not os.path.exists(source_reference_image):
+        source_reference_image = ""
+    if not source_reference_image:
+        source_reference_image = str(reference_frame_map.get(str(current_scene_index)) or "").strip()
     if source_reference_image and not os.path.exists(source_reference_image):
         source_reference_image = ""
     if not source_reference_image and anchor_scene and current_scene_index > int(anchor_scene.scene_index or 0):
         candidate_anchor_path = str(anchor_scene.image_path or "").strip()
         if candidate_anchor_path and os.path.exists(candidate_anchor_path):
             source_reference_image = candidate_anchor_path
-    if not source_reference_image and scene.image_path and os.path.exists(str(scene.image_path)):
-        source_reference_image = str(scene.image_path)
 
     effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     image_dir = Path(settings.media_dir) / "images" / str(project.id)
@@ -3923,7 +4117,21 @@ async def upsert_similar_scene_image(
     scene.scene_type = "image"
 
     tags_data = _safe_tags_dict(project.tags)
-    if req.generate_from_prompt and track_generated_variant:
+    promote_reference_frame = bool(req.promote_reference_frame and req.generate_from_prompt and track_generated_variant)
+    if promote_reference_frame:
+        _promote_similar_scene_reference_frame(tags_data, scene, reference_path=scene.image_path)
+        if current_scene_index > 0:
+            previous_scene_result = await db.execute(
+                select(VideoScene)
+                .where(VideoScene.project_id == project_id, VideoScene.scene_index == current_scene_index - 1)
+                .limit(1)
+            )
+            previous_scene = previous_scene_result.scalars().first()
+            if previous_scene:
+                previous_scene.clip_path = ""
+                previous_scene.scene_type = "image"
+        _clear_similar_generated_frame_variants(tags_data, int(scene.id or 0))
+    elif req.generate_from_prompt and track_generated_variant:
         _set_similar_generated_frame_variants(
             tags_data,
             int(scene.id or 0),
@@ -3941,9 +4149,155 @@ async def upsert_similar_scene_image(
 
     reference_frame_map = _extract_similar_reference_frame_map(project.tags)
     reference_frame_end_map = _extract_similar_reference_end_frame_map(project.tags)
+    reference_text_detected_map = _extract_similar_reference_text_detected_map(project.tags)
+    reference_text_excerpt_map = _extract_similar_reference_text_excerpt_map(project.tags)
     generated_frame_variant_map = _extract_similar_generated_frame_variant_map(project.tags)
     detected_scene_duration_map = _extract_similar_detected_scene_duration_map(project.tags)
-    return {"scene": _serialize_project_scene(scene, reference_frame_map, reference_frame_end_map, generated_frame_variant_map, detected_scene_duration_map)}
+    return {
+        "scene": _serialize_project_scene(
+            scene,
+            reference_frame_map,
+            reference_frame_end_map,
+            generated_frame_variant_map,
+            detected_scene_duration_map,
+            reference_text_detected_map=reference_text_detected_map,
+            reference_text_excerpt_map=reference_text_excerpt_map,
+        )
+    }
+
+
+@router.post("/projects/{project_id}/similar/scenes/{scene_id}/boundary-frame")
+async def upsert_similar_scene_boundary_frame(
+    project_id: int,
+    scene_id: int,
+    req: SimilarSceneBoundaryFrameRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    scene = await db.get(VideoScene, scene_id)
+    if not scene or scene.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Cena nao encontrada")
+
+    frame_kind = _normalize_similar_unified_boundary_frame_kind(req.frame_kind)
+    tags_data = _safe_tags_dict(project.tags)
+    current_scene_index = int(scene.scene_index or 0)
+    scene_key = str(current_scene_index)
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    reference_end_map = _extract_similar_reference_end_frame_map(tags_data)
+    current_frame_path = str(reference_end_map.get(scene_key) or "").strip()
+    if frame_kind == "start":
+        current_frame_path = str(reference_frame_map.get(scene_key) or getattr(scene, "image_path", "") or "").strip()
+    if not (current_frame_path and os.path.exists(current_frame_path)):
+        raise HTTPException(status_code=400, detail="Frame solicitado nao esta disponivel para edicao")
+
+    next_scene = None
+    if frame_kind == "end":
+        next_scene_result = await db.execute(
+            select(VideoScene)
+            .where(VideoScene.project_id == project_id, VideoScene.scene_index == current_scene_index + 1)
+            .limit(1)
+        )
+        next_scene = next_scene_result.scalars().first()
+
+    scene_prompt_source = str(req.prompt_override or scene.prompt or "").strip()
+    if not scene_prompt_source:
+        raise HTTPException(status_code=400, detail="Prompt da cena nao encontrado para editar o frame")
+    if len(scene_prompt_source) > 4000:
+        raise HTTPException(status_code=400, detail="Prompt da cena muito longo (maximo 4000 caracteres)")
+
+    prompt_seed = _build_similar_scene_prompt_for_image_generation(scene_prompt_source, req.edit_instruction)
+    effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    image_dir = Path(settings.media_dir) / "images" / str(project.id)
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    upload_ids: list[str] = []
+    for raw_id in (req.image_upload_ids or []):
+        value = str(raw_id or "").strip()
+        if value and value not in upload_ids:
+            upload_ids.append(value)
+
+    single_upload_id = str(req.image_upload_id or "").strip()
+    if single_upload_id and single_upload_id not in upload_ids:
+        upload_ids.append(single_upload_id)
+
+    resolved_files: list[Path] = []
+    if upload_ids:
+        for upload_id in upload_ids:
+            source_file = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+            if not source_file:
+                raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
+            resolved_files.append(source_file)
+
+    target_file: Path | None = None
+    if req.generate_from_prompt:
+        if not str(req.edit_instruction or "").strip() and not resolved_files:
+            raise HTTPException(status_code=400, detail="Descreva um ajuste ou envie uma nova foto antes de editar o frame")
+
+        generated_path, _reference_count = await _generate_similar_qwen_edit_image(
+            prompt_text=prompt_seed[:1200],
+            aspect_ratio=effective_aspect_ratio,
+            output_stem=str(image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{frame_kind}_frame_{uuid.uuid4().hex[:8]}"),
+            base_reference_image=current_frame_path,
+            reference_paths=[str(item) for item in resolved_files],
+        )
+        target_file = Path(generated_path)
+    elif resolved_files:
+        if len(resolved_files) == 1:
+            source_file = resolved_files[0]
+            ext = source_file.suffix.lower() or ".png"
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{frame_kind}_frame_{uuid.uuid4().hex[:8]}{ext}"
+            shutil.copyfile(source_file, target_file)
+        else:
+            from app.services.scene_generator import merge_reference_images_with_nano_banana
+
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{frame_kind}_frame_{uuid.uuid4().hex[:8]}.png"
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                merge_reference_images_with_nano_banana,
+                [str(item) for item in resolved_files],
+                prompt_seed[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+    else:
+        raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
+
+    if not target_file or not target_file.exists() or target_file.stat().st_size <= 0:
+        raise HTTPException(status_code=500, detail="Falha ao atualizar o frame selecionado")
+
+    _promote_similar_scene_boundary_frame(
+        tags_data,
+        scene,
+        frame_kind=frame_kind,
+        reference_path=str(target_file),
+        next_scene=next_scene,
+    )
+    tags_data.update({"type": "similar", "similar_stage": "scene_image_ready"})
+    project.tags = tags_data
+    project.status = VideoStatus.PENDING
+    project.progress = 0
+    project.error_message = None
+
+    scene.clip_path = ""
+    scene.scene_type = "image"
+    if next_scene is not None:
+        next_scene.clip_path = ""
+        next_scene.scene_type = "image"
+
+    await db.commit()
+
+    return {
+        "status": "scene_boundary_frame_ready",
+        "frame_kind": frame_kind,
+        "frame_url": _to_media_url(str(target_file)),
+    }
 
 
 @router.post("/projects/{project_id}/similar/generate-previews")
@@ -3972,8 +4326,8 @@ async def generate_similar_previews(
     if not scenes:
         raise HTTPException(status_code=400, detail="Projeto nao possui cenas para gerar")
 
-    engine = str(req.engine or "grok").strip().lower() or "grok"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    engine = str(req.engine or "lite2").strip().lower() or "lite2"
+    if engine not in _SIMILAR_ENGINES:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
     from app.routers.credits import deduct_credits
@@ -4016,8 +4370,8 @@ async def regenerate_similar_scene(
     if not scene or scene.project_id != project_id:
         raise HTTPException(status_code=404, detail="Cena nao encontrada")
 
-    engine = str(req.engine or "grok").strip().lower() or "grok"
-    if engine not in {"grok", "wan2", "minimax", "seedance"}:
+    engine = str(req.engine or "lite2").strip().lower() or "lite2"
+    if engine not in _SIMILAR_ENGINES:
         raise HTTPException(status_code=400, detail="Engine invalida")
     generation_mode = str(req.generation_mode or "image").strip().lower() or "image"
     if generation_mode not in {"image", "text"}:
@@ -5866,11 +6220,15 @@ async def generate_realistic_prompt_endpoint(
     else:
         topic_for_optimizer = topic
 
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
+    engine = req.engine if req.engine in _REALISTIC_ENGINES else "wan2"
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
+    elif engine == "viduq3":
+        duration = max(1, min(int(req.duration or 10), 16))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
+    elif engine == "lite2":
+        duration = _normalize_lite2_duration_seconds(int(req.duration or 5))
     elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
     elif engine == "avatar31":
@@ -6052,7 +6410,7 @@ class GenerateRealisticRequest(BaseModel):
     cover_custom_prompt: str = ""
     cover_source: str = ""
     tevoxi_has_official_cover_reference: bool = False
-    engine: str = "wan2"  # "seedance", "minimax", "wan2", "grok" or "avatar31"
+    engine: str = "wan2"  # "seedance", "lite2", "viduq3", "minimax", "wan2", "grok" or "avatar31"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -6078,7 +6436,7 @@ async def generate_realistic_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     """Generate a realistic AI video using the available realistic engines."""
-    engine = req.engine if req.engine in ("seedance", "minimax", "wan2", "grok", "avatar31") else "wan2"
+    engine = req.engine if req.engine in _REALISTIC_ENGINES else "wan2"
     prompt = (req.prompt or "").strip()
     avatar_promptless_mode = engine == "avatar31" and not prompt
     if not prompt and engine != "avatar31":
@@ -6089,8 +6447,12 @@ async def generate_realistic_endpoint(
     preserve_prompt_exactly = bool(req.preserve_prompt_exactly) or avatar_promptless_mode
     if engine == "grok":
         duration = max(1, min(int(req.duration or 10), 60))
+    elif engine == "viduq3":
+        duration = max(1, min(int(req.duration or 10), 16))
     elif engine == "wan2":
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
+    elif engine == "lite2":
+        duration = _normalize_lite2_duration_seconds(int(req.duration or 5))
     elif engine == "seedance":
         duration = max(1, min(int(req.duration or 10), 15))
     elif engine == "avatar31":
@@ -6170,7 +6532,7 @@ async def generate_realistic_endpoint(
         if avatar_duration > 0:
             duration = max(1, min(avatar_duration, 180))
 
-    use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine == "seedance"
+    use_last_image_as_final_frame = bool(req.use_last_image_as_final_frame) and engine in _SEEDANCE_FAMILY_ENGINES
 
     disable_persona_reference = bool(req.disable_persona_reference) and engine == "grok" and not bool(upload_ids)
     if disable_persona_reference:
@@ -6322,11 +6684,11 @@ async def generate_realistic_endpoint(
     effective_add_music = bool(req.add_music or resolved_audio_source)
     provider_generate_audio = bool(req.generate_audio)
     seedance_native_audio_only = False
-    if engine == "seedance":
-        # Seedance should always request native model audio when available.
+    if engine in _SEEDANCE_FAMILY_ENGINES:
+        # Native-audio Atlas engines should always request model audio when available.
         provider_generate_audio = True
         if provider_generate_audio and not external_audio_url and not effective_add_narration and not dialogue_enabled:
-            # Prefer native SFX from Seedance unless user explicitly supplied another audio source.
+            # Prefer native SFX unless user explicitly supplied another audio source.
             effective_add_music = False
             seedance_native_audio_only = True
     elif engine == "wan2":
@@ -6358,7 +6720,7 @@ async def generate_realistic_endpoint(
     else:
         await deduct_credits(db, user["id"], credits_needed)
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0 Fast", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Use custom title if provided. Avatar can be promptless, so keep a deterministic fallback.

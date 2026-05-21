@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260521-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260521-04">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 477;
+        var REQUIRED_VER = 516;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -293,12 +293,28 @@
                                     </div>
                                 </div>
                             </div>
-                            <input id="editor-video-upload-input" type="file" accept="video/*,image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadVideo(this)">
+                            <input id="editor-video-upload-input" type="file" accept="video/*,audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.weba,image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadVideo(this)">
                             <input id="editor-start-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorStartWithImages(this)">
+                            <input id="editor-start-audio-upload-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.weba" hidden onchange="_editorStartWithAudio(this)">
                             <input id="editor-layer-video-upload-input" type="file" accept="video/*,image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadLayerVideo(this)">
                             <input id="editor-layer-audio-upload-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.weba" multiple hidden onchange="_editorUploadLayerAudio(this)">
                             <input id="editor-layer-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="_editorUploadLayerImage(this)">
                             <input id="editor-project-image-upload-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="_editorUploadProjectImages(this)">
+                            <div id="editor-import-loading" class="editor-import-loading" hidden aria-live="polite" aria-atomic="true">
+                                <div class="editor-import-loading-card">
+                                    <div class="editor-import-loading-head">
+                                        <div class="editor-import-loading-copy">
+                                            <strong id="editor-import-loading-title">Carregando mídia no editor</strong>
+                                            <span id="editor-import-loading-file"></span>
+                                        </div>
+                                        <span id="editor-import-loading-percent" class="editor-import-loading-percent">0%</span>
+                                    </div>
+                                    <div class="progress-bar editor-import-progress">
+                                        <div id="editor-import-loading-fill" class="progress-bar-fill editor-import-progress-fill" style="width: 0%;"></div>
+                                    </div>
+                                    <p id="editor-import-loading-status" class="editor-import-loading-status">Preparando upload...</p>
+                                </div>
+                            </div>
                             <p class="section-subtitle">Abra uma edição em andamento ou use o botão + para começar outra.</p>
                             <div id="editor-draft-bulk-bar" class="editor-draft-bulk-bar" hidden></div>
                             <div id="editor-videos-list" class="cards-grid">
@@ -313,6 +329,10 @@
                                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                                 </button>
                                 <span class="editor-project-name" id="editor-project-name" title="Clique para renomear" tabindex="0">Projeto</span>
+                                <button class="btn btn-primary btn-sm editor-topbar-export-btn" id="editor-export-btn" type="button">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    <span class="editor-topbar-export-label">Exportar</span>
+                                </button>
                                 <div class="editor-topbar-actions">
                                     <button class="btn btn-secondary btn-sm" id="editor-new-btn" type="button" title="Iniciar nova edição">
                                         Novo +
@@ -323,16 +343,16 @@
                                     <button class="btn btn-secondary btn-sm" id="editor-redo-btn" type="button" title="Refazer" disabled>
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
                                     </button>
-                                    <button class="btn btn-primary btn-sm" id="editor-export-btn" type="button">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                        Exportar
-                                    </button>
                                 </div>
                             </div>
                             <!-- Main editor area -->
                             <div class="editor-main">
                                 <!-- Left tools panel -->
                                 <div class="editor-tools-panel" id="editor-tools-panel">
+                                    <button class="editor-tool-btn editor-mobile-mode-toggle" id="editor-mobile-actions-toggle" type="button" title="Abrir acoes de edicao" aria-pressed="false">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="17" r="2"/></svg>
+                                        <span>Editar</span>
+                                    </button>
                                     <button class="editor-tool-btn" id="editor-side-upload-video-btn" type="button" title="Enviar vídeo">
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                         <span>Vídeo+</span>
@@ -385,9 +405,10 @@
                                 <!-- Preview area -->
                                 <div class="editor-preview-area">
                                     <div class="editor-canvas-wrapper" id="editor-canvas-wrapper">
-                                        <video id="editor-video" playsinline></video>
+                                        <video id="editor-video" playsinline webkit-playsinline preload="auto" muted></video>
                                         <div id="editor-media-layer-host"></div>
                                         <canvas id="editor-overlay-canvas"></canvas>
+                                        <div class="editor-inline-text-host" id="editor-inline-text-host" hidden></div>
                                     </div>
                                     <!-- Play controls -->
                                     <div class="editor-play-controls">
@@ -397,17 +418,24 @@
                                         <span class="editor-time" id="editor-time-current">00:00</span>
                                         <span class="editor-time-sep">/</span>
                                         <span class="editor-time" id="editor-time-total">00:00</span>
+                                        <button class="editor-aspect-icon-btn" id="editor-aspect-btn" type="button" title="Proporção automática" aria-label="Proporção automática">
+                                            <span class="editor-aspect-icon-display" aria-hidden="true">
+                                                <span class="editor-aspect-icon-value">16:9</span>
+                                            </span>
+                                        </button>
                                     </div>
+                                    <div class="editor-mobile-stage-panel" id="editor-mobile-stage-panel" hidden></div>
                                 </div>
                                 <!-- Right properties panel -->
                                 <div class="editor-props-panel" id="editor-props-panel">
                                     <!-- Dynamic content based on active tool -->
-                                    <div class="editor-props-content" id="editor-props-content">
-                                        <p class="editor-props-hint">Selecione uma ferramenta para começar.</p>
-                                    </div>
+                                    <div class="editor-props-content" id="editor-props-content"></div>
                                 </div>
                             </div>
                             <div class="editor-quick-actions" id="editor-quick-actions">
+                                <button class="editor-quick-icon-btn editor-mobile-mode-toggle" id="editor-mobile-tools-toggle" type="button" title="Voltar para ferramentas" aria-pressed="false">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="11" cy="17" r="2"/></svg>
+                                </button>
                                 <button class="editor-quick-icon-btn" id="editor-quick-add-text" type="button" title="Adicionar texto">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="8" y1="20" x2="16" y2="20"/></svg>
                                 </button>
@@ -443,13 +471,14 @@
                                 </button>
                                 <div class="editor-aspect-selector">
                                     <select id="editor-aspect-select" aria-label="Proporção do vídeo">
-                                        <option value="source">Original</option>
+                                        <option value="source">Auto</option>
                                         <option value="9:16">9:16</option>
                                         <option value="16:9">16:9</option>
                                         <option value="1:1">1:1</option>
                                     </select>
                                 </div>
                             </div>
+                            <div class="editor-mobile-subtitles-sheet" id="editor-mobile-subtitles-sheet" hidden></div>
                             <!-- Timeline -->
                             <div class="editor-timeline" id="editor-timeline">
                                 <div class="editor-timeline-ruler" id="editor-timeline-ruler"></div>
@@ -529,8 +558,12 @@
                                             <div class="credit-estimate-pill similar-analysis-estimate" id="publish-scene-analysis-estimate" hidden>Calculando custo...</div>
                                         </div>
                                         <div id="publish-analysis-status" class="publish-analysis-status" hidden></div>
+                                        <button id="btn-publish-analysis-details" class="publish-analysis-details-toggle" type="button" aria-expanded="false" hidden>
+                                            <span>Detalhes</span>
+                                            <span class="publish-analysis-details-arrow" aria-hidden="true">&#9660;</span>
+                                        </button>
                                         <div id="publish-analysis-summary" class="publish-analysis-summary" hidden></div>
-                                        <button id="btn-generate-publish-ai" class="btn btn-secondary publish-generate-ai-btn" type="button" disabled>Gerar título e descrição</button>
+                                        <button id="btn-generate-publish-ai" class="btn btn-secondary publish-generate-ai-btn" type="button" hidden disabled>Gerar título e descrição</button>
                                     </div>
                                     <div id="pub-ai-loading" class="pub-ai-loading" hidden>
                                         <div class="spinner-small"></div>
@@ -834,6 +867,10 @@
                             <span class="profile-email" id="profile-email">-</span>
                             <span class="profile-role-badge" id="profile-role-badge">Membro</span>
                             <div class="profile-actions">
+                                <button class="btn btn-secondary profile-plan-btn" type="button" data-credits-trigger data-credits-preferred="plan" title="Abrir planos e créditos">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v10l-7 4-7-4V7l7-4z"></path><path d="M12 7l4 2.3v5.4L12 17l-4-2.3V9.3L12 7z"></path></svg>
+                                    Planos
+                                </button>
                                 <button class="btn btn-primary" id="btn-profile-admin-open" type="button" hidden>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M3 3v18h18"></path><path d="M7 13l3 3 7-7"></path></svg>
                                     Painel administrativo
@@ -909,6 +946,13 @@
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                             </div>
                             <strong>Enviar imagem</strong>
+                        </button>
+
+                        <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('audio_pc')">
+                            <div class="mode-selection-icon">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12"/><path d="M8 7.5v7"/><path d="M16 9v4"/><path d="M6 21a6 6 0 0 1 12 0"/></svg>
+                            </div>
+                            <strong>Enviar áudio</strong>
                         </button>
 
                         <button class="mode-selection-card editor-start-card" type="button" onclick="_editorChooseStartMode('library')">
@@ -1196,7 +1240,7 @@
             </div>
             <div class="modal-header">
                 <h3 id="create-modal-title">Novo projeto de vídeo</h3>
-                <button class="modal-close" onclick="closeModal('modal-new-project')" type="button">&times;</button>
+                <button class="modal-close" onclick="handleNewProjectModalClose()" type="button">&times;</button>
             </div>
             <div class="modal-body">
 
@@ -1239,12 +1283,12 @@
                             <strong>Imagens</strong>
                             <small>Criar imagens primeiro, antes de gerar o vídeo.</small>
                         </button>
-                        <button class="mode-selection-card" data-create-mode="series" onclick="_chooseCreateMode('series')" type="button">
+                        <button class="mode-selection-card" data-create-mode="audio" onclick="_chooseCreateMode('audio')" type="button">
                             <div class="mode-selection-icon">
-                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8"/><path d="M8 13h6"/><path d="M15 2v4"/><path d="M9 2v4"/></svg>
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v10"/><path d="M16 5v8"/><path d="M8 7v6"/><path d="M6 17a6 6 0 0 0 12 0"/><path d="M9 21h6"/></svg>
                             </div>
-                            <strong>Séries</strong>
-                            <small>Crie filmes completos, séries e dramas longos com personagens, storyboard e timeline.</small>
+                            <strong>Áudio</strong>
+                            <small>Criar áudio primeiro, antes de gerar o vídeo.</small>
                         </button>
                     </div>
                 </div>
@@ -1297,7 +1341,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
+                                <small>Vídeo realista com Lite 2.0 Fast, Pro 3.1 Start, Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
                                 <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
@@ -1479,9 +1523,17 @@
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
                                 </button>
+                                <button class="engine-option" data-value="viduq3" type="button">
+                                    <strong>Pro 3.1 Start</strong>
+                                    <small class="engine-option-desc">Cria vídeo com áudio nativo, duração de 1 a 16 segundos.</small>
+                                </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
+                                </button>
+                                <button class="engine-option" data-value="lite2" type="button">
+                                    <strong>Lite 2.0 Fast</strong>
+                                    <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
@@ -1499,7 +1551,7 @@
                                 <input type="checkbox" id="wizard-seedance-last-frame">
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
 
                         <div class="form-group" id="wizard-realistic-duration-group">
@@ -1722,51 +1774,9 @@
 
                                 <div id="script-video-audio-builder" class="script-video-audio-builder" hidden>
                                     <div class="script-video-audio-builder-head">
-                                        <div>
+                                        <div id="script-audio-builder-copy">
                                             <strong id="script-audio-builder-heading">Criar áudio com voz IA</strong>
                                             <small id="script-audio-builder-subheading">Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.</small>
-                                        </div>
-                                        <button class="btn-icon-sm" type="button" onclick="toggleScriptAudioBuilder(false)" title="Fechar" aria-label="Fechar">&times;</button>
-                                    </div>
-
-                                    <div class="script-video-audio-builder-actions">
-                                        <button class="persona-record-btn script-audio-record-btn" id="script-audio-record-btn" type="button" onclick="toggleScriptAudioDictationRecording()">
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                                            <span id="script-audio-record-btn-label">Gravar e transcrever</span>
-                                        </button>
-                                    </div>
-
-                                    <div id="script-audio-dictation-status" class="script-audio-builder-inline-status" hidden></div>
-
-                                    <div class="form-group script-video-audio-text-group">
-                                        <label for="script-audio-builder-text">Texto que será falado</label>
-                                        <textarea id="script-audio-builder-text" class="wizard-textarea" rows="6" maxlength="20000" placeholder="Grave, cole ou escreva a narração aqui..." oninput="syncScriptAudioBuilderDraft()"></textarea>
-                                    </div>
-                                    <div class="script-actions">
-                                        <span class="char-count"><span id="script-audio-builder-char-count">0</span> / 20.000</span>
-                                    </div>
-
-                                    <div class="script-audio-builder-quick-controls">
-                                        <div class="form-group script-audio-builder-option-group">
-                                            <label>Tom da narração</label>
-                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-tone-options">
-                                                <button class="pause-option selected" data-value="informativo" type="button">Informativo</button>
-                                                <button class="pause-option" data-value="inspirador" type="button">Inspirador</button>
-                                                <button class="pause-option" data-value="descontraido" type="button">Descontraído</button>
-                                                <button class="pause-option" data-value="profundo" type="button">Profundo</button>
-                                                <button class="pause-option" data-value="dramatico" type="button">Dramático</button>
-                                                <button class="pause-option" data-value="motivacional" type="button">Motivacional</button>
-                                            </div>
-                                        </div>
-
-                                        <div class="form-group script-audio-builder-option-group">
-                                            <label>Pausas</label>
-                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-pause-options">
-                                                <button class="pause-option selected" data-value="normal" type="button">Normal</button>
-                                                <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
-                                                <button class="pause-option" data-value="deep" type="button">Profundas</button>
-                                            </div>
-                                            <small class="pause-hint">Define o respiro e o ritmo antes de gerar o áudio.</small>
                                         </div>
                                     </div>
 
@@ -1870,6 +1880,47 @@
                                                     <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
                                                 </div>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="script-video-audio-builder-actions">
+                                        <button class="persona-record-btn script-audio-record-btn" id="script-audio-record-btn" type="button" onclick="toggleScriptAudioDictationRecording()">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                            <span id="script-audio-record-btn-label">Gravar e transcrever</span>
+                                        </button>
+                                    </div>
+
+                                    <div id="script-audio-dictation-status" class="script-audio-builder-inline-status" hidden></div>
+
+                                    <div class="form-group script-video-audio-text-group">
+                                        <label for="script-audio-builder-text">Texto que será falado</label>
+                                        <textarea id="script-audio-builder-text" class="wizard-textarea" rows="6" maxlength="20000" placeholder="Grave, cole ou escreva a narração aqui..." oninput="syncScriptAudioBuilderDraft()"></textarea>
+                                    </div>
+                                    <div class="script-actions">
+                                        <span class="char-count"><span id="script-audio-builder-char-count">0</span> / 20.000</span>
+                                    </div>
+
+                                    <div class="script-audio-builder-quick-controls">
+                                        <div class="form-group script-audio-builder-option-group">
+                                            <label>Tom da narração</label>
+                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-tone-options">
+                                                <button class="pause-option selected" data-value="informativo" type="button">Informativo</button>
+                                                <button class="pause-option" data-value="inspirador" type="button">Inspirador</button>
+                                                <button class="pause-option" data-value="descontraido" type="button">Descontraído</button>
+                                                <button class="pause-option" data-value="profundo" type="button">Profundo</button>
+                                                <button class="pause-option" data-value="dramatico" type="button">Dramático</button>
+                                                <button class="pause-option" data-value="motivacional" type="button">Motivacional</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group script-audio-builder-option-group">
+                                            <label>Pausas</label>
+                                            <div class="pause-options script-audio-builder-option-row" id="script-audio-builder-pause-options">
+                                                <button class="pause-option selected" data-value="normal" type="button">Normal</button>
+                                                <button class="pause-option" data-value="relaxed" type="button">Suaves</button>
+                                                <button class="pause-option" data-value="deep" type="button">Profundas</button>
+                                            </div>
+                                            <small class="pause-hint">Define o respiro e o ritmo antes de gerar o áudio.</small>
                                         </div>
                                     </div>
 
@@ -1984,7 +2035,7 @@
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                                 </div>
                                 <strong>Realista</strong>
-                                <small>Vídeo realista com Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
+                                <small>Vídeo realista com Lite 2.0 Fast, Pro 3.1 Start, Cria 3.0 speed, Ultra High 1.0, Mega 2.0 Ultra e Avatar 3.1 Plus</small>
                                 <span class="credit-badge credit-high">Custo: Alto</span>
                             </div>
                         </div>
@@ -2220,9 +2271,17 @@
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
                                 </button>
+                                <button class="engine-option" data-value="viduq3" type="button">
+                                    <strong>Pro 3.1 Start</strong>
+                                    <small class="engine-option-desc">Cria vídeo com áudio nativo, duração de 1 a 16 segundos.</small>
+                                </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
+                                </button>
+                                <button class="engine-option" data-value="lite2" type="button">
+                                    <strong>Lite 2.0 Fast</strong>
+                                    <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
@@ -2240,7 +2299,7 @@
                                 <input type="checkbox" id="script-seedance-last-frame">
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
 
                         <div class="form-group" id="script-realistic-duration-group">
@@ -2503,8 +2562,10 @@
                         </div>
 
                         <div id="similar-engine-options" class="engine-options">
+                            <button class="similar-scene-engine-btn similar-generation-engine-btn selected" data-value="lite2" type="button" title="Lite 2.0 Fast" aria-label="Lite 2.0 Fast">Lite 2.0 Fast</button>
+                            <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="viduq3" type="button" title="Pro 3.1 Start" aria-label="Pro 3.1 Start">Pro 3.1 Start</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="grok" type="button" title="Cria Speed 2.5 (Grok)" aria-label="Cria Speed 2.5 (Grok)">Cria 2.5</button>
-                            <button class="similar-scene-engine-btn similar-generation-engine-btn selected" data-value="wan2" type="button" title="Ultra High 3.0" aria-label="Ultra High 3.0">Ultra 3.0</button>
+                            <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="wan2" type="button" title="Ultra High 3.0" aria-label="Ultra High 3.0">Ultra 3.0</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="seedance" type="button" title="Mega 2.0 Ultra" aria-label="Mega 2.0 Ultra">Mega 2.0</button>
                         </div>
 
@@ -2522,7 +2583,7 @@
                     <div class="workflow-panel-head">
                         <div>
                             <h3 class="wizard-question">Criar vídeo com workflow</h3>
-                            <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor Seedance 2.0.</p>
+                            <p class="wizard-hint">Arraste os blocos, conecte referências e rode o motor de vídeo desejado.</p>
                         </div>
                         <div class="workflow-head-actions">
                             <button class="btn btn-secondary btn-sm workflow-head-btn" id="workflow-new-blank" type="button" title="Novo workflow" aria-label="Novo workflow">
@@ -2622,13 +2683,15 @@
                                     <label>Motor de IA</label>
                                     <select id="workflow-engine" class="input workflow-input">
                                         <option value="wan2" selected>Ultra High 1.0</option>
+                                        <option value="viduq3">Pro 3.1 Start</option>
                                         <option value="grok">Cria 3.0 speed</option>
+                                        <option value="lite2">Lite 2.0 Fast</option>
                                         <option value="seedance">Mega 2.0 Ultra</option>
                                         <option value="avatar31">Avatar 3.1 Plus</option>
                                     </select>
                                     <div id="workflow-seedance-last-frame-group" hidden>
                                         <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                                        <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                                        <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                                     </div>
                                     <label>Duração</label>
                                     <select id="workflow-duration" class="input workflow-input">
@@ -2639,6 +2702,7 @@
                                     <label>Resolução</label>
                                     <select id="workflow-resolution" class="input workflow-input">
                                         <option value="480p">480p</option>
+                                        <option value="540p">540p</option>
                                         <option value="720p" selected>720p</option>
                                         <option value="1080p">1080p</option>
                                     </select>
@@ -3452,9 +3516,17 @@
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
                                 </button>
+                                <button class="engine-option" data-value="viduq3" type="button">
+                                    <strong>Pro 3.1 Start</strong>
+                                    <small class="engine-option-desc">Cria vídeo com áudio nativo, duração de 1 a 16 segundos.</small>
+                                </button>
                                 <button class="engine-option" data-value="grok" type="button">
                                     <strong>Cria 3.0 speed</strong>
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
+                                </button>
+                                <button class="engine-option" data-value="lite2" type="button">
+                                    <strong>Lite 2.0 Fast</strong>
+                                    <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
@@ -3471,7 +3543,7 @@
                                 <input type="checkbox" id="auto-seedance-last-frame">
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
                         <div class="form-group">
                             <label>Duração do vídeo</label>
@@ -4390,8 +4462,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260521-01"></script>
-    <script src="/video/static/pwa.js?v=20260521-01"></script>
+    <script src="/video/static/app.js?v=20260521-04"></script>
+    <script src="/video/static/pwa.js?v=20260521-04"></script>
 </body>
 </html>
 
