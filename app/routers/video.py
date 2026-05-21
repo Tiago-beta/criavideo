@@ -2298,28 +2298,7 @@ def _clear_similar_generated_frame_variants(tags_data: dict[str, Any], scene_id:
         tags_data.pop("similar_generated_frame_variants", None)
 
 
-def _promote_similar_scene_reference_frame(
-    tags_data: dict[str, Any],
-    scene: VideoScene | Any,
-    *,
-    reference_path: object = "",
-) -> None:
-    promoted_path = str(reference_path or getattr(scene, "image_path", "") or "").strip()
-    if not (promoted_path and os.path.exists(promoted_path)):
-        return
-
-    scene_index = int(getattr(scene, "scene_index", 0) or 0)
-    scene_key = str(scene_index)
-
-    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
-    reference_frame_map[scene_key] = promoted_path
-    tags_data["similar_reference_frames"] = reference_frame_map
-
-    if scene_index > 0:
-        reference_end_map = _extract_similar_reference_end_frame_map(tags_data)
-        reference_end_map[str(scene_index - 1)] = promoted_path
-        tags_data["similar_reference_end_frames"] = reference_end_map
-
+def _clear_similar_reference_text_metadata(tags_data: dict[str, Any], scene_key: str) -> None:
     reference_text_detected_map = _extract_similar_reference_text_detected_map(tags_data)
     reference_text_detected_map.pop(scene_key, None)
     if reference_text_detected_map:
@@ -2333,6 +2312,60 @@ def _promote_similar_scene_reference_frame(
         tags_data["similar_reference_frame_text_excerpt"] = reference_text_excerpt_map
     else:
         tags_data.pop("similar_reference_frame_text_excerpt", None)
+
+
+def _promote_similar_scene_boundary_frame(
+    tags_data: dict[str, Any],
+    scene: VideoScene | Any,
+    *,
+    frame_kind: str = "start",
+    reference_path: object = "",
+    next_scene: VideoScene | Any | None = None,
+) -> None:
+    promoted_path = str(reference_path or getattr(scene, "image_path", "") or "").strip()
+    if not (promoted_path and os.path.exists(promoted_path)):
+        return
+
+    normalized_frame_kind = _normalize_similar_unified_boundary_frame_kind(frame_kind)
+    scene_index = int(getattr(scene, "scene_index", 0) or 0)
+    scene_key = str(scene_index)
+
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    reference_end_map = _extract_similar_reference_end_frame_map(tags_data)
+
+    if normalized_frame_kind == "end":
+        reference_end_map[scene_key] = promoted_path
+        tags_data["similar_reference_end_frames"] = reference_end_map
+
+        next_scene_index = int(getattr(next_scene, "scene_index", 0) or 0)
+        if next_scene is not None and next_scene_index > scene_index:
+            reference_frame_map[str(next_scene_index)] = promoted_path
+            tags_data["similar_reference_frames"] = reference_frame_map
+            _clear_similar_reference_text_metadata(tags_data, str(next_scene_index))
+        return
+
+    reference_frame_map[scene_key] = promoted_path
+    tags_data["similar_reference_frames"] = reference_frame_map
+
+    if scene_index > 0:
+        reference_end_map[str(scene_index - 1)] = promoted_path
+        tags_data["similar_reference_end_frames"] = reference_end_map
+
+    _clear_similar_reference_text_metadata(tags_data, scene_key)
+
+
+def _promote_similar_scene_reference_frame(
+    tags_data: dict[str, Any],
+    scene: VideoScene | Any,
+    *,
+    reference_path: object = "",
+) -> None:
+    _promote_similar_scene_boundary_frame(
+        tags_data,
+        scene,
+        frame_kind="start",
+        reference_path=reference_path,
+    )
 
 
 def _serialize_project_scene(
@@ -2914,6 +2947,10 @@ class SimilarSceneImageRequest(BaseModel):
 
 class SimilarUnifiedBoundaryFrameRequest(SimilarSceneImageRequest):
     frame_kind: str = "start"
+
+
+class SimilarSceneBoundaryFrameRequest(SimilarSceneImageRequest):
+    frame_kind: str = "end"
 
 
 class SimilarGeneratePreviewsRequest(BaseModel):
@@ -4051,6 +4088,16 @@ async def upsert_similar_scene_image(
     promote_reference_frame = bool(req.promote_reference_frame and req.generate_from_prompt and track_generated_variant)
     if promote_reference_frame:
         _promote_similar_scene_reference_frame(tags_data, scene, reference_path=scene.image_path)
+        if current_scene_index > 0:
+            previous_scene_result = await db.execute(
+                select(VideoScene)
+                .where(VideoScene.project_id == project_id, VideoScene.scene_index == current_scene_index - 1)
+                .limit(1)
+            )
+            previous_scene = previous_scene_result.scalars().first()
+            if previous_scene:
+                previous_scene.clip_path = ""
+                previous_scene.scene_type = "image"
         _clear_similar_generated_frame_variants(tags_data, int(scene.id or 0))
     elif req.generate_from_prompt and track_generated_variant:
         _set_similar_generated_frame_variants(
@@ -4084,6 +4131,140 @@ async def upsert_similar_scene_image(
             reference_text_detected_map=reference_text_detected_map,
             reference_text_excerpt_map=reference_text_excerpt_map,
         )
+    }
+
+
+@router.post("/projects/{project_id}/similar/scenes/{scene_id}/boundary-frame")
+async def upsert_similar_scene_boundary_frame(
+    project_id: int,
+    scene_id: int,
+    req: SimilarSceneBoundaryFrameRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    scene = await db.get(VideoScene, scene_id)
+    if not scene or scene.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Cena nao encontrada")
+
+    frame_kind = _normalize_similar_unified_boundary_frame_kind(req.frame_kind)
+    tags_data = _safe_tags_dict(project.tags)
+    current_scene_index = int(scene.scene_index or 0)
+    scene_key = str(current_scene_index)
+    reference_frame_map = _extract_similar_reference_frame_map(tags_data)
+    reference_end_map = _extract_similar_reference_end_frame_map(tags_data)
+    current_frame_path = str(reference_end_map.get(scene_key) or "").strip()
+    if frame_kind == "start":
+        current_frame_path = str(reference_frame_map.get(scene_key) or getattr(scene, "image_path", "") or "").strip()
+    if not (current_frame_path and os.path.exists(current_frame_path)):
+        raise HTTPException(status_code=400, detail="Frame solicitado nao esta disponivel para edicao")
+
+    next_scene = None
+    if frame_kind == "end":
+        next_scene_result = await db.execute(
+            select(VideoScene)
+            .where(VideoScene.project_id == project_id, VideoScene.scene_index == current_scene_index + 1)
+            .limit(1)
+        )
+        next_scene = next_scene_result.scalars().first()
+
+    scene_prompt_source = str(req.prompt_override or scene.prompt or "").strip()
+    if not scene_prompt_source:
+        raise HTTPException(status_code=400, detail="Prompt da cena nao encontrado para editar o frame")
+    if len(scene_prompt_source) > 4000:
+        raise HTTPException(status_code=400, detail="Prompt da cena muito longo (maximo 4000 caracteres)")
+
+    prompt_seed = _build_similar_scene_prompt_for_image_generation(scene_prompt_source, req.edit_instruction)
+    effective_aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
+    image_dir = Path(settings.media_dir) / "images" / str(project.id)
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    upload_ids: list[str] = []
+    for raw_id in (req.image_upload_ids or []):
+        value = str(raw_id or "").strip()
+        if value and value not in upload_ids:
+            upload_ids.append(value)
+
+    single_upload_id = str(req.image_upload_id or "").strip()
+    if single_upload_id and single_upload_id not in upload_ids:
+        upload_ids.append(single_upload_id)
+
+    resolved_files: list[Path] = []
+    if upload_ids:
+        for upload_id in upload_ids:
+            source_file = _resolve_temp_file(user["id"], upload_id, IMAGE_EXTS)
+            if not source_file:
+                raise HTTPException(status_code=400, detail="Uma das imagens enviadas nao foi encontrada. Envie novamente")
+            resolved_files.append(source_file)
+
+    target_file: Path | None = None
+    if req.generate_from_prompt:
+        if not str(req.edit_instruction or "").strip() and not resolved_files:
+            raise HTTPException(status_code=400, detail="Descreva um ajuste ou envie uma nova foto antes de editar o frame")
+
+        generated_path, _reference_count = await _generate_similar_qwen_edit_image(
+            prompt_text=prompt_seed[:1200],
+            aspect_ratio=effective_aspect_ratio,
+            output_stem=str(image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{frame_kind}_frame_{uuid.uuid4().hex[:8]}"),
+            base_reference_image=current_frame_path,
+            reference_paths=[str(item) for item in resolved_files],
+        )
+        target_file = Path(generated_path)
+    elif resolved_files:
+        if len(resolved_files) == 1:
+            source_file = resolved_files[0]
+            ext = source_file.suffix.lower() or ".png"
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{frame_kind}_frame_{uuid.uuid4().hex[:8]}{ext}"
+            shutil.copyfile(source_file, target_file)
+        else:
+            from app.services.scene_generator import merge_reference_images_with_nano_banana
+
+            target_file = image_dir / f"similar_scene_{int(scene.scene_index or 0):03d}_{frame_kind}_frame_{uuid.uuid4().hex[:8]}.png"
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                merge_reference_images_with_nano_banana,
+                [str(item) for item in resolved_files],
+                prompt_seed[:1200],
+                effective_aspect_ratio,
+                str(target_file),
+            )
+    else:
+        raise HTTPException(status_code=400, detail="Informe image_upload_id/image_upload_ids ou generate_from_prompt=true")
+
+    if not target_file or not target_file.exists() or target_file.stat().st_size <= 0:
+        raise HTTPException(status_code=500, detail="Falha ao atualizar o frame selecionado")
+
+    _promote_similar_scene_boundary_frame(
+        tags_data,
+        scene,
+        frame_kind=frame_kind,
+        reference_path=str(target_file),
+        next_scene=next_scene,
+    )
+    tags_data.update({"type": "similar", "similar_stage": "scene_image_ready"})
+    project.tags = tags_data
+    project.status = VideoStatus.PENDING
+    project.progress = 0
+    project.error_message = None
+
+    scene.clip_path = ""
+    scene.scene_type = "image"
+    if next_scene is not None:
+        next_scene.clip_path = ""
+        next_scene.scene_type = "image"
+
+    await db.commit()
+
+    return {
+        "status": "scene_boundary_frame_ready",
+        "frame_kind": frame_kind,
+        "frame_url": _to_media_url(str(target_file)),
     }
 
 

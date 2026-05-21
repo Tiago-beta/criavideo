@@ -12,6 +12,7 @@ from app.routers.video import (
     _extract_similar_reference_text_excerpt_map,
     _ensure_similar_unified_boundary_frame_paths,
     _extract_similar_unified_boundary_frame_paths,
+    _promote_similar_scene_boundary_frame,
     _promote_similar_scene_reference_frame,
     _serialize_project_scene,
 )
@@ -137,6 +138,41 @@ class TestSimilarUnifiedReferenceFrames(unittest.TestCase):
         self.assertEqual(_extract_similar_reference_end_frame_map(tags)["0"], promoted_path)
         self.assertNotIn("1", _extract_similar_reference_text_detected_map(tags))
         self.assertNotIn("1", _extract_similar_reference_text_excerpt_map(tags))
+
+    def test_promote_scene_end_boundary_updates_next_scene_start(self):
+        promoted_path = str(Path(self.temp_dir.name) / "scene-1-end-clean.jpg")
+        Path(promoted_path).write_bytes(b"clean-end")
+
+        tags = {
+            "similar_reference_frames": {
+                "1": self.start_path,
+                "2": self.fallback_path,
+            },
+            "similar_reference_end_frames": {
+                "1": self.end_path,
+            },
+            "similar_reference_frame_text_detected": {
+                "2": True,
+            },
+            "similar_reference_frame_text_excerpt": {
+                "2": "Texto antigo",
+            },
+        }
+        scene = SimpleNamespace(scene_index=1)
+        next_scene = SimpleNamespace(scene_index=2)
+
+        _promote_similar_scene_boundary_frame(
+            tags,
+            scene,
+            frame_kind="end",
+            reference_path=promoted_path,
+            next_scene=next_scene,
+        )
+
+        self.assertEqual(_extract_similar_reference_end_frame_map(tags)["1"], promoted_path)
+        self.assertEqual(_extract_similar_reference_frame_map(tags)["2"], promoted_path)
+        self.assertNotIn("2", _extract_similar_reference_text_detected_map(tags))
+        self.assertNotIn("2", _extract_similar_reference_text_excerpt_map(tags))
 
 
 class TestSimilarUnifiedBoundaryFallbacks(unittest.IsolatedAsyncioTestCase):
