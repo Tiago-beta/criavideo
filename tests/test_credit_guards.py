@@ -65,6 +65,7 @@ class TestSimilarCreditPricing(unittest.TestCase):
         video_section = next(section for section in sections if section["key"] == "video-models")
         seedance_row = next(row for row in video_section["rows"] if row["key"] == "seedance-video")
         lite2_row = next(row for row in video_section["rows"] if row["key"] == "lite2-video")
+        mega15_row = next(row for row in video_section["rows"] if row["key"] == "mega15-video")
         vidu_row = next(row for row in video_section["rows"] if row["key"] == "viduq3-video")
 
         self.assertEqual(seedance_row["creditsPerUnit"], 15)
@@ -74,6 +75,9 @@ class TestSimilarCreditPricing(unittest.TestCase):
         self.assertEqual(lite2_row["label"], "Lite 2.0 Fast")
         self.assertEqual(lite2_row["creditsPerUnit"], 3)
         self.assertEqual(lite2_row["usdPerUnit"], 0.03)
+        self.assertEqual(mega15_row["label"], "Mega 1.5 Real")
+        self.assertEqual(mega15_row["creditsPerUnit"], 12)
+        self.assertEqual(mega15_row["usdPerUnit"], 0.12)
         self.assertEqual(vidu_row["label"], "Pro 3.1 Start")
         self.assertEqual(vidu_row["creditsPerUnit"], 7)
         self.assertEqual(vidu_row["usdPerUnit"], 0.042)

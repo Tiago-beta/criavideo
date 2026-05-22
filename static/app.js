@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v528 loaded");
+console.log("[CriaVideo] app.js v529 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -204,8 +204,8 @@ const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
 const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
-const SIMILAR_ENGINE_OPTIONS = ["lite2", "viduq3", "grok", "wan2", "seedance"];
-const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "lite2", "viduq3"]);
+const SIMILAR_ENGINE_OPTIONS = ["lite2", "mega15", "viduq3", "grok", "wan2", "seedance"];
+const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "mega15", "lite2", "viduq3"]);
 
 function _isSeedanceFamilyEngine(engineValue) {
     return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
@@ -216,6 +216,7 @@ function _getCreateRealisticDurationOptions(engineValue) {
     if (engine === "wan2") return WAN_REALISTIC_DURATION_OPTIONS;
     if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
     if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "mega15") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     return DEFAULT_REALISTIC_DURATION_OPTIONS;
 }
@@ -225,6 +226,7 @@ function _getAutoRealisticDurationOptions(engineValue) {
     if (engine === "grok") return AUTO_GROK_DURATION_OPTIONS;
     if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
     if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "mega15") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     return WAN_REALISTIC_DURATION_OPTIONS;
 }
@@ -5225,6 +5227,8 @@ async function createSimilar(projectId) {
         "Ultra High 2.2",
         "Lite 2.0 Fast",
         "Lite 2.0",
+        "Mega 1.5 Real",
+        "Seedance 2.0 Fast",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
         "Grok",
@@ -5246,10 +5250,11 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance", "lite2", "viduq3"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "lite2", "mega15", "viduq3"].includes(raw)) {
             return raw;
         }
         if (raw.includes("lite 2.0") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
+        if (raw.includes("mega 1.5") || raw.includes("seedance 2.0 fast") || raw.includes("seedance fast")) return "mega15";
         if (raw.includes("pro 3.1") || raw.includes("vidu")) return "viduq3";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
@@ -7731,12 +7736,13 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "grok" || value === "wan2" || value === "lite2" || value === "seedance" || value === "viduq3") {
+    if (value === "grok" || value === "wan2" || value === "lite2" || value === "mega15" || value === "seedance" || value === "viduq3") {
         return value;
     }
     if (value.includes("lite 2.0") || value.includes("seedance v1.5") || value.includes("seedance-v1.5")) {
         return "lite2";
     }
+    if (value.includes("mega 1.5") || value.includes("seedance 2.0 fast") || value.includes("seedance fast")) return "mega15";
     if (value.includes("vidu") || value.includes("pro 3.1") || value === "pro31" || value === "pro3.1") {
         return "viduq3";
     }
@@ -7751,6 +7757,7 @@ function _similarSceneEngineLabel(engineValue) {
     if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra 3.0";
     if (normalized === "lite2") return "Lite 2.0 Fast";
+    if (normalized === "mega15") return "Mega 1.5 Real";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
@@ -7760,6 +7767,7 @@ function _similarEngineDisplayLabel(engineValue) {
     if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra High 3.0";
     if (normalized === "lite2") return "Lite 2.0 Fast";
+    if (normalized === "mega15") return "Mega 1.5 Real";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
 }
@@ -11205,12 +11213,13 @@ function workflowAddNode(kind) {
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="lite2">Lite 2.0 Fast</option>
+                <option value="mega15">Mega 1.5 Real</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 Fast, no Mega 1.5 Real, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
@@ -11547,6 +11556,7 @@ function getRealisticEngineLabel(engine) {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
         lite2: "Lite 2.0 Fast",
+        mega15: "Mega 1.5 Real",
         viduq3: "Pro 3.1 Start",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
@@ -11644,6 +11654,7 @@ function workflowEngineDurationOptions(engine) {
     if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
     if (engine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
     if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
+    if (engine === "mega15") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
@@ -11848,12 +11859,13 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="lite2">Lite 2.0 Fast</option>
+                <option value="mega15">Mega 1.5 Real</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Lite 2.0 Fast, no Mega 1.5 Real, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);

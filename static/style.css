@@ -5660,6 +5660,10 @@ th {
     --engine-accent-rgb: 52, 233, 173;
 }
 
+.engine-option[data-value="mega15"] {
+    --engine-accent-rgb: 255, 140, 108;
+}
+
 .engine-option[data-value="seedance"] {
     --engine-accent-rgb: 255, 184, 66;
 }
@@ -12428,6 +12432,12 @@ th,
     color: #ffd7bf;
 }
 
+#similar-engine-options .engine-option[data-value="mega15"].selected {
+    border-color: rgba(255, 140, 108, 0.48);
+    background: rgba(255, 140, 108, 0.14);
+    color: #ffe0d5;
+}
+
 #similar-engine-options .engine-option[data-value="seedance"].selected {
     border-color: rgba(128, 246, 214, 0.4);
     background: rgba(128, 246, 214, 0.12);
@@ -13446,6 +13456,12 @@ th,
     border-color: rgba(255, 163, 94, 0.48);
     background: rgba(255, 163, 94, 0.14);
     color: #ffd7bf;
+}
+
+.similar-scene-engine-btn[data-value="mega15"].selected {
+    border-color: rgba(255, 140, 108, 0.48);
+    background: rgba(255, 140, 108, 0.14);
+    color: #ffe0d5;
 }
 
 .similar-scene-action-btn {

@@ -2424,10 +2424,12 @@ def _scene_duration_seconds(scene: VideoScene) -> float:
 
 def _normalize_engine(value: str) -> str:
     raw = str(value or "").strip().lower()
-    if raw in {"grok", "wan2", "seedance", "lite2", "viduq3"}:
+    if raw in {"grok", "wan2", "seedance", "lite2", "mega15", "viduq3"}:
         return raw
     if "lite 2.0" in raw or "seedance v1.5" in raw or "seedance-v1.5" in raw:
         return "lite2"
+    if "mega 1.5" in raw or "seedance 2.0 fast" in raw or raw in {"mega15real", "seedancefast", "seedance-2.0-fast"}:
+        return "mega15"
     if "vidu" in raw or "pro 3.1" in raw or raw in {"pro31", "pro3.1", "pro-3.1"}:
         return "viduq3"
     if "seedance" in raw:
@@ -2438,7 +2440,7 @@ def _normalize_engine(value: str) -> str:
 
 
 def _is_seedance_family_engine(engine: str) -> bool:
-    return _normalize_engine(engine) in {"seedance", "lite2", "viduq3"}
+    return _normalize_engine(engine) in {"seedance", "lite2", "mega15", "viduq3"}
 
 
 def _engine_duration(engine: str, duration: int) -> int:
@@ -2454,6 +2456,8 @@ def _engine_duration(engine: str, duration: int) -> int:
         return min(allowed, key=lambda candidate: (abs(candidate - safe), candidate))
     if engine == "lite2":
         return max(5, min(12, safe))
+    if engine == "mega15":
+        return max(5, min(10, safe))
     if engine == "seedance":
         return max(5, min(10, safe))
     return max(5, min(15, safe))
@@ -2469,6 +2473,8 @@ def _engine_min_duration(engine: str) -> float:
         return 5.0
     if normalized_engine == "lite2":
         return 5.0
+    if normalized_engine == "mega15":
+        return 4.0
     if normalized_engine == "seedance":
         return 4.0
     return 1.0

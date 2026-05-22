@@ -22,6 +22,8 @@ SEEDANCE_T2V_MODEL = (settings.atlascloud_seedance_t2v_model or "bytedance/seeda
 VIDU_Q3_START_END_MODEL = (settings.atlascloud_vidu_q3_start_end_model or "vidu/q3-pro/start-end-to-video").strip()
 _SEEDANCE_I2V_DEFAULT_MODEL = "bytedance/seedance-2.0/image-to-video"
 _SEEDANCE_I2V_TARGET_RESOLUTION = "480p"
+_SEEDANCE_FAST_I2V_DEFAULT_MODEL = "bytedance/seedance-2.0-fast/image-to-video"
+_SEEDANCE_FAST_I2V_TARGET_RESOLUTION = "480p"
 _SEEDANCE_LITE_I2V_DEFAULT_MODEL = "bytedance/seedance-v1.5-pro/image-to-video-fast"
 _SEEDANCE_LITE_I2V_TARGET_RESOLUTION = "720p"
 _seedance_i2v_cfg = (settings.atlascloud_seedance_i2v_model or "").strip()
@@ -34,6 +36,11 @@ if _seedance_i2v_cfg in {
     SEEDANCE_I2V_MODEL = _SEEDANCE_I2V_DEFAULT_MODEL
 else:
     SEEDANCE_I2V_MODEL = _seedance_i2v_cfg
+_seedance_fast_i2v_cfg = (settings.atlascloud_seedance_fast_i2v_model or "").strip()
+if _seedance_fast_i2v_cfg:
+    SEEDANCE_FAST_I2V_MODEL = _seedance_fast_i2v_cfg
+else:
+    SEEDANCE_FAST_I2V_MODEL = _SEEDANCE_FAST_I2V_DEFAULT_MODEL
 _seedance_lite_i2v_cfg = (settings.atlascloud_seedance_lite_i2v_model or "").strip()
 if _seedance_lite_i2v_cfg:
     SEEDANCE_LITE_I2V_MODEL = _seedance_lite_i2v_cfg
@@ -48,9 +55,12 @@ _VIDU_ALLOWED_RESOLUTIONS = {"540p", "720p", "1080p"}
 
 
 def _normalize_seedance_engine_variant(value: str) -> str:
-    raw = str(value or "seedance").strip().lower()
-    if raw in {"lite2", "seedance15", "seedance-v1.5", "seedance-v1.5-fast"}:
+    raw = str(value or "seedance").strip().lower().replace("_", "-")
+    compact = raw.replace(" ", "").replace("-", "").replace(".", "")
+    if raw in {"lite2", "seedance15", "seedance-v1.5", "seedance-v1.5-fast"} or compact in {"seedancev15", "seedancev15fast"}:
         return "lite2"
+    if raw in {"mega15", "mega15real", "seedancefast", "seedance-2.0-fast"} or compact in {"mega15", "mega15real", "seedance20fast"}:
+        return "mega15"
     return "seedance"
 
 
@@ -62,6 +72,9 @@ def _resolve_seedance_generation_profile(
     resolution: str,
 ) -> tuple[str, int, str]:
     normalized_variant = _normalize_seedance_engine_variant(engine_variant)
+    if use_i2v and normalized_variant == "mega15":
+        normalized_duration = max(4, min(int(duration or 5), 15))
+        return SEEDANCE_FAST_I2V_MODEL, normalized_duration, _SEEDANCE_FAST_I2V_TARGET_RESOLUTION
     if use_i2v and normalized_variant == "lite2":
         normalized_duration = max(5, min(int(duration or 5), 12))
         return SEEDANCE_LITE_I2V_MODEL, normalized_duration, _SEEDANCE_LITE_I2V_TARGET_RESOLUTION
