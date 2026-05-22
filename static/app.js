@@ -28464,6 +28464,7 @@ let personaMediaRecorder = null;
 let personaRecordedChunks = [];
 let personaRecordingTimer = null;
 let personaSampleBlobs = {}; // keyed by prefix: 'wizard' or 'script'
+const PERSONA_SAMPLE_HINT_TEXT = "Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz";
 
 function renderAllCreatePersonaLists() {
     ["wizard", "script", "script-audio-builder"].forEach((prefix) => renderPersonaList(prefix));
@@ -28570,28 +28571,109 @@ function stopPersonaRecording(prefix) {
     if (area) area.hidden = true;
 }
 
-async function handlePersonaUpload(event, prefix) {
-    const file = event.target.files[0];
-    if (!file) return;
+function _setPersonaHintText(prefix, text = PERSONA_SAMPLE_HINT_TEXT) {
     const hint = document.querySelector(`#${prefix}-persona-panel .persona-hint`);
-    if (hint) hint.textContent = "Processando áudio...";
-    const result = await trimAudioTo30s(file);
-    if (result.tooLarge) {
-        alert("Áudio muito grande. Grave pelo microfone ou envie um arquivo menor (max 10MB).");
-        if (hint) hint.textContent = "Grave ou envie 10-30s falando para criar seu perfil de voz";
-        event.target.value = '';
+    if (hint) {
+        hint.textContent = text;
+    }
+    return hint;
+}
+
+function openPersonaUploadSourceModal(prefix) {
+    const modal = document.getElementById("persona-upload-source-modal");
+    if (!modal) return;
+    modal.dataset.prefix = prefix;
+    modal.hidden = false;
+}
+
+function closePersonaUploadSourceModal() {
+    const modal = document.getElementById("persona-upload-source-modal");
+    if (!modal) return;
+    modal.hidden = true;
+    modal.dataset.prefix = "";
+}
+
+function selectPersonaUploadSource(sourceKind) {
+    const modal = document.getElementById("persona-upload-source-modal");
+    const prefix = String(modal?.dataset.prefix || "").trim();
+    if (!prefix) {
+        closePersonaUploadSourceModal();
         return;
     }
+
+    closePersonaUploadSourceModal();
+    const inputId = sourceKind === "video"
+        ? `${prefix}-persona-video-input`
+        : `${prefix}-persona-audio-input`;
+    const input = document.getElementById(inputId);
+    if (input) {
+        input.click();
+    }
+}
+
+async function _applyPersonaSampleFile(file, prefix, sourceKind = "audio") {
+    if (!file) return false;
+
+    const hint = _setPersonaHintText(
+        prefix,
+        sourceKind === "video" ? "Extraindo e preparando o áudio do vídeo..." : "Processando áudio..."
+    );
+    const result = await trimAudioTo30s(file);
+    if (result.tooLarge) {
+        alert(
+            sourceKind === "video"
+                ? "O áudio extraído ficou muito grande. Use um vídeo mais curto ou escolha um trecho menor (max 10MB)."
+                : "Áudio muito grande. Grave pelo microfone ou envie um arquivo menor (max 10MB)."
+        );
+        _setPersonaHintText(prefix);
+        return false;
+    }
+
     personaSampleBlobs[prefix] = result.blob;
     showPersonaPreview(prefix, result.blob);
     if (result.wasTrimmed && hint) {
         const min = Math.floor(result.duration / 60);
         const sec = String(Math.floor(result.duration % 60)).padStart(2, '0');
-        hint.textContent = `Audio cortado para 30s (original: ${min}:${sec})`;
+        hint.textContent = `${sourceKind === "video" ? "Áudio do vídeo" : "Áudio"} cortado para 30s (original: ${min}:${sec})`;
     } else if (hint) {
-        hint.textContent = "Grave ou envie 10-30s falando para criar seu perfil de voz";
+        hint.textContent = sourceKind === "video"
+            ? "Áudio extraído do vídeo. Revise o preview e salve o perfil."
+            : PERSONA_SAMPLE_HINT_TEXT;
     }
-    event.target.value = '';
+
+    return true;
+}
+
+async function handlePersonaUpload(event, prefix) {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+        await _applyPersonaSampleFile(file, prefix, "audio");
+    } finally {
+        event.target.value = '';
+    }
+}
+
+async function handlePersonaVideoUpload(event, prefix) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    _setPersonaHintText(prefix, "Extraindo áudio do vídeo...");
+    try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const payload = await apiForm("/video/editor/upload-video-audio", formData, { method: "POST" });
+        const extractedFile = await _downloadExtractedScriptAudioFile(payload, file.name);
+        const applied = await _applyPersonaSampleFile(extractedFile, prefix, "video");
+        if (applied) {
+            showToast("Áudio extraído do vídeo. Agora é só salvar o perfil.", "success");
+        }
+    } catch (error) {
+        _setPersonaHintText(prefix);
+        alert(`Erro ao extrair áudio do vídeo: ${error.message}`);
+    } finally {
+        event.target.value = '';
+    }
 }
 
 async function trimAudioTo30s(blob) {
@@ -28672,7 +28754,7 @@ async function savePersonaVoice(prefix) {
     if (!name) { alert("Digite um nome para o perfil."); return; }
 
     const blob = personaSampleBlobs[prefix];
-    if (!blob) { alert("Grave ou envie um áudio primeiro."); return; }
+    if (!blob) { alert("Grave, envie um áudio ou extraia de um vídeo primeiro."); return; }
 
     try {
         // Create profile with default base voice (alloy)

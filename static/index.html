@@ -1375,11 +1375,12 @@
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                         Gravar Voz
                                     </button>
-                                    <label class="persona-upload-btn">
+                                    <button class="persona-upload-btn" onclick="openPersonaUploadSourceModal('wizard')" type="button">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                         Enviar Áudio
-                                        <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'wizard')" hidden>
-                                    </label>
+                                    </button>
+                                    <input id="wizard-persona-audio-input" type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'wizard')" hidden>
+                                    <input id="wizard-persona-video-input" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" onchange="handlePersonaVideoUpload(event, 'wizard')" hidden>
                                 </div>
                                 <div id="wizard-recording-area" class="persona-recording-area" hidden>
                                     <div class="recording-pulse"></div>
@@ -1394,7 +1395,7 @@
                                         <button class="btn-icon-sm" onclick="cancelPersonaPreview('wizard')" type="button">&times;</button>
                                     </div>
                                 </div>
-                                <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
+                                <p class="persona-hint">Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz</p>
                             </div>
                             <!-- Vozes IA -->
                             <div class="voice-section">
@@ -1783,11 +1784,12 @@
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                                     Gravar Voz
                                                 </button>
-                                                <label class="persona-upload-btn">
+                                                <button class="persona-upload-btn" onclick="openPersonaUploadSourceModal('script-audio-builder')" type="button">
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                                     Enviar Áudio
-                                                    <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script-audio-builder')" hidden>
-                                                </label>
+                                                </button>
+                                                <input id="script-audio-builder-persona-audio-input" type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script-audio-builder')" hidden>
+                                                <input id="script-audio-builder-persona-video-input" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" onchange="handlePersonaVideoUpload(event, 'script-audio-builder')" hidden>
                                             </div>
                                             <div id="script-audio-builder-recording-area" class="persona-recording-area" hidden>
                                                 <div class="recording-pulse"></div>
@@ -1802,7 +1804,7 @@
                                                     <button class="btn-icon-sm" onclick="cancelPersonaPreview('script-audio-builder')" type="button">&times;</button>
                                                 </div>
                                             </div>
-                                            <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
+                                            <p class="persona-hint">Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz</p>
                                         </div>
 
                                         <div class="collapsible-section script-audio-builder-voice-collapse">
@@ -2081,11 +2083,12 @@
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                         Gravar Voz
                                     </button>
-                                    <label class="persona-upload-btn">
+                                    <button class="persona-upload-btn" onclick="openPersonaUploadSourceModal('script')" type="button">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                         Enviar Áudio
-                                        <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script')" hidden>
-                                    </label>
+                                    </button>
+                                    <input id="script-persona-audio-input" type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script')" hidden>
+                                    <input id="script-persona-video-input" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" onchange="handlePersonaVideoUpload(event, 'script')" hidden>
                                 </div>
                                 <div id="script-recording-area" class="persona-recording-area" hidden>
                                     <div class="recording-pulse"></div>
@@ -2100,7 +2103,7 @@
                                         <button class="btn-icon-sm" onclick="cancelPersonaPreview('script')" type="button">&times;</button>
                                     </div>
                                 </div>
-                                <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
+                                <p class="persona-hint">Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz</p>
                             </div>
                             <!-- Vozes IA -->
                             <div class="voice-section">
@@ -4420,6 +4423,30 @@
         </div>
     </div>
 
+    <div id="persona-upload-source-modal" class="persona-upload-source-modal" hidden onclick="closePersonaUploadSourceModal()">
+        <div class="persona-upload-source-card" role="dialog" aria-modal="true" aria-labelledby="persona-upload-source-title" onclick="event.stopPropagation()">
+            <button class="persona-upload-source-close" onclick="closePersonaUploadSourceModal()" type="button" aria-label="Fechar">&times;</button>
+            <span class="persona-upload-source-kicker">Clonar voz</span>
+            <h3 id="persona-upload-source-title">Como você quer enviar sua amostra?</h3>
+            <p class="persona-upload-source-copy">Escolha se quer enviar um arquivo de áudio pronto ou extrair a faixa de voz de um vídeo antes da clonagem.</p>
+            <div class="persona-upload-source-grid">
+                <button class="persona-upload-source-option" onclick="selectPersonaUploadSource('audio')" type="button">
+                    <span class="persona-upload-source-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    </span>
+                    <strong>Enviar arquivo de áudio</strong>
+                    <small>Use um trecho pronto da sua voz em MP3, WAV, M4A ou similar.</small>
+                </button>
+                <button class="persona-upload-source-option" onclick="selectPersonaUploadSource('video')" type="button">
+                    <span class="persona-upload-source-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="15" height="14" rx="2" ry="2"/><polygon points="17 10 22 7 22 17 17 14 17 10"/></svg>
+                    </span>
+                    <strong>Extrair áudio de um vídeo</strong>
+                    <small>Envie um vídeo e a plataforma extrai a faixa de áudio para criar a voz.</small>
+                </button>
+            </div>
+        </div>
+    </div>
     <script src="/video/static/app.js?v=20260522-07"></script>
     <script src="/video/static/pwa.js?v=20260522-07"></script>
 </body>
