@@ -3183,6 +3183,30 @@ async def list_projects(
             reverse=True,
         )
 
+    def _project_primary_image_path(project: VideoProject, tags_data: dict[str, Any]) -> str:
+        candidates: list[str] = []
+        for key in ("reference_delivery_image_paths", "reference_upload_image_paths"):
+            raw_value = tags_data.get(key) or []
+            if isinstance(raw_value, (list, tuple)):
+                candidates.extend(str(path or "").strip() for path in raw_value)
+            elif raw_value:
+                candidates.append(str(raw_value).strip())
+
+        if bool(getattr(project, "use_custom_images", False)):
+            image_dir = Path(settings.media_dir) / "images" / str(project.id)
+            if image_dir.exists():
+                candidates.extend(
+                    str(path)
+                    for path in sorted(image_dir.iterdir())
+                    if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+                )
+
+        style_prompt_path = str(project.style_prompt or "").strip()
+        if style_prompt_path and os.path.splitext(style_prompt_path)[1].lower() in IMAGE_EXTS:
+            candidates.append(style_prompt_path)
+
+        return next((candidate for candidate in candidates if candidate and os.path.exists(candidate)), "")
+
     payload = []
     for p in projects:
         tags_data = _safe_tags_dict(p.tags)
@@ -3191,24 +3215,17 @@ async def list_projects(
         latest_active = next((r for r in ordered if r.file_path), None)
         display_render = latest_active or latest_any
         thumbnail_path = str(display_render.thumbnail_path or "").strip() if display_render and display_render.thumbnail_path else ""
-        if not thumbnail_path:
-            fallback_thumbnail_candidates = []
-            reference_upload_paths = tags_data.get("reference_upload_image_paths") or []
-            if isinstance(reference_upload_paths, (list, tuple)):
-                fallback_thumbnail_candidates.extend(str(path or "").strip() for path in reference_upload_paths)
-            elif reference_upload_paths:
-                fallback_thumbnail_candidates.append(str(reference_upload_paths).strip())
-            style_prompt_path = str(p.style_prompt or "").strip()
-            if style_prompt_path and os.path.splitext(style_prompt_path)[1].lower() in IMAGE_EXTS:
-                fallback_thumbnail_candidates.append(style_prompt_path)
-            thumbnail_path = next(
-                (
-                    candidate
-                    for candidate in fallback_thumbnail_candidates
-                    if candidate and os.path.exists(candidate)
-                ),
-                "",
-            )
+        source_thumbnail_path = _project_primary_image_path(p, tags_data)
+        prefer_source_thumbnail = (
+            bool(getattr(p, "use_custom_images", False))
+            or bool(tags_data.get("cover_reference_is_primary"))
+            or bool(tags_data.get("reference_upload_image_paths"))
+            or bool(tags_data.get("reference_delivery_image_paths"))
+        )
+        if prefer_source_thumbnail and source_thumbnail_path:
+            thumbnail_path = source_thumbnail_path
+        elif not thumbnail_path:
+            thumbnail_path = source_thumbnail_path
         render_paths = [str(r.file_path or "").replace("\\", "/").lower() for r in ordered]
         description_text = str(p.description or "").strip().lower()
         workflow_type = str(tags_data.get("type") or "").strip().lower() or "standard"

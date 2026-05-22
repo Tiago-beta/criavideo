@@ -24,6 +24,7 @@ from app.services.realistic_cover_guidance import (
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _safe_error_message(err, fallback: str) -> str:
@@ -140,6 +141,43 @@ def _reference_paths_from_tags(raw_tags: dict[str, object] | None) -> list[str]:
         return upload_paths
 
     return []
+
+
+def _project_source_thumbnail_path(project: VideoProject) -> str:
+    tags_data = project.tags if isinstance(project.tags, dict) else {}
+    candidates: list[str] = [str(path or "").strip() for path in _reference_paths_from_tags(tags_data)]
+
+    if bool(getattr(project, "use_custom_images", False)):
+        image_dir = Path(settings.media_dir) / "images" / str(project.id)
+        if image_dir.exists():
+            candidates.extend(
+                str(path)
+                for path in sorted(image_dir.iterdir())
+                if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+            )
+
+    style_prompt_path = str(getattr(project, "style_prompt", "") or "").strip()
+    if style_prompt_path and os.path.splitext(style_prompt_path)[1].lower() in IMAGE_EXTS:
+        candidates.append(style_prompt_path)
+
+    return next((candidate for candidate in candidates if candidate and os.path.exists(candidate)), "")
+
+
+def _copy_thumbnail_image(source_path: str, thumb_dir: Path, stem: str = "thumbnail") -> str:
+    normalized_source = str(source_path or "").strip()
+    if not normalized_source or not os.path.exists(normalized_source):
+        return ""
+
+    suffix = Path(normalized_source).suffix.lower()
+    if suffix not in IMAGE_EXTS:
+        suffix = ".jpg"
+
+    for old_path in thumb_dir.glob(f"{stem}.*"):
+        old_path.unlink(missing_ok=True)
+
+    target_path = thumb_dir / f"{stem}{suffix}"
+    shutil.copy2(normalized_source, target_path)
+    return str(target_path)
 
 
 async def _normalize_video_aspect(input_path: str, aspect_ratio: str, output_path: str) -> str:
@@ -679,7 +717,7 @@ async def _run_custom_video_pipeline(db, project, project_id: int):
 
     custom_thumb = next(thumb_dir.glob("custom_thumbnail.*"), None)
     if custom_thumb:
-        shutil.copy2(str(custom_thumb), thumb_path)
+        thumb_path = _copy_thumbnail_image(str(custom_thumb), thumb_dir)
         logger.info(f"Using custom thumbnail for project {project_id}")
     else:
         from app.services.thumbnail_generator import generate_thumbnail_from_frame
@@ -1268,25 +1306,30 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
 
             custom_thumb = next(thumb_dir.glob("custom_thumbnail.*"), None)
             if custom_thumb:
-                shutil.copy2(str(custom_thumb), thumb_path)
+                thumb_path = _copy_thumbnail_image(str(custom_thumb), thumb_dir)
                 logger.info(f"Using custom thumbnail for project {project_id}")
             else:
-                from app.services.thumbnail_generator import generate_thumbnail
-                try:
-                    generate_thumbnail(
-                        title=project.track_title or project.title,
-                        artist=project.track_artist or "",
-                        output_path=thumb_path,
-                    )
-                except Exception as e:
-                    logger.warning(f"Thumbnail generation failed, using frame fallback: {e}")
-                    from app.services.thumbnail_generator import generate_thumbnail_from_frame
-                    generate_thumbnail_from_frame(
-                        video_path=render_result["file_path"],
-                        title=project.track_title or project.title,
-                        artist=project.track_artist or "",
-                        output_path=thumb_path,
-                    )
+                source_thumb = _project_source_thumbnail_path(project)
+                if source_thumb:
+                    thumb_path = _copy_thumbnail_image(source_thumb, thumb_dir)
+                    logger.info(f"Using source image thumbnail for project {project_id}: {source_thumb}")
+                else:
+                    from app.services.thumbnail_generator import generate_thumbnail
+                    try:
+                        generate_thumbnail(
+                            title=project.track_title or project.title,
+                            artist=project.track_artist or "",
+                            output_path=thumb_path,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Thumbnail generation failed, using frame fallback: {e}")
+                        from app.services.thumbnail_generator import generate_thumbnail_from_frame
+                        generate_thumbnail_from_frame(
+                            video_path=render_result["file_path"],
+                            title=project.track_title or project.title,
+                            artist=project.track_artist or "",
+                            output_path=thumb_path,
+                        )
 
             # ── Save render to DB ──
             render = VideoRender(
@@ -2979,17 +3022,22 @@ async def run_realistic_video_pipeline(project_id: int):
             thumb_dir.mkdir(parents=True, exist_ok=True)
             thumb_path = str(thumb_dir / "thumbnail.jpg")
 
-            from app.services.thumbnail_generator import generate_thumbnail_from_frame
-            try:
-                generate_thumbnail_from_frame(
-                    video_path=final_video_path,
-                    title=project.title or "Video Realista",
-                    artist=engine_label,
-                    output_path=thumb_path,
-                )
-            except Exception as e:
-                logger.warning(f"Realistic video thumbnail failed: {e}")
-                thumb_path = ""
+            source_thumb = _project_source_thumbnail_path(project)
+            if source_thumb:
+                thumb_path = _copy_thumbnail_image(source_thumb, thumb_dir)
+                logger.info(f"Using source image thumbnail for realistic project {project_id}: {source_thumb}")
+            else:
+                from app.services.thumbnail_generator import generate_thumbnail_from_frame
+                try:
+                    generate_thumbnail_from_frame(
+                        video_path=final_video_path,
+                        title=project.title or "Video Realista",
+                        artist=engine_label,
+                        output_path=thumb_path,
+                    )
+                except Exception as e:
+                    logger.warning(f"Realistic video thumbnail failed: {e}")
+                    thumb_path = ""
 
             project.progress = 95
             await db.commit()
