@@ -2700,7 +2700,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             (float(layer.get("end_time", 0.0) or 0.0) for layer in valid_media_layers),
             default=0.0,
         )
-        final_output_duration = max(output_video_duration, layer_timeline_end)
+        output_audio_duration = max(
+            sum(_segment_output_duration(item) for item in audio_segment_entries),
+            sum(_segment_output_duration(item) for item in base_audio_segment_entries),
+        )
+        final_output_duration = max(output_video_duration, output_audio_duration, layer_timeline_end)
         if final_output_duration <= 0 and src_duration > 0:
             final_output_duration = src_duration
         final_output_duration = max(0.1, final_output_duration)
@@ -2758,10 +2762,13 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         if req.hide_base_video_track:
             vfilters.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
 
+        overlay_timeline_end = 0.0
+
         # Text overlays using drawtext
         for txt in req.texts:
             mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, video_segment_entries)
             for st, et in mapped_ranges:
+                overlay_timeline_end = max(overlay_timeline_end, float(et or 0.0))
                 base_fontsize = max(8, int(txt.font_size or 36))
                 fontsize_px = max(8, int(round(base_fontsize * overlay_scale)))
                 color = txt.color.lstrip("#")
@@ -2775,6 +2782,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         for sub in req.subtitles:
             mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, video_segment_entries)
             for st, et in mapped_ranges:
+                overlay_timeline_end = max(overlay_timeline_end, float(et or 0.0))
                 color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
                 base_fontsize = max(8, int(sub.font_size or 28))
                 fontsize_px = max(8, int(round(base_fontsize * overlay_scale)))
@@ -2808,11 +2816,14 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         for stk in req.stickers:
             mapped_ranges = _map_source_interval_to_output(stk.start_time, stk.end_time, video_segment_entries)
             for st, et in mapped_ranges:
+                overlay_timeline_end = max(overlay_timeline_end, float(et or 0.0))
                 x_expr = f"(w*{stk.x/100})"
                 y_expr = f"(h*{stk.y/100})"
                 escaped = stk.emoji.replace("'", "'\\\\\\''").replace(":", "\\:")
                 dt = f"drawtext=text='{escaped}':fontsize={stk.size}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})'"
                 vfilters.append(dt)
+
+        final_output_duration = max(final_output_duration, overlay_timeline_end)
 
         # Quality scaling
         if req.quality == "hd":
