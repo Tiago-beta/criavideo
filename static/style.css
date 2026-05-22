@@ -2996,6 +2996,11 @@ a {
     gap: 1.1rem;
 }
 
+#projects-list.cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
+    justify-content: center;
+}
+
 .panel,
 .card,
 .song-details {
@@ -3222,6 +3227,32 @@ a {
 .card-btn-delete:hover {
     background: rgba(255, 122, 108, 0.15);
     color: var(--danger);
+}
+
+.card--create-project .card-thumb,
+.card--create-project .card-thumb-placeholder {
+    height: auto;
+    aspect-ratio: 9 / 16;
+}
+
+.card--create-project .card-actions {
+    gap: 0.42rem;
+}
+
+.card--create-project .card-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+}
+
+.card--create-project .card-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.card--create-project .card-btn-delete svg {
+    width: 16px;
+    height: 16px;
 }
 
 .form-group {
