@@ -5249,14 +5249,31 @@ th {
     flex: 0 0 118px;
 }
 
+.create-panel-action-aspect--compact {
+    width: 90px;
+    flex-basis: 90px;
+}
+
 .create-panel-action-aspect label {
     margin-bottom: 6px;
     font-size: 0.78rem;
 }
 
+.create-panel-action-aspect--compact label {
+    display: none;
+}
+
 .create-panel-action-aspect .input {
     min-width: 0;
     width: 100%;
+}
+
+.create-panel-action-aspect--compact .input {
+    height: 44px;
+    min-height: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-radius: 14px;
 }
 
 #create-panel-similar {
@@ -7719,6 +7736,23 @@ svg.spin {
 
 .script-video-tools-section {
     margin-top: 18px;
+}
+
+#create-panel-script.create-panel--audio-first-mode #script-media-toggle-group,
+#create-panel-script.create-panel--audio-first-mode #script-tevoxi-section,
+#create-panel-script.create-panel--audio-first-mode #script-video-tools-header,
+#create-panel-script.create-panel--audio-first-mode #script-video-audio-builder-head,
+#create-panel-script.create-panel--audio-first-mode #script-audio-builder-copy,
+#create-panel-script.create-panel--audio-first-mode #script-video-selection-row,
+#create-panel-script.create-panel--audio-first-mode #script-video-narration-choice,
+#create-panel-script.create-panel--audio-first-mode #script-user-audio-section {
+    display: none !important;
+}
+
+#create-panel-script.create-panel--audio-first-mode:not(.create-panel--audio-first-type-selected) #script-title-group,
+#create-panel-script.create-panel--audio-first-mode:not(.create-panel--audio-first-type-selected) #script-text-group,
+#create-panel-script.create-panel--audio-first-mode:not(.create-panel--audio-first-type-selected) #script-text-actions {
+    display: none;
 }
 
 .script-video-tools-header {
@@ -13610,6 +13644,10 @@ th,
     .create-panel-action-aspect {
         width: 96px;
         flex-basis: 96px;
+    }
+    .create-panel-action-aspect--compact {
+        width: 84px;
+        flex-basis: 84px;
     }
     .btn-create-video {
         width: 172px;

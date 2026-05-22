@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v520 loaded");
+console.log("[CriaVideo] app.js v521 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4114,15 +4114,16 @@ function _updateCardInPlace(project) {
 // ═══ Creation Wizard State ═══
 let createMode = "wizard"; // "wizard" | "script" | "similar" | "workflow" | "library"
 let wizardStep = 1;
-let wizardData = { topic: "", videoType: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
+let wizardData = { topic: "", videoType: "", tone: "", voice: "", duration: 60, aspect: "9:16", style: "", realisticStyle: "" };
 let scriptStep = 1;
+let createScriptAudioFirstMode = false;
 let scriptData = {
     text: "",
     videoType: "",
     tone: "",
     voice: "",
     title: "",
-    aspect: "16:9",
+    aspect: "9:16",
     style: "",
     useCustomImages: false,
     useCustomAudio: false,
@@ -4631,7 +4632,7 @@ function _clearScriptManualAudioInputUi() {
 }
 
 function _getScriptAudioSourceState(includeGeneratedAudio = true) {
-    if (includeGeneratedAudio && scriptGeneratedAudioUploadId) {
+    if (scriptGeneratedAudioUploadId) {
         return {
             kind: "generated",
             hasAudio: true,
@@ -5932,6 +5933,7 @@ function initCreateWizard() {
 
             if (grid.id === "script-video-type-grid") {
                 scriptData.videoType = selectedType;
+                _syncScriptAudioFirstSelection(selectedType);
                 adaptScriptStepForVideoType(selectedType);
                 updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
             }
@@ -6186,11 +6188,17 @@ function _chooseCreateMode(mode) {
         _openCreateAudioBuilderMode();
         return;
     }
+    createScriptAudioFirstMode = false;
     document.getElementById("create-mode-selection").hidden = true;
     switchCreateMode(normalizedMode);
 }
 
 function _openCreateAudioBuilderMode() {
+    createScriptAudioFirstMode = true;
+    scriptStep = 1;
+    clearScriptGeneratedAudio(true);
+    _clearCreateVideoTypeSelection("script");
+    _syncScriptAudioFirstSelection("");
     switchCreateMode("script");
     toggleScriptAudioBuilder(true);
     toggleMinhaVoz("script-audio-builder", true);
@@ -6322,8 +6330,80 @@ function _getSelectedCreateVideoType(prefix) {
         : (scriptData.videoType || "");
 }
 
+function _clearCreateVideoTypeSelection(prefix) {
+    const gridId = prefix === "wizard" ? "wizard-video-type-grid" : "script-video-type-grid";
+    document.querySelectorAll(`#${gridId} .video-type-card`).forEach((card) => card.classList.remove("selected"));
+    if (prefix === "wizard") {
+        wizardData.videoType = "";
+    } else {
+        scriptData.videoType = "";
+    }
+}
+
+function _isCreateAudioFirstMode() {
+    return !!createScriptAudioFirstMode;
+}
+
+function _syncScriptAudioFirstSurface() {
+    const panel = document.getElementById("create-panel-script");
+    if (!panel) return;
+
+    const isAudioFirstMode = _isCreateAudioFirstMode();
+    const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
+    const hasSelectedType = !!_getSelectedCreateVideoType("script");
+
+    panel.classList.toggle("create-panel--audio-first-mode", isAudioFirstMode);
+    panel.classList.toggle("create-panel--audio-first-ready", isAudioFirstMode && hasGeneratedAudio);
+    panel.classList.toggle("create-panel--audio-first-type-selected", isAudioFirstMode && hasSelectedType);
+}
+
+function _syncScriptAudioFirstSelection(selectedType = "") {
+    if (!_isCreateAudioFirstMode()) {
+        return;
+    }
+
+    const normalizedType = String(selectedType || "").trim();
+    const shouldUsePhotos = normalizedType === "imagens_proprias";
+    const photoToggle = document.getElementById("script-use-photos");
+    if (photoToggle && photoToggle.checked !== shouldUsePhotos) {
+        photoToggle.checked = shouldUsePhotos;
+        togglePhotoUpload();
+    }
+
+    const videoToggle = document.getElementById("script-use-video");
+    if (videoToggle && videoToggle.checked) {
+        videoToggle.checked = false;
+        toggleVideoUpload();
+    }
+
+    const userAudioToggle = document.getElementById("script-use-user-audio");
+    if (userAudioToggle && userAudioToggle.checked) {
+        userAudioToggle.checked = false;
+        toggleUserAudioUpload();
+    }
+
+    const tevoxiToggle = document.getElementById("script-realistic-tevoxi");
+    if (tevoxiToggle && tevoxiToggle.checked) {
+        tevoxiToggle.checked = false;
+        toggleScriptTevoxiSongs();
+    }
+
+    _syncScriptAudioFirstSurface();
+}
+
 function _getCreateSinglePageVisibleSteps(prefix) {
     const selectedType = _getSelectedCreateVideoType(prefix);
+    if (prefix === "script" && _isCreateAudioFirstMode()) {
+        if (!scriptGeneratedAudioUploadId) {
+            return [1];
+        }
+        if (!selectedType) {
+            return [1, 2];
+        }
+        return selectedType === "realista"
+            ? [1, 2, 7]
+            : [1, 2, 3, 4, 5, 6];
+    }
     if (!selectedType) {
         return [2];
     }
@@ -6388,6 +6468,9 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 
         if (!hasSelectedType) {
             _setCreditEstimateBadge(`${prefix}-credit-estimate`, "", "ready", true);
+            if (prefix === "script") {
+                _syncScriptAudioFirstSurface();
+            }
             return;
         }
 
@@ -6395,6 +6478,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
             scheduleWizardCreditEstimate();
         } else if (prefix === "script") {
             scheduleScriptCreditEstimate();
+            _syncScriptAudioFirstSurface();
         }
         return;
     }
@@ -6431,6 +6515,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
         scheduleWizardCreditEstimate();
     } else if (prefix === "script") {
         scheduleScriptCreditEstimate();
+        _syncScriptAudioFirstSurface();
     }
 }
 
@@ -14859,8 +14944,9 @@ function resetCreateWizard(options = {}) {
     createMode = "wizard";
     _setNewProjectModalWorkflowLayout(false);
     wizardStep = 1;
-    wizardData = { topic: "", videoType: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
+    wizardData = { topic: "", videoType: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "9:16", style: "", realisticStyle: "" };
     scriptStep = 1;
+    createScriptAudioFirstMode = false;
     scriptData = {
         text: "",
         videoType: "",
@@ -14868,7 +14954,7 @@ function resetCreateWizard(options = {}) {
         voice: "",
         voiceProfileId: 0,
         title: "",
-        aspect: "16:9",
+        aspect: "9:16",
         style: "",
         useCustomImages: false,
         useCustomAudio: false,
@@ -15171,16 +15257,16 @@ function resetCreateWizard(options = {}) {
     initPauseOptions();
     _resetScriptAudioBuilderControls();
     // Reset video type cards
-    document.querySelectorAll("#wizard-video-type-grid .video-type-card, #script-video-type-grid .video-type-card").forEach((card) => {
-        card.classList.remove("selected");
-    });
+    _clearCreateVideoTypeSelection("wizard");
+    _clearCreateVideoTypeSelection("script");
     // Reset realistic settings in both panels
     _syncCreateRealisticDurationOptions("wizard", 8);
     _syncCreateRealisticDurationOptions("script", 8);
     _syncAiSuggestRealisticDurationOptions(8);
-    ["wizard-realistic-aspect", "script-realistic-aspect"].forEach(id => {
+    ["wizard-realistic-aspect", "wizard-aspect", "script-realistic-aspect", "script-aspect"].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.value = "16:9";
+        if (!el) return;
+        el.value = "9:16";
     });
     ["wizard-realistic-audio", "script-realistic-audio"].forEach(id => {
         const el = document.getElementById(id);
@@ -18158,24 +18244,29 @@ function updateScriptVideoAreaVisibility() {
     const builderSubheading = document.getElementById("script-audio-builder-subheading");
     const videoEnabled = !!document.getElementById("script-use-video")?.checked;
     const userAudioEnabled = !!document.getElementById("script-use-user-audio")?.checked;
+    const audioFirstMode = _isCreateAudioFirstMode();
     const hasVideo = !!scriptUserVideoFile;
     const hasManualAudio = !!scriptUserAudioFile;
     const builderOpen = !!builder && !builder.hidden;
     const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
-    const shouldShowSection = videoEnabled || builderOpen || hasGeneratedAudio;
-    const shouldShow = hasVideo || builderOpen || hasGeneratedAudio;
+    const shouldShowSection = audioFirstMode
+        ? (builderOpen || hasGeneratedAudio)
+        : (videoEnabled || builderOpen || hasGeneratedAudio);
+    const shouldShow = audioFirstMode
+        ? (builderOpen || hasGeneratedAudio)
+        : (hasVideo || builderOpen || hasGeneratedAudio);
 
     if (section) section.hidden = !shouldShowSection;
-    if (header) header.hidden = !videoEnabled;
+    if (header) header.hidden = audioFirstMode || !videoEnabled;
     if (area) area.hidden = !shouldShow;
-    if (selectionRow) selectionRow.hidden = !hasVideo;
+    if (selectionRow) selectionRow.hidden = audioFirstMode || !hasVideo;
     if (clearBtn) clearBtn.hidden = !hasVideo;
-    if (narrationChoice) narrationChoice.hidden = !hasVideo || hasGeneratedAudio;
+    if (narrationChoice) narrationChoice.hidden = audioFirstMode || !hasVideo || hasGeneratedAudio;
     if (uploadTrigger) uploadTrigger.classList.toggle("has-file", hasVideo);
-    if (uploadTrigger) uploadTrigger.hidden = !videoEnabled;
-    if (builderTrigger) builderTrigger.hidden = !videoEnabled;
-    if (audioSection) audioSection.hidden = !userAudioEnabled;
-    if (audioArea) audioArea.hidden = !userAudioEnabled;
+    if (uploadTrigger) uploadTrigger.hidden = audioFirstMode || !videoEnabled;
+    if (builderTrigger) builderTrigger.hidden = audioFirstMode || !videoEnabled;
+    if (audioSection) audioSection.hidden = audioFirstMode || !userAudioEnabled;
+    if (audioArea) audioArea.hidden = audioFirstMode || !userAudioEnabled;
     if (audioSelectionRow) audioSelectionRow.hidden = !hasManualAudio;
     if (audioClearBtn) audioClearBtn.hidden = !hasManualAudio;
     if (audioMusicChoice) audioMusicChoice.hidden = !hasManualAudio;
@@ -18185,13 +18276,15 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
     const builderCopy = document.getElementById("script-audio-builder-copy");
-    if (builderCopy) builderCopy.hidden = !hasVideo;
+    if (builderCopy) builderCopy.hidden = audioFirstMode || !hasVideo;
     if (builderHeading && hasVideo) {
         builderHeading.textContent = "Criar áudio para este vídeo";
     }
     if (builderSubheading && hasVideo) {
         builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
+
+    _syncScriptAudioFirstSurface();
 }
 
 function openScriptVideoPicker() {
@@ -18470,6 +18563,11 @@ function clearScriptGeneratedAudio(preserveBuilderText = true) {
     scriptGeneratedAudioFileName = "";
     scriptGeneratedAudioText = "";
 
+    if (_isCreateAudioFirstMode()) {
+        _clearCreateVideoTypeSelection("script");
+        _syncScriptAudioFirstSelection("");
+    }
+
     if (!preserveBuilderText) {
         const builderText = document.getElementById("script-audio-builder-text");
         if (builderText) builderText.value = "";
@@ -18479,6 +18577,9 @@ function clearScriptGeneratedAudio(preserveBuilderText = true) {
 
     _updateScriptGeneratedAudioSummary();
     updateScriptVideoAreaVisibility();
+    if (_isCreateAudioFirstMode()) {
+        updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+    }
     scheduleScriptCreditEstimate();
 }
 
@@ -18811,6 +18912,7 @@ async function generateScriptVideoAudio() {
     }
 
     const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
+    const providerLabel = _describeCreateVoiceProvider(voiceSelection.voiceType);
     const selectedTone = _getSelectedSegmentedOptionValue("script-audio-builder-tone-options", scriptData.tone || "informativo");
     const selectedPauseLevel = _getSelectedSegmentedOptionValue("script-audio-builder-pause-options", getSelectedPause("script-pause-options") || "normal");
     const ttsInstructions = _buildScriptAudioBuilderTtsInstructions(voiceSelection.voiceType);
@@ -18856,6 +18958,9 @@ async function generateScriptVideoAudio() {
         _updateScriptGeneratedAudioSummary();
         updateScriptVideoAreaVisibility();
         toggleScriptAudioBuilder(false);
+        if (_isCreateAudioFirstMode()) {
+            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+        }
         scheduleScriptCreditEstimate();
         _setScriptAudioBuilderStatus(
             usingVideo

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260522-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260522-02">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 520;
+        var REQUIRED_VER = 521;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1468,7 +1468,7 @@
                                 <label>Formato</label>
                                 <select id="wizard-aspect" class="input">
                                     <option value="16:9">16:9</option>
-                                    <option value="9:16">9:16</option>
+                                    <option value="9:16" selected>9:16</option>
                                     <option value="1:1">1:1</option>
                                 </select>
                             </div>
@@ -1626,11 +1626,11 @@
                         <button class="btn btn-primary btn-sm wizard-next-btn" id="wizard-next" type="button">Próximo &rarr;</button>
                     </div>
                     <div class="create-panel-action-row" id="wizard-create-action-row" data-mode="default" hidden>
-                        <div class="form-group create-panel-action-aspect" id="wizard-realistic-aspect-group" hidden>
+                        <div class="form-group create-panel-action-aspect create-panel-action-aspect--compact" id="wizard-realistic-aspect-group" hidden>
                             <label>Formato</label>
                             <select id="wizard-realistic-aspect" class="input">
                                 <option value="16:9">16:9</option>
-                                <option value="9:16">9:16</option>
+                                <option value="9:16" selected>9:16</option>
                                 <option value="1:1">1:1</option>
                             </select>
                         </div>
@@ -1652,7 +1652,7 @@
                     <div class="wizard-step" data-step="1">
                         <!-- Barra de mídia: Imagens / Audio / Tevoxi -->
                         <div class="photo-upload-section">
-                            <div class="photo-upload-header script-media-toggle-group script-media-toggle-group--vivid">
+                            <div id="script-media-toggle-group" class="photo-upload-header script-media-toggle-group script-media-toggle-group--vivid">
                                 <label class="media-toggle-chip media-toggle-chip--full script-media-chip script-media-chip--images">
                                     <input type="checkbox" id="script-use-photos" onchange="togglePhotoUpload()">
                                     <span class="media-toggle-chip-body">
@@ -1766,7 +1766,7 @@
                                 </div>
 
                                 <div id="script-video-audio-builder" class="script-video-audio-builder" hidden>
-                                    <div class="script-video-audio-builder-head">
+                                    <div class="script-video-audio-builder-head" id="script-video-audio-builder-head">
                                         <div id="script-audio-builder-copy">
                                             <strong id="script-audio-builder-heading">Criar áudio com voz IA</strong>
                                             <small id="script-audio-builder-subheading">Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.</small>
@@ -1962,7 +1962,7 @@
                             </div>
                         </div>
 
-                        <div class="photo-upload-section script-media-panel">
+                        <div class="photo-upload-section script-media-panel" id="script-tevoxi-section">
                             <div id="script-tevoxi-panel" class="photo-upload-area" hidden>
                                 <div id="script-song-list" class="auto-song-list">
                                     <p class="loading">Carregando músicas...</p>
@@ -1985,11 +1985,11 @@
                             </div>
                         </div>
 
-                        <div class="form-group script-title-gap">
+                        <div class="form-group script-title-gap" id="script-title-group">
                             <input id="script-title" type="text" class="input" placeholder="Escreva o Título aqui:">
                         </div>
 
-                        <div class="textarea-wrapper">
+                        <div class="textarea-wrapper" id="script-text-group">
                             <textarea id="script-text" class="wizard-textarea" rows="10" maxlength="20000"
                                       placeholder="Cole ou escreva o roteiro completo da narração aqui..."></textarea>
                             <div class="textarea-inline-actions">
@@ -1998,7 +1998,7 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="script-actions">
+                        <div class="script-actions" id="script-text-actions">
                             <span class="char-count"><span id="script-char-count">0</span> / 20.000</span>
                         </div>
                     </div>
@@ -2150,7 +2150,7 @@
                                 <label>Formato</label>
                                 <select id="script-aspect" class="input">
                                     <option value="16:9">16:9</option>
-                                    <option value="9:16">9:16</option>
+                                    <option value="9:16" selected>9:16</option>
                                     <option value="1:1">1:1</option>
                                 </select>
                             </div>
@@ -2333,11 +2333,11 @@
                         <button class="btn btn-primary btn-sm wizard-next-btn" id="script-next" type="button">Próximo &rarr;</button>
                     </div>
                     <div class="create-panel-action-row" id="script-create-action-row" data-mode="default" hidden>
-                        <div class="form-group create-panel-action-aspect" id="script-realistic-aspect-group" hidden>
+                        <div class="form-group create-panel-action-aspect create-panel-action-aspect--compact" id="script-realistic-aspect-group" hidden>
                             <label>Formato</label>
                             <select id="script-realistic-aspect" class="input">
                                 <option value="16:9">16:9</option>
-                                <option value="9:16">9:16</option>
+                                <option value="9:16" selected>9:16</option>
                                 <option value="1:1">1:1</option>
                             </select>
                         </div>
@@ -4434,8 +4434,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260522-01"></script>
-    <script src="/video/static/pwa.js?v=20260522-01"></script>
+    <script src="/video/static/app.js?v=20260522-02"></script>
+    <script src="/video/static/pwa.js?v=20260522-02"></script>
 </body>
 </html>
 
