@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v523 loaded");
+console.log("[CriaVideo] app.js v525 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -3799,10 +3799,7 @@ async function loadProjects() {
             const canWatch = (normalizedStatus === "completed" || normalizedStatus === "published") && !isExpired;
             const isGenerating = _isProjectProcessingStatus(normalizedStatus);
             const thumbClick = canWatch ? `onclick="watchVideo(${project.id})" style="cursor:pointer"` : "";
-            const cardClasses = `card${isGenerating ? " is-generating" : ""}`;
-            const thumbnailDownloadButton = canWatch && project.thumbnail_url
-                ? `<a class="card-btn card-btn-download" href="${esc(project.thumbnail_url)}" download="${esc(`${project.title || "thumbnail"}.jpg`)}" title="Baixar thumbnail" aria-label="Baixar thumbnail"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M21 21H3"/></svg></a>`
-                : "";
+            const cardClasses = `card card--create-project${isGenerating ? " is-generating" : ""}`;
             const thumb = project.thumbnail_url
                 ? `<img class="card-thumb${isGenerating ? " is-generating" : ""}" src="${project.thumbnail_url}" alt="" loading="lazy" onerror="handleProjectThumbError(this, ${project.id}, ${canWatch})" ${thumbClick}>`
                 : `<div class="card-thumb card-thumb-placeholder${isGenerating ? " is-generating" : ""}" ${thumbClick}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
@@ -3817,12 +3814,10 @@ async function loadProjects() {
                     </div>
                     <div class="card-footer">
                         <div class="card-actions">
-                            ${canWatch ? `<button class="card-btn card-btn-watch" onclick="watchVideo(${project.id})" type="button" title="Assistir"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
-                            ${thumbnailDownloadButton}
                             ${canWatch ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
                             ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${canWatch ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
-                            <button class="card-btn card-btn-edit" onclick="openRenameProjectModal(${project.id})" type="button" title="Editar nome"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
+                            ${canWatch ? `<button class="card-btn card-btn-edit" onclick="openProjectEditorFromCreate(${project.id})" type="button" title="Editar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ""}
                             <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
                         </div>
                         <span class="card-date">${dateStr}</span>
@@ -4114,15 +4109,16 @@ function _updateCardInPlace(project) {
 // ═══ Creation Wizard State ═══
 let createMode = "wizard"; // "wizard" | "script" | "similar" | "workflow" | "library"
 let wizardStep = 1;
-let wizardData = { topic: "", videoType: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
+let wizardData = { topic: "", videoType: "", tone: "", voice: "", duration: 60, aspect: "9:16", style: "", realisticStyle: "" };
 let scriptStep = 1;
+let createScriptAudioFirstMode = false;
 let scriptData = {
     text: "",
     videoType: "",
     tone: "",
     voice: "",
     title: "",
-    aspect: "16:9",
+    aspect: "9:16",
     style: "",
     useCustomImages: false,
     useCustomAudio: false,
@@ -4631,7 +4627,7 @@ function _clearScriptManualAudioInputUi() {
 }
 
 function _getScriptAudioSourceState(includeGeneratedAudio = true) {
-    if (includeGeneratedAudio && scriptGeneratedAudioUploadId) {
+    if (scriptGeneratedAudioUploadId) {
         return {
             kind: "generated",
             hasAudio: true,
@@ -5932,6 +5928,7 @@ function initCreateWizard() {
 
             if (grid.id === "script-video-type-grid") {
                 scriptData.videoType = selectedType;
+                _syncScriptAudioFirstSelection(selectedType);
                 adaptScriptStepForVideoType(selectedType);
                 updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
             }
@@ -6186,11 +6183,17 @@ function _chooseCreateMode(mode) {
         _openCreateAudioBuilderMode();
         return;
     }
+    createScriptAudioFirstMode = false;
     document.getElementById("create-mode-selection").hidden = true;
     switchCreateMode(normalizedMode);
 }
 
 function _openCreateAudioBuilderMode() {
+    createScriptAudioFirstMode = true;
+    scriptStep = 1;
+    clearScriptGeneratedAudio(true);
+    _clearCreateVideoTypeSelection("script");
+    _syncScriptAudioFirstSelection("");
     switchCreateMode("script");
     toggleScriptAudioBuilder(true);
     toggleMinhaVoz("script-audio-builder", true);
@@ -6322,8 +6325,80 @@ function _getSelectedCreateVideoType(prefix) {
         : (scriptData.videoType || "");
 }
 
+function _clearCreateVideoTypeSelection(prefix) {
+    const gridId = prefix === "wizard" ? "wizard-video-type-grid" : "script-video-type-grid";
+    document.querySelectorAll(`#${gridId} .video-type-card`).forEach((card) => card.classList.remove("selected"));
+    if (prefix === "wizard") {
+        wizardData.videoType = "";
+    } else {
+        scriptData.videoType = "";
+    }
+}
+
+function _isCreateAudioFirstMode() {
+    return !!createScriptAudioFirstMode;
+}
+
+function _syncScriptAudioFirstSurface() {
+    const panel = document.getElementById("create-panel-script");
+    if (!panel) return;
+
+    const isAudioFirstMode = _isCreateAudioFirstMode();
+    const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
+    const hasSelectedType = !!_getSelectedCreateVideoType("script");
+
+    panel.classList.toggle("create-panel--audio-first-mode", isAudioFirstMode);
+    panel.classList.toggle("create-panel--audio-first-ready", isAudioFirstMode && hasGeneratedAudio);
+    panel.classList.toggle("create-panel--audio-first-type-selected", isAudioFirstMode && hasSelectedType);
+}
+
+function _syncScriptAudioFirstSelection(selectedType = "") {
+    if (!_isCreateAudioFirstMode()) {
+        return;
+    }
+
+    const normalizedType = String(selectedType || "").trim();
+    const shouldUsePhotos = normalizedType === "imagens_proprias";
+    const photoToggle = document.getElementById("script-use-photos");
+    if (photoToggle && photoToggle.checked !== shouldUsePhotos) {
+        photoToggle.checked = shouldUsePhotos;
+        togglePhotoUpload();
+    }
+
+    const videoToggle = document.getElementById("script-use-video");
+    if (videoToggle && videoToggle.checked) {
+        videoToggle.checked = false;
+        toggleVideoUpload();
+    }
+
+    const userAudioToggle = document.getElementById("script-use-user-audio");
+    if (userAudioToggle && userAudioToggle.checked) {
+        userAudioToggle.checked = false;
+        toggleUserAudioUpload();
+    }
+
+    const tevoxiToggle = document.getElementById("script-realistic-tevoxi");
+    if (tevoxiToggle && tevoxiToggle.checked) {
+        tevoxiToggle.checked = false;
+        toggleScriptTevoxiSongs();
+    }
+
+    _syncScriptAudioFirstSurface();
+}
+
 function _getCreateSinglePageVisibleSteps(prefix) {
     const selectedType = _getSelectedCreateVideoType(prefix);
+    if (prefix === "script" && _isCreateAudioFirstMode()) {
+        if (!scriptGeneratedAudioUploadId) {
+            return [1];
+        }
+        if (!selectedType) {
+            return [1, 2];
+        }
+        return selectedType === "realista"
+            ? [1, 2, 7]
+            : [1, 2, 3, 4, 5, 6];
+    }
     if (!selectedType) {
         return [2];
     }
@@ -6388,6 +6463,9 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
 
         if (!hasSelectedType) {
             _setCreditEstimateBadge(`${prefix}-credit-estimate`, "", "ready", true);
+            if (prefix === "script") {
+                _syncScriptAudioFirstSurface();
+            }
             return;
         }
 
@@ -6395,6 +6473,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
             scheduleWizardCreditEstimate();
         } else if (prefix === "script") {
             scheduleScriptCreditEstimate();
+            _syncScriptAudioFirstSurface();
         }
         return;
     }
@@ -6431,6 +6510,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
         scheduleWizardCreditEstimate();
     } else if (prefix === "script") {
         scheduleScriptCreditEstimate();
+        _syncScriptAudioFirstSurface();
     }
 }
 
@@ -14859,8 +14939,9 @@ function resetCreateWizard(options = {}) {
     createMode = "wizard";
     _setNewProjectModalWorkflowLayout(false);
     wizardStep = 1;
-    wizardData = { topic: "", videoType: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
+    wizardData = { topic: "", videoType: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "9:16", style: "", realisticStyle: "" };
     scriptStep = 1;
+    createScriptAudioFirstMode = false;
     scriptData = {
         text: "",
         videoType: "",
@@ -14868,7 +14949,7 @@ function resetCreateWizard(options = {}) {
         voice: "",
         voiceProfileId: 0,
         title: "",
-        aspect: "16:9",
+        aspect: "9:16",
         style: "",
         useCustomImages: false,
         useCustomAudio: false,
@@ -15171,16 +15252,16 @@ function resetCreateWizard(options = {}) {
     initPauseOptions();
     _resetScriptAudioBuilderControls();
     // Reset video type cards
-    document.querySelectorAll("#wizard-video-type-grid .video-type-card, #script-video-type-grid .video-type-card").forEach((card) => {
-        card.classList.remove("selected");
-    });
+    _clearCreateVideoTypeSelection("wizard");
+    _clearCreateVideoTypeSelection("script");
     // Reset realistic settings in both panels
     _syncCreateRealisticDurationOptions("wizard", 8);
     _syncCreateRealisticDurationOptions("script", 8);
     _syncAiSuggestRealisticDurationOptions(8);
-    ["wizard-realistic-aspect", "script-realistic-aspect"].forEach(id => {
+    ["wizard-realistic-aspect", "wizard-aspect", "script-realistic-aspect", "script-aspect"].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.value = "16:9";
+        if (!el) return;
+        el.value = "9:16";
     });
     ["wizard-realistic-audio", "script-realistic-audio"].forEach(id => {
         const el = document.getElementById(id);
@@ -18158,24 +18239,29 @@ function updateScriptVideoAreaVisibility() {
     const builderSubheading = document.getElementById("script-audio-builder-subheading");
     const videoEnabled = !!document.getElementById("script-use-video")?.checked;
     const userAudioEnabled = !!document.getElementById("script-use-user-audio")?.checked;
+    const audioFirstMode = _isCreateAudioFirstMode();
     const hasVideo = !!scriptUserVideoFile;
     const hasManualAudio = !!scriptUserAudioFile;
     const builderOpen = !!builder && !builder.hidden;
     const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
-    const shouldShowSection = videoEnabled || builderOpen || hasGeneratedAudio;
-    const shouldShow = hasVideo || builderOpen || hasGeneratedAudio;
+    const shouldShowSection = audioFirstMode
+        ? (builderOpen || hasGeneratedAudio)
+        : (videoEnabled || builderOpen || hasGeneratedAudio);
+    const shouldShow = audioFirstMode
+        ? (builderOpen || hasGeneratedAudio)
+        : (hasVideo || builderOpen || hasGeneratedAudio);
 
     if (section) section.hidden = !shouldShowSection;
-    if (header) header.hidden = !videoEnabled;
+    if (header) header.hidden = audioFirstMode || !videoEnabled;
     if (area) area.hidden = !shouldShow;
-    if (selectionRow) selectionRow.hidden = !hasVideo;
+    if (selectionRow) selectionRow.hidden = audioFirstMode || !hasVideo;
     if (clearBtn) clearBtn.hidden = !hasVideo;
-    if (narrationChoice) narrationChoice.hidden = !hasVideo || hasGeneratedAudio;
+    if (narrationChoice) narrationChoice.hidden = audioFirstMode || !hasVideo || hasGeneratedAudio;
     if (uploadTrigger) uploadTrigger.classList.toggle("has-file", hasVideo);
-    if (uploadTrigger) uploadTrigger.hidden = !videoEnabled;
-    if (builderTrigger) builderTrigger.hidden = !videoEnabled;
-    if (audioSection) audioSection.hidden = !userAudioEnabled;
-    if (audioArea) audioArea.hidden = !userAudioEnabled;
+    if (uploadTrigger) uploadTrigger.hidden = audioFirstMode || !videoEnabled;
+    if (builderTrigger) builderTrigger.hidden = audioFirstMode || !videoEnabled;
+    if (audioSection) audioSection.hidden = audioFirstMode || !userAudioEnabled;
+    if (audioArea) audioArea.hidden = audioFirstMode || !userAudioEnabled;
     if (audioSelectionRow) audioSelectionRow.hidden = !hasManualAudio;
     if (audioClearBtn) audioClearBtn.hidden = !hasManualAudio;
     if (audioMusicChoice) audioMusicChoice.hidden = !hasManualAudio;
@@ -18185,13 +18271,15 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
     const builderCopy = document.getElementById("script-audio-builder-copy");
-    if (builderCopy) builderCopy.hidden = !hasVideo;
+    if (builderCopy) builderCopy.hidden = audioFirstMode || !hasVideo;
     if (builderHeading && hasVideo) {
         builderHeading.textContent = "Criar áudio para este vídeo";
     }
     if (builderSubheading && hasVideo) {
         builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
+
+    _syncScriptAudioFirstSurface();
 }
 
 function openScriptVideoPicker() {
@@ -18470,6 +18558,11 @@ function clearScriptGeneratedAudio(preserveBuilderText = true) {
     scriptGeneratedAudioFileName = "";
     scriptGeneratedAudioText = "";
 
+    if (_isCreateAudioFirstMode()) {
+        _clearCreateVideoTypeSelection("script");
+        _syncScriptAudioFirstSelection("");
+    }
+
     if (!preserveBuilderText) {
         const builderText = document.getElementById("script-audio-builder-text");
         if (builderText) builderText.value = "";
@@ -18479,6 +18572,9 @@ function clearScriptGeneratedAudio(preserveBuilderText = true) {
 
     _updateScriptGeneratedAudioSummary();
     updateScriptVideoAreaVisibility();
+    if (_isCreateAudioFirstMode()) {
+        updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+    }
     scheduleScriptCreditEstimate();
 }
 
@@ -18811,6 +18907,7 @@ async function generateScriptVideoAudio() {
     }
 
     const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
+    const providerLabel = _describeCreateVoiceProvider(voiceSelection.voiceType);
     const selectedTone = _getSelectedSegmentedOptionValue("script-audio-builder-tone-options", scriptData.tone || "informativo");
     const selectedPauseLevel = _getSelectedSegmentedOptionValue("script-audio-builder-pause-options", getSelectedPause("script-pause-options") || "normal");
     const ttsInstructions = _buildScriptAudioBuilderTtsInstructions(voiceSelection.voiceType);
@@ -18856,6 +18953,9 @@ async function generateScriptVideoAudio() {
         _updateScriptGeneratedAudioSummary();
         updateScriptVideoAreaVisibility();
         toggleScriptAudioBuilder(false);
+        if (_isCreateAudioFirstMode()) {
+            updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+        }
         scheduleScriptCreditEstimate();
         _setScriptAudioBuilderStatus(
             usingVideo
@@ -19793,15 +19893,35 @@ function _renderPersonaPreview(context) {
     const supportsNoReference = _supportsPersonaNoReference(context);
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
+    const supportsQuickAdd = ["wizard", "script", "ai", "auto", "pilot"].includes(String(context || "").toLowerCase());
+    const addOptionLabel = type === "local" ? "Adicionar local pela foto" : "Adicionar persona pela foto";
+    const addOptionHtml = supportsQuickAdd
+        ? `
+            <button
+                class="realistic-persona-option realistic-persona-add"
+                type="button"
+                onclick="openPersonaQuickAdd('${context}')"
+                title="${addOptionLabel}"
+                aria-label="${addOptionLabel}">
+                <span class="realistic-persona-add-icon" aria-hidden="true">+</span>
+            </button>
+        `
+        : "";
     if (!profiles.length) {
         if (!supportsNoReference) {
-            el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
+            el.innerHTML = addOptionHtml
+                ? `
+                    <div class="realistic-persona-grid">${addOptionHtml}</div>
+                    <div class="realistic-persona-empty">${type === "local" ? "Adicione um local pela foto para começar." : "Adicione uma persona pela foto para começar."}</div>
+                `
+                : '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
             return;
         }
 
         const noneSelectedClass = noReferenceEnabled ? " selected" : "";
         el.innerHTML = `
             <div class="realistic-persona-grid">
+                ${addOptionHtml}
                 <button
                     class="realistic-persona-option realistic-persona-option-none${noneSelectedClass}"
                     type="button"
@@ -19812,7 +19932,7 @@ function _renderPersonaPreview(context) {
                     <span class="realistic-persona-none-label">Nenhum</span>
                 </button>
             </div>
-            <div class="realistic-persona-empty">Sem persona fixa: a IA segue apenas o prompt e as referências opcionais enviadas.</div>
+            <div class="realistic-persona-empty">${addOptionHtml ? "Adicione uma persona pela foto ou siga apenas o prompt." : "Sem persona fixa: a IA segue apenas o prompt e as referências opcionais enviadas."}</div>
         `;
         return;
     }
@@ -19846,7 +19966,16 @@ function _renderPersonaPreview(context) {
                 </button>
             `
             : "";
-        const cards = profiles.map((profile) => {
+        const selectedProfiles = [...selectedIds]
+            .reverse()
+            .map((sid) => profiles.find((profile) => (parseInt(profile.id, 10) || 0) === sid))
+            .filter(Boolean);
+        const remainingProfiles = profiles.filter((profile) => {
+            const pid = parseInt(profile.id, 10) || 0;
+            return !selectedSet.has(pid);
+        });
+        const orderedProfiles = [...selectedProfiles, ...remainingProfiles];
+        const cards = orderedProfiles.map((profile) => {
             const pid = parseInt(profile.id, 10) || 0;
             const isSelected = selectedSet.has(pid);
             const selectedClass = isSelected ? " selected" : "";
@@ -19870,6 +19999,7 @@ function _renderPersonaPreview(context) {
 
         el.innerHTML = `
             <div class="realistic-persona-grid">
+                ${addOptionHtml}
                 ${noneOptionHtml}
                 ${cards}
             </div>
@@ -20043,9 +20173,10 @@ function _updatePersonaManagerFormByType() {
     const createHeading = document.getElementById("persona-manager-create-heading");
     const createButton = document.getElementById("persona-manager-create-btn");
     const entityBase = isLocation ? "local" : "persona";
-    const entityLabel = isQuickAdd ? `Adicionar ${entityBase} pela foto` : (isLocation ? "Criar novo local" : "Criar nova persona");
+    const fullCreateLabel = isLocation ? "Criar local" : "Criar persona";
+    const entityLabel = isQuickAdd ? `Adicionar ${entityBase} pela foto` : fullCreateLabel;
     const entityKicker = isQuickAdd ? "Upload rapido" : (isLocation ? "Novo local" : "Nova persona");
-    const actionLabel = isQuickAdd ? `Salvar ${entityBase}` : (isLocation ? "Gerar novo local" : "Gerar nova persona");
+    const actionLabel = isQuickAdd ? `Salvar ${entityBase}` : fullCreateLabel;
 
     if (humanFields) humanFields.hidden = isQuickAdd || !isHuman;
     if (natureSubtypeGroup) natureSubtypeGroup.hidden = isQuickAdd || !isNature;
@@ -20060,7 +20191,7 @@ function _updatePersonaManagerFormByType() {
     }
     if (customDescGroup) customDescGroup.hidden = isQuickAdd || !isCustom;
     if (locationFields) locationFields.hidden = isQuickAdd || !isLocation;
-    if (voiceField) voiceField.hidden = isQuickAdd || isLocation;
+    if (voiceField) voiceField.hidden = isLocation;
     if (extraGroup) extraGroup.hidden = isQuickAdd;
     if (nameLabel) nameLabel.textContent = isQuickAdd ? `${isLocation ? "Nome do local" : "Nome da persona"} *` : "Nome (opcional)";
     if (nameInput) {
@@ -20068,8 +20199,12 @@ function _updatePersonaManagerFormByType() {
             ? (isLocation ? "Ex: Sala premium, Studio principal" : "Ex: Lia, Mascote da marca, Menina principal")
             : "Ex: Minha personagem principal";
     }
-    if (referenceLabel) referenceLabel.textContent = isQuickAdd ? `${isLocation ? "Foto do local" : "Foto da persona"} *` : "Imagem de referência (opcional)";
-    if (referenceButton) referenceButton.textContent = isQuickAdd ? "Enviar foto" : "Enviar imagem";
+    if (referenceLabel) referenceLabel.textContent = "";
+    if (referenceButton) {
+        const referenceActionLabel = isQuickAdd ? "Enviar foto" : "Enviar imagem";
+        referenceButton.title = referenceActionLabel;
+        referenceButton.setAttribute("aria-label", referenceActionLabel);
+    }
     if (createTitle) createTitle.textContent = entityLabel;
     if (createKicker) createKicker.textContent = entityKicker;
     if (createHeading) createHeading.textContent = entityLabel;
@@ -20431,11 +20566,68 @@ async function previewPersonaCreateVoice() {
     await previewVoice(voiceProfileId);
 }
 
-function openPersonaVoiceBuilder(profileId) {
-    const pid = parseInt(profileId || "0", 10) || 0;
-    if (!pid) return;
+function _buildPersonaDraftProfileFromCreateForm() {
+    const type = _normalizeRealisticPersonaType(_personaManagerType);
+    const name = String(document.getElementById("persona-manager-name")?.value || "").trim();
+    const attributes = {};
 
-    const profile = _getPersonaProfileById(pid, _personaManagerType);
+    if (type === "natureza") {
+        const subtype = String(document.getElementById("persona-manager-nature-subtype")?.value || "gato").trim();
+        if (subtype) attributes.subtipo = subtype;
+        if (subtype === "outros") {
+            const other = String(document.getElementById("persona-manager-nature-other")?.value || "").trim();
+            if (other) attributes.outros_texto = other;
+        }
+    } else if (type === "desenho") {
+        const drawingStyle = String(document.getElementById("persona-manager-drawing-style")?.value || "cartoon").trim();
+        const drawingOther = String(document.getElementById("persona-manager-drawing-other")?.value || "").trim();
+        if (drawingStyle) attributes.estilo_desenho = drawingStyle;
+        if (drawingStyle === "outros" && drawingOther) {
+            attributes.estilo_desenho_custom = drawingOther;
+        }
+    } else if (type === "personalizado") {
+        const customDesc = String(document.getElementById("persona-manager-custom-desc")?.value || "").trim();
+        if (customDesc) attributes.descricao_persona = customDesc;
+    } else if (type === "local") {
+        const locationType = String(document.getElementById("persona-manager-location-type")?.value || "").trim();
+        const locationStyle = String(document.getElementById("persona-manager-location-style")?.value || "").trim();
+        const locationLighting = String(document.getElementById("persona-manager-location-lighting")?.value || "").trim();
+        const locationElements = String(document.getElementById("persona-manager-location-elements")?.value || "").trim();
+        if (locationType) attributes.tipo_local = locationType;
+        if (locationStyle) attributes.estilo_arquitetura = locationStyle;
+        if (locationLighting) attributes.iluminacao = locationLighting;
+        if (locationElements) attributes.elementos_principais = locationElements;
+    } else {
+        const age = String(document.getElementById("persona-manager-age")?.value || "").trim();
+        const skin = String(document.getElementById("persona-manager-skin")?.value || "").trim();
+        const hair = String(document.getElementById("persona-manager-hair")?.value || "").trim();
+        if (age) {
+            if (type === "familia") attributes.faixa_etaria = age;
+            else attributes.idade_aparente = age;
+        }
+        if (skin) attributes.cor_pele = skin;
+        if (hair) attributes.cabelo = hair;
+    }
+
+    const extra = String(document.getElementById("persona-manager-extra")?.value || "").trim();
+    if (extra) {
+        attributes.descricao_extra = extra;
+    }
+
+    return {
+        id: 0,
+        name: name || (type === "local" ? "Novo local" : "Nova persona"),
+        persona_type: type,
+        attributes,
+    };
+}
+
+function openPersonaVoiceBuilder(profileId = 0) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    const isDraftPersona = !pid;
+    const profile = isDraftPersona
+        ? _buildPersonaDraftProfileFromCreateForm()
+        : _getPersonaProfileById(pid, _personaManagerType);
     if (!profile) {
         alert("Persona nao encontrada.");
         return;
@@ -20444,7 +20636,7 @@ function openPersonaVoiceBuilder(profileId) {
     _personaVoiceBuilderProfileId = pid;
     const titleEl = document.getElementById("persona-voice-builder-title");
     if (titleEl) {
-        titleEl.textContent = `Criar voz para ${profile.name || "persona"}`;
+        titleEl.textContent = `Criar voz para ${profile.name || (isDraftPersona ? "nova persona" : "persona")}`;
     }
 
     const hiddenProfileId = document.getElementById("persona-voice-builder-profile-id");
@@ -20452,7 +20644,7 @@ function openPersonaVoiceBuilder(profileId) {
 
     const nameEl = document.getElementById("persona-voice-builder-name");
     if (nameEl) {
-        const suggestedName = `Voz ${profile.name || "Persona"}`;
+        const suggestedName = `Voz ${profile.name || (isDraftPersona ? "Nova persona" : "Persona")}`;
         nameEl.value = suggestedName.slice(0, 80);
     }
 
@@ -20468,7 +20660,14 @@ function openPersonaVoiceBuilder(profileId) {
 
     const statusEl = document.getElementById("persona-voice-builder-status");
     if (statusEl) {
-        statusEl.textContent = "Descreva o estilo da voz (ex: mulher, jovem, alegre).";
+        statusEl.textContent = isDraftPersona
+            ? "Crie a voz agora para ja deixar a nova persona pronta para vinculacao."
+            : "Descreva o estilo da voz (ex: mulher, jovem, alegre).";
+    }
+
+    const saveBtn = document.getElementById("persona-voice-builder-save");
+    if (saveBtn) {
+        saveBtn.textContent = isDraftPersona ? "Criar voz" : "Gerar e vincular";
     }
 
     openModal("modal-persona-voice-builder");
@@ -20494,10 +20693,7 @@ function addPersonaVoiceTrait(trait) {
 async function createPersonaVoiceFromDescription() {
     const profileIdInput = document.getElementById("persona-voice-builder-profile-id");
     const pid = parseInt(profileIdInput?.value || _personaVoiceBuilderProfileId || "0", 10) || 0;
-    if (!pid) {
-        alert("Persona invalida para vincular voz.");
-        return;
-    }
+    const isDraftPersona = pid <= 0;
 
     const nameEl = document.getElementById("persona-voice-builder-name");
     const descriptionEl = document.getElementById("persona-voice-builder-description");
@@ -20514,7 +20710,9 @@ async function createPersonaVoiceFromDescription() {
         return;
     }
 
-    const personaProfile = _getPersonaProfileById(pid, _personaManagerType);
+    const personaProfile = isDraftPersona
+        ? _buildPersonaDraftProfileFromCreateForm()
+        : _getPersonaProfileById(pid, _personaManagerType);
     const personaName = String(personaProfile?.name || "").trim();
 
     if (saveBtn) {
@@ -20545,12 +20743,32 @@ async function createPersonaVoiceFromDescription() {
             throw new Error("Nao foi possivel criar o perfil de voz.");
         }
 
+        await loadVoiceProfiles();
+
+        if (isDraftPersona) {
+            _renderPersonaManagerCreateVoiceSelect();
+            const selectEl = document.getElementById("persona-manager-voice-profile");
+            if (selectEl) {
+                selectEl.value = String(voiceProfileId);
+            }
+
+            const playBtn = document.getElementById("persona-manager-voice-play");
+            if (playBtn) {
+                playBtn.disabled = false;
+                playBtn.classList.remove("disabled");
+            }
+
+            closeModal("modal-persona-voice-builder");
+            showToast("Voz criada e pronta para vincular a nova persona.", "success");
+            await previewVoice(voiceProfileId);
+            return;
+        }
+
         await api(`/persona/profiles/${pid}/voice`, {
             method: "PUT",
             body: JSON.stringify({ voice_profile_id: voiceProfileId }),
         });
 
-        await loadVoiceProfiles();
         await _refreshPersonaManagerList();
 
         const providerInfo = response?.provider_info || {};
@@ -20585,7 +20803,7 @@ async function createPersonaVoiceFromDescription() {
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
-            saveBtn.textContent = "Gerar e vincular";
+            saveBtn.textContent = isDraftPersona ? "Criar voz" : "Gerar e vincular";
         }
     }
 }
@@ -20732,6 +20950,8 @@ async function openPersonaQuickAdd(context = "") {
     _preparePersonaManagerContext(context || _personaManagerContext || "script");
     _personaManagerCreateMode = "quick";
     _resetPersonaManagerCreateForm();
+    await loadVoiceProfiles();
+    _renderPersonaManagerCreateVoiceSelect();
     _updatePersonaManagerFormByType();
     openModal("modal-persona-manager-create");
 
@@ -20813,7 +21033,7 @@ async function createPersonaFromManager() {
         const locationLighting = (document.getElementById("persona-manager-location-lighting")?.value || "").trim();
         const locationElements = (document.getElementById("persona-manager-location-elements")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
-        const selectedVoiceProfileId = isQuickAdd
+        const selectedVoiceProfileId = _personaManagerType === "local"
             ? 0
             : (parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0);
         const hasReferenceImage = !!personaManagerReferenceImageFile;
@@ -20949,7 +21169,7 @@ async function createPersonaFromManager() {
             if (isQuickAdd) {
                 button.textContent = _personaManagerType === "local" ? "Salvar local" : "Salvar persona";
             } else {
-                button.textContent = _personaManagerType === "local" ? "Gerar novo local" : "Gerar nova persona";
+                button.textContent = _personaManagerType === "local" ? "Criar local" : "Criar persona";
             }
         }
     }
@@ -22587,6 +22807,15 @@ function openPublishForProject(projectId) {
     }
 
     navigateTo("publish");
+}
+
+function openProjectEditorFromCreate(projectId) {
+    const parsedProjectId = parseInt(projectId, 10) || 0;
+    if (!parsedProjectId) {
+        return;
+    }
+    navigateTo("editor");
+    void openEditor(parsedProjectId, { restoreDraft: true });
 }
 
 function getCheckedPublishPlatforms() {
@@ -28010,6 +28239,7 @@ window.generateVideo = generateVideo;
 window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
 window.openPublishForProject = openPublishForProject;
+window.openProjectEditorFromCreate = openProjectEditorFromCreate;
 window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
