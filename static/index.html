@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260522-03">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260522-04">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 523;
+        var REQUIRED_VER = 524;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1500,9 +1500,6 @@
                             <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
                             <div id="wizard-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
-                                <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaQuickAdd('wizard')" title="Adicionar persona pela foto" aria-label="Adicionar persona pela foto">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                </button>
                                 <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('wizard')" title="Gerenciar personas" aria-label="Gerenciar personas">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                                 </button>
@@ -2248,9 +2245,6 @@
                             <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
                             <div id="script-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
-                                <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaQuickAdd('script')" title="Adicionar persona pela foto" aria-label="Adicionar persona pela foto">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                </button>
                                 <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('script')" title="Gerenciar personas" aria-label="Gerenciar personas">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                                 </button>
@@ -2848,9 +2842,6 @@
                         <small class="pause-hint">A IA vai manter essa persona no contexto da cena.</small>
                         <div id="ai-suggest-persona-preview" class="realistic-persona-preview"></div>
                         <div class="realistic-persona-actions">
-                            <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaQuickAdd('ai')" title="Adicionar persona pela foto" aria-label="Adicionar persona pela foto">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                            </button>
                             <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('ai')" title="Gerenciar personas" aria-label="Gerenciar personas">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                             </button>
@@ -3202,9 +3193,6 @@
                     <small class="pause-hint">Escolha cada tipo que o piloto deve testar e selecione a persona ou Nenhum.</small>
                     <div id="pilot-realistic-persona-preview" class="realistic-persona-preview"></div>
                     <div class="realistic-persona-actions">
-                        <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaQuickAdd('pilot')" title="Adicionar persona pela foto" aria-label="Adicionar persona pela foto">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        </button>
                         <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('pilot')" title="Gerenciar personas" aria-label="Gerenciar personas">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                         </button>
@@ -3473,9 +3461,6 @@
                             <div id="auto-realistic-persona-composition" class="auto-pilot-persona-summary auto-realistic-persona-summary"></div>
                             <div id="auto-realistic-persona-preview" class="realistic-persona-preview"></div>
                             <div class="realistic-persona-actions">
-                                <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaQuickAdd('auto')" title="Adicionar persona pela foto" aria-label="Adicionar persona pela foto">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                </button>
                                 <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('auto')" title="Gerenciar personas" aria-label="Gerenciar personas">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                                 </button>
@@ -3889,15 +3874,11 @@
     <div id="modal-persona-manager-create" class="modal">
         <div class="modal-content modal-content-wide persona-manager-create-modal">
             <div class="modal-header">
-                <h3 id="persona-manager-create-title">Criar nova persona</h3>
+                <h3 id="persona-manager-create-title">Criar persona</h3>
                 <button class="modal-close" onclick="closeModal('modal-persona-manager-create')" type="button">&times;</button>
             </div>
             <div class="modal-body">
                 <section class="persona-manager-create-shell" aria-labelledby="persona-manager-create-title">
-                    <div class="persona-manager-create-header">
-                        <div id="persona-manager-create-kicker" class="persona-manager-create-kicker">Nova persona</div>
-                        <h4 id="persona-manager-create-heading">Criar nova persona</h4>
-                    </div>
                     <div class="persona-manager-create-grid">
                         <div class="form-group persona-manager-field persona-manager-field-name">
                             <label>Nome (opcional)</label>
@@ -3983,11 +3964,11 @@
                             <div class="persona-manager-voice-create-row">
                                 <select id="persona-manager-voice-profile" class="input"></select>
                                 <button id="persona-manager-voice-play" class="btn btn-secondary btn-sm persona-manager-voice-play" type="button" onclick="previewPersonaCreateVoice()" title="Ouvir prévia da voz">▶</button>
+                                <button class="btn btn-secondary btn-sm persona-manager-voice-create-trigger" type="button" onclick="openPersonaVoiceBuilder()">Nova voz</button>
                             </div>
                         </div>
 
                         <div class="form-group persona-manager-field persona-manager-field-reference">
-                            <label>Imagem de referência (opcional)</label>
                             <div class="persona-reference-upload">
                                 <input
                                     id="persona-manager-reference-image"
@@ -3996,10 +3977,15 @@
                                     onchange="handlePersonaReferenceImageSelect(event)"
                                     hidden>
                                 <button
-                                    class="btn btn-secondary btn-sm"
+                                    id="persona-manager-reference-trigger"
+                                    class="btn btn-secondary btn-sm persona-reference-upload-btn"
                                     type="button"
+                                    title="Enviar imagem"
+                                    aria-label="Enviar imagem"
                                     onclick="document.getElementById('persona-manager-reference-image').click()">
-                                    Enviar imagem
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M12 5v14M5 12h14"></path>
+                                    </svg>
                                 </button>
                                 <img id="persona-manager-reference-preview" class="persona-reference-preview" src="" alt="Imagem de referência" hidden>
                                 <button id="persona-manager-reference-remove" class="btn btn-secondary btn-sm" type="button" onclick="removePersonaReferenceImage()" hidden>Remover</button>
@@ -4010,7 +3996,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" type="button" onclick="closeModal('modal-persona-manager-create')">Fechar</button>
-                <button class="btn btn-primary" id="persona-manager-create-btn" type="button" onclick="createPersonaFromManager()">Gerar nova persona</button>
+                <button class="btn btn-primary" id="persona-manager-create-btn" type="button" onclick="createPersonaFromManager()">Criar persona</button>
             </div>
         </div>
     </div>
@@ -4434,8 +4420,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260522-03"></script>
-    <script src="/video/static/pwa.js?v=20260522-03"></script>
+    <script src="/video/static/app.js?v=20260522-04"></script>
+    <script src="/video/static/pwa.js?v=20260522-04"></script>
 </body>
 </html>
 
