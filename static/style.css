@@ -2511,6 +2511,15 @@ a {
     color: #ffb0a8;
 }
 
+.credit-estimate-pill--inline-source {
+    display: none !important;
+}
+
+.create-credit-actions {
+    justify-content: flex-end;
+    margin-top: 0.35rem;
+}
+
 .credit-add-btn {
     border: 1px solid rgba(var(--accent-rgb), 0.48);
     background: rgba(var(--accent-rgb), 0.14);
@@ -5795,6 +5804,37 @@ th {
     width: 17px;
     height: 17px;
     flex: 0 0 auto;
+}
+
+.btn-create-video-label {
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.btn-create-video-credit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(44, 32, 0, 0.16);
+    border: 1px solid rgba(44, 32, 0, 0.18);
+    color: #2c2000;
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.btn-create-video-credit.is-warning {
+    background: rgba(134, 74, 0, 0.18);
+    border-color: rgba(134, 74, 0, 0.24);
+}
+
+.btn-create-video-credit.is-error {
+    background: rgba(122, 34, 24, 0.18);
+    border-color: rgba(122, 34, 24, 0.24);
 }
 
 .script-actions {

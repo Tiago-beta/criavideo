@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v518 loaded");
+console.log("[CriaVideo] app.js v519 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -322,7 +322,8 @@ function _normalizeAutomaticAudioDurationSeconds(value) {
 }
 
 function _getRealisticSelectedEngine(prefix) {
-    return document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const fallback = (prefix === "wizard" || prefix === "script") ? "viduq3" : "wan2";
+    return document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || fallback;
 }
 
 function _getAvatarAutomaticDurationSeconds(prefix) {
@@ -410,7 +411,7 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
 function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const engine = _getRealisticSelectedEngine(prefix);
     if (!_isSeedanceFamilyEngine(engine)) {
         toggleGroup.hidden = true;
         return;
@@ -450,7 +451,7 @@ function _syncCreatePersonaUi(prefix) {
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-    const engine = engineBtn?.dataset.value || "wan2";
+    const engine = engineBtn?.dataset.value || "viduq3";
     const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
 }
@@ -4297,6 +4298,14 @@ const _creditEstimateAddButtonByBadge = {
     "script-credit-estimate": "script-credit-add-btn",
     "auto-credit-estimate": "auto-credit-add-btn",
 };
+const _createCreditButtonByBadge = {
+    "wizard-credit-estimate": "wizard-create-btn-credit",
+    "script-credit-estimate": "script-create-btn-credit",
+};
+const _createCreditRowByBadge = {
+    "wizard-credit-estimate": "wizard-credit-actions",
+    "script-credit-estimate": "script-credit-actions",
+};
 
 function _formatCreditsInt(value) {
     const parsed = parseInt(value || "0", 10);
@@ -4339,11 +4348,37 @@ function _setCreditEstimateAddButton(targetId, show = false) {
     const btn = document.getElementById(btnId);
     if (!btn) return;
     btn.hidden = !show;
+    const rowId = _createCreditRowByBadge[targetId];
+    const row = rowId ? document.getElementById(rowId) : null;
+    if (row) {
+        row.hidden = btn.hidden;
+    }
+}
+
+function _extractCreateButtonCreditLabel(message = "") {
+    const match = String(message || "").match(/\d[\d.]*/);
+    return match ? match[0] : "";
+}
+
+function _setCreateButtonCredit(targetId, message = "", kind = "ready", hidden = false) {
+    const creditId = _createCreditButtonByBadge[targetId];
+    if (!creditId) return;
+    const creditEl = document.getElementById(creditId);
+    if (!creditEl) return;
+
+    const value = hidden ? "" : _extractCreateButtonCreditLabel(message);
+    creditEl.hidden = !value;
+    creditEl.textContent = value;
+    creditEl.className = `btn-create-video-credit is-${kind}`;
 }
 
 function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden = false) {
+    _setCreateButtonCredit(targetId, message, kind, hidden);
     const el = document.getElementById(targetId);
-    if (!el) return;
+    if (!el) {
+        _setCreditEstimateAddButton(targetId, !hidden && kind === "warning");
+        return;
+    }
     if (hidden) {
         el.hidden = true;
         _setCreditEstimateAddButton(targetId, false);
@@ -14475,7 +14510,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
 
-    const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value || "grok";
+    const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value
+        || (prefix === "auto" ? "wan2" : "viduq3");
     if (!finalPrompt && selectedEngineForPromptCheck !== "avatar31") {
         alert("Descreva a cena que você quer ver no vídeo.");
         return;
@@ -15568,7 +15604,7 @@ async function handleScriptCreate() {
     // Check if this is a realistic video
     if (scriptData.videoType === "realista") {
         const scriptText = document.getElementById("script-text").value.trim();
-        const selectedRealisticEngine = document.querySelector("#script-realistic-engine .engine-option.selected")?.dataset.value || "grok";
+        const selectedRealisticEngine = _getRealisticSelectedEngine("script");
         const prompt = selectedRealisticEngine === "avatar31"
             ? scriptText
             : (scriptText || scriptData.title || "");
