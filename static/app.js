@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v529 loaded");
+console.log("[CriaVideo] app.js v530 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5253,8 +5253,8 @@ async function createSimilar(projectId) {
         if (["wan2", "grok", "seedance", "lite2", "mega15", "viduq3"].includes(raw)) {
             return raw;
         }
-        if (raw.includes("lite 2.0") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
-        if (raw.includes("mega 1.5") || raw.includes("seedance 2.0 fast") || raw.includes("seedance fast")) return "mega15";
+        if (raw.includes("mega 1.5") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
+        if (raw.includes("lite 2.0") || raw.includes("seedance 2.0 fast") || raw.includes("seedance fast")) return "mega15";
         if (raw.includes("pro 3.1") || raw.includes("vidu")) return "viduq3";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
@@ -7739,10 +7739,10 @@ function _normalizeSimilarEngine(rawValue) {
     if (value === "grok" || value === "wan2" || value === "lite2" || value === "mega15" || value === "seedance" || value === "viduq3") {
         return value;
     }
-    if (value.includes("lite 2.0") || value.includes("seedance v1.5") || value.includes("seedance-v1.5")) {
+    if (value.includes("mega 1.5") || value.includes("seedance v1.5") || value.includes("seedance-v1.5")) {
         return "lite2";
     }
-    if (value.includes("mega 1.5") || value.includes("seedance 2.0 fast") || value.includes("seedance fast")) return "mega15";
+    if (value.includes("lite 2.0") || value.includes("seedance 2.0 fast") || value.includes("seedance fast")) return "mega15";
     if (value.includes("vidu") || value.includes("pro 3.1") || value === "pro31" || value === "pro3.1") {
         return "viduq3";
     }
@@ -7756,8 +7756,8 @@ function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Lite 2.0 Fast";
-    if (normalized === "mega15") return "Mega 1.5 Real";
+    if (normalized === "lite2") return "Mega 1.5 Real";
+    if (normalized === "mega15") return "Lite 2.0 Fast";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
@@ -7766,8 +7766,8 @@ function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
     if (normalized === "viduq3") return "Pro 3.1 Start";
     if (normalized === "wan2") return "Ultra High 3.0";
-    if (normalized === "lite2") return "Lite 2.0 Fast";
-    if (normalized === "mega15") return "Mega 1.5 Real";
+    if (normalized === "lite2") return "Mega 1.5 Real";
+    if (normalized === "mega15") return "Lite 2.0 Fast";
     if (normalized === "seedance") return "Mega 2.0 Ultra";
     return "Cria Speed 2.5 (Grok)";
 }
@@ -11212,14 +11212,14 @@ function workflowAddNode(kind) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
-                <option value="lite2">Lite 2.0 Fast</option>
-                <option value="mega15">Mega 1.5 Real</option>
+                <option value="lite2">Mega 1.5 Real</option>
+                <option value="mega15">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0 Fast, no Mega 1.5 Real, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
@@ -11555,8 +11555,8 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
-        lite2: "Lite 2.0 Fast",
-        mega15: "Mega 1.5 Real",
+        lite2: "Mega 1.5 Real",
+        mega15: "Lite 2.0 Fast",
         viduq3: "Pro 3.1 Start",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
@@ -11858,14 +11858,14 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
-                <option value="lite2">Lite 2.0 Fast</option>
-                <option value="mega15">Mega 1.5 Real</option>
+                <option value="lite2">Mega 1.5 Real</option>
+                <option value="mega15">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0 Fast, no Mega 1.5 Real, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);

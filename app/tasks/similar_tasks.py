@@ -2424,11 +2424,12 @@ def _scene_duration_seconds(scene: VideoScene) -> float:
 
 def _normalize_engine(value: str) -> str:
     raw = str(value or "").strip().lower()
+    compact = raw.replace(" ", "").replace("-", "").replace(".", "")
     if raw in {"grok", "wan2", "seedance", "lite2", "mega15", "viduq3"}:
         return raw
-    if "lite 2.0" in raw or "seedance v1.5" in raw or "seedance-v1.5" in raw:
+    if "mega 1.5" in raw or compact == "mega15real" or "seedance v1.5" in raw or "seedance-v1.5" in raw:
         return "lite2"
-    if "mega 1.5" in raw or "seedance 2.0 fast" in raw or raw in {"mega15real", "seedancefast", "seedance-2.0-fast"}:
+    if "lite 2.0" in raw or compact == "lite20fast" or "seedance 2.0 fast" in raw or raw in {"seedancefast", "seedance-2.0-fast"}:
         return "mega15"
     if "vidu" in raw or "pro 3.1" in raw or raw in {"pro31", "pro3.1", "pro-3.1"}:
         return "viduq3"

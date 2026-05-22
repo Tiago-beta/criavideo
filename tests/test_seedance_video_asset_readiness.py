@@ -44,10 +44,11 @@ class TestPrepareViduReference(unittest.IsolatedAsyncioTestCase):
 
 
 class TestSeedanceProfiles(unittest.TestCase):
-    def test_normalizes_mega15_aliases(self):
+    def test_normalizes_swapped_display_aliases(self):
         self.assertEqual(_normalize_seedance_engine_variant("mega15"), "mega15")
-        self.assertEqual(_normalize_seedance_engine_variant("Mega 1.5 Real"), "mega15")
+        self.assertEqual(_normalize_seedance_engine_variant("Lite 2.0 Fast"), "mega15")
         self.assertEqual(_normalize_seedance_engine_variant("Seedance 2.0 Fast"), "mega15")
+        self.assertEqual(_normalize_seedance_engine_variant("Mega 1.5 Real"), "lite2")
 
     def test_resolves_mega15_i2v_profile(self):
         model_id, duration, resolution = _resolve_seedance_generation_profile(

@@ -1622,7 +1622,7 @@ async def run_realistic_video_pipeline(project_id: int):
             if engine not in ("seedance", "mega15", "lite2", "viduq3", "wan2", "grok", "avatar31"):
                 engine = "wan2"
             seedance_family_engine = engine in {"seedance", "mega15", "lite2", "viduq3"}
-            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "mega15": "Mega 1.5 Real", "lite2": "Lite 2.0 Fast", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "mega15": "Lite 2.0 Fast", "lite2": "Mega 1.5 Real", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
             engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -2293,7 +2293,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 if not lite2_reference_path or not os.path.exists(lite2_reference_path):
                     from app.services.scene_generator import generate_scene_image
 
-                    await _on_progress(16, "Gerando imagem-base para o Lite 2.0 Fast...")
+                    await _on_progress(16, "Gerando imagem-base para o Mega 1.5 Real...")
                     lite2_ref_dir = render_dir / "lite2_ref"
                     lite2_ref_dir.mkdir(parents=True, exist_ok=True)
                     lite2_reference_path = str(lite2_ref_dir / "reference.png")
@@ -2307,7 +2307,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         lite2_reference_path,
                         True,
                     )
-                    logger.info("Lite 2.0 Fast reference image generated: %s", lite2_reference_path)
+                    logger.info("Mega 1.5 Real reference image generated: %s", lite2_reference_path)
                     scene_reference_path = lite2_reference_path
 
             if engine == "grok":

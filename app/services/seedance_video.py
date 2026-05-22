@@ -57,9 +57,9 @@ _VIDU_ALLOWED_RESOLUTIONS = {"540p", "720p", "1080p"}
 def _normalize_seedance_engine_variant(value: str) -> str:
     raw = str(value or "seedance").strip().lower().replace("_", "-")
     compact = raw.replace(" ", "").replace("-", "").replace(".", "")
-    if raw in {"lite2", "seedance15", "seedance-v1.5", "seedance-v1.5-fast"} or compact in {"seedancev15", "seedancev15fast"}:
+    if raw in {"lite2", "seedance15", "seedance-v1.5", "seedance-v1.5-fast"} or compact in {"mega15real", "seedancev15", "seedancev15fast"}:
         return "lite2"
-    if raw in {"mega15", "mega15real", "seedancefast", "seedance-2.0-fast"} or compact in {"mega15", "mega15real", "seedance20fast"}:
+    if raw in {"mega15", "seedancefast", "seedance-2.0-fast"} or compact in {"lite20fast", "mega15", "seedance20fast"}:
         return "mega15"
     return "seedance"
 

@@ -378,14 +378,14 @@ VIDEO_COMPARISON_MODELS = [
     },
     {
         "key": "lite2-video",
-        "label": "Lite 2.0 Fast",
+        "label": "Mega 1.5 Real",
         "kind": "video",
         "engine": "lite2",
         "featured": True,
     },
     {
         "key": "mega15-video",
-        "label": "Mega 1.5 Real",
+        "label": "Lite 2.0 Fast",
         "kind": "video",
         "engine": "mega15",
         "featured": True,
