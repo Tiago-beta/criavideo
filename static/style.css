@@ -12895,6 +12895,11 @@ th,
     pointer-events: none;
 }
 
+.similar-frame-gallery-item.is-busy .similar-frame-inline-remove-btn {
+    opacity: 0;
+    pointer-events: none;
+}
+
 .similar-frame-gallery-busy-overlay {
     position: absolute;
     inset: 0;
@@ -13036,6 +13041,42 @@ th,
 .similar-frame-image-action:hover {
     border-color: rgba(255, 193, 77, 0.36);
     background: rgba(255, 193, 77, 0.16);
+}
+
+.similar-frame-inline-remove-btn {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 211, 92, 0.9);
+    background: linear-gradient(180deg, rgba(255, 209, 59, 0.96), rgba(214, 152, 17, 0.94));
+    color: #2f2200;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 12px 26px rgba(214, 152, 17, 0.22);
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.similar-frame-inline-remove-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(255, 228, 128, 0.98);
+    background: linear-gradient(180deg, rgba(255, 223, 98, 0.98), rgba(230, 167, 25, 0.96));
+    color: #241800;
+    box-shadow: 0 16px 30px rgba(214, 152, 17, 0.28);
+}
+
+.similar-frame-inline-remove-btn:disabled {
+    opacity: 0.62;
+    cursor: not-allowed;
+    box-shadow: none;
 }
 
 .similar-reference-frame-tools {
@@ -13435,17 +13476,21 @@ th,
 
 .similar-scene-video-actions {
     display: flex;
-    flex: 1 1 360px;
+    flex: 0 0 auto;
     flex-wrap: wrap;
     gap: 8px;
+    align-items: center;
 }
 .similar-scene-run-btn {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
+    width: auto;
     margin: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
+    min-height: 44px;
+    padding: 0 18px;
 }
 
 .similar-scene-run-btn svg {
@@ -13489,7 +13534,7 @@ th,
 }
 
 .similar-scene-duration-picker .duration-option.duration-option-auto {
-    min-width: 108px;
+    min-width: 74px;
 }
 
 .similar-scene-duration-picker .duration-option:hover {
@@ -13502,19 +13547,6 @@ th,
     border-color: rgba(255, 193, 79, 0.52);
     background: rgba(255, 193, 79, 0.14);
     color: #ffe2a1;
-}
-
-.similar-scene-duration-note {
-    display: inline-flex;
-    align-items: center;
-    min-height: 30px;
-    padding: 0 10px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(229, 238, 248, 0.72);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
 }
 
 .similar-scene-picker-label {

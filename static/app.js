@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v533 loaded");
+console.log("[CriaVideo] app.js v534 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -7800,22 +7800,22 @@ function _normalizeSimilarEngine(rawValue) {
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1 Start";
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Mega 1.5 Real";
-    if (normalized === "mega15") return "Lite 2.0 Fast";
+    if (normalized === "lite2") return "Mega 1.5";
+    if (normalized === "mega15") return "Lite 2.0";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1 Start";
-    if (normalized === "wan2") return "Ultra High 3.0";
-    if (normalized === "lite2") return "Mega 1.5 Real";
-    if (normalized === "mega15") return "Lite 2.0 Fast";
-    if (normalized === "seedance") return "Mega 2.0 Ultra";
-    return "Cria Speed 2.5 (Grok)";
+    if (normalized === "viduq3") return "Pro 3.1";
+    if (normalized === "wan2") return "Ultra 3.0";
+    if (normalized === "lite2") return "Mega 1.5";
+    if (normalized === "mega15") return "Lite 2.0";
+    if (normalized === "seedance") return "Mega 2.0";
+    return "Cria 2.5";
 }
 
 function _getSimilarSceneSelectedEngine(sceneId) {
@@ -9182,15 +9182,6 @@ function _renderSimilarScenes(project, options = {}) {
             : generatedImageVariants.length
                 ? `Entrada do vídeo e ${generatedImageVariants.length} variacao(oes) IA.`
                 : "Contexto visual da cena.";
-        const referenceFrameQuickActionsMarkup = referenceTextDetected
-            ? `
-                <div class="similar-reference-frame-tools">
-                    <div class="similar-reference-frame-quick-actions">
-                        <button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>
-                    </div>
-                </div>
-            `
-            : "";
         const sceneClipProgress = isGeneratingSceneClip
             ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
             : 0;
@@ -9213,7 +9204,6 @@ function _renderSimilarScenes(project, options = {}) {
             ? durationSelection.detectedDurationSeconds
             : durationSelection.selectedDurationSeconds;
         const manualDurationOptions = _getSimilarManualDurationOptions(selectedSceneEngine);
-        const detectedDurationLabel = `Detectado ${durationSelection.detectedDurationSeconds.toFixed(1)}s`;
         const durationButtonsMarkup = ["auto", ...manualDurationOptions.map((value) => String(value))].map((value) => {
             const normalizedValue = _normalizeSimilarSceneDurationMode(value) || "auto";
             const isSelected = durationSelection.selectedMode === normalizedValue;
@@ -9221,7 +9211,7 @@ function _renderSimilarScenes(project, options = {}) {
                 ? `Usar o tempo detectado desta cena (${durationSelection.detectedDurationSeconds.toFixed(1)}s)`
                 : `Gerar esta cena com ${normalizedValue} segundos`;
             const label = normalizedValue === "auto"
-                ? "Automatico"
+                ? "Auto"
                 : `${normalizedValue}s`;
             return `<button class="duration-option${normalizedValue === "auto" ? " duration-option-auto" : ""}${isSelected ? " selected" : ""}" data-value="${normalizedValue}" type="button" title="${title}" aria-label="${title}">${label}</button>`;
         }).join("");
@@ -9276,6 +9266,7 @@ function _renderSimilarScenes(project, options = {}) {
                     frameBusy: frameBusyTarget === "start",
                     frameBusyMarkup: buildFrameBusyOverlayMarkup("start"),
                     overlayActionsMarkup: `
+                        ${referenceTextDetected ? `<button class="similar-frame-inline-remove-btn" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>` : ""}
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(renderedStartFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
                             <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
@@ -9359,7 +9350,6 @@ function _renderSimilarScenes(project, options = {}) {
                             <strong>Frames usados no vídeo</strong>
                             <span>${framePanelSummary}</span>
                         </div>
-                        ${referenceFrameQuickActionsMarkup}
                     </div>
                     <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                         <div class="similar-reference-frame-primary-column">
@@ -9367,7 +9357,6 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${inlineClipMarkup}
                     </div>
-                    ${referenceFrameQuickActionsMarkup}
                     <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
                         <label for="similar-scene-narration-${sceneId}">O que deve ser falado nesta cena?</label>
                         <textarea id="similar-scene-narration-${sceneId}" class="input similar-reference-frame-editor-input" rows="2" maxlength="320" placeholder="Ex.: Estou muito feliz, agora vou renovar minha sala" onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); similarApplySceneNarration(${sceneId}); }">${narrationValue}</textarea>
@@ -9459,7 +9448,6 @@ function _renderSimilarScenes(project, options = {}) {
                         <div id="similar-scene-duration-options-${sceneId}" class="duration-options" role="group" aria-label="Selecionar a duracao da cena ${idx + 1}">
                             ${durationButtonsMarkup}
                         </div>
-                        <span class="similar-scene-duration-note">${detectedDurationLabel}</span>
                         <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
                         <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
                     </div>
@@ -9482,7 +9470,7 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Criar imagem" aria-label="Criar imagem">${similarActionIcons.image}</button>
                     <div class="similar-scene-video-actions">
-                        <button class="btn workflow-run-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>Gerar vídeo usando imagem</span></button>
+                        <button class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>Gerar vídeo</span></button>
                     </div>
                 </div>
             </article>
