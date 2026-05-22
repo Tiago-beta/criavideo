@@ -33,8 +33,11 @@ class Settings(BaseSettings):
     atlascloud_console_api_base_url: str = "https://console.atlascloud.ai/api/v1"
     atlascloud_seedance_t2v_model: str = "bytedance/seedance-2.0/text-to-video"
     atlascloud_seedance_i2v_model: str = "bytedance/seedance-2.0/image-to-video"
+    atlascloud_seedance_fast_i2v_model: str = "bytedance/seedance-2.0-fast/image-to-video"
+    atlascloud_seedance_lite_i2v_model: str = "bytedance/seedance-v1.5-pro/image-to-video-fast"
     atlascloud_wan_t2v_model: str = "alibaba/wan-2.7/text-to-video"
     atlascloud_wan_i2v_model: str = "alibaba/wan-2.6/image-to-video"
+    atlascloud_vidu_q3_start_end_model: str = "vidu/q3-pro/start-end-to-video"
     atlascloud_avatar_model: str = "kwaivgi/kling-v2.6-std/avatar"
     mp_access_token: str = ""
     host: str = "0.0.0.0"
@@ -61,9 +64,9 @@ class Settings(BaseSettings):
     baixatudo_poll_interval_seconds: float = 2.5
     baixatudo_max_wait_seconds: int = 900
     similar_analysis_model: str = "gpt-4o"
-    similar_scene_default_seconds: int = 5
-    similar_scene_min_seconds: int = 5
-    similar_scene_max_seconds: int = 15
+    similar_scene_default_seconds: int = 2
+    similar_scene_min_seconds: int = 2
+    similar_scene_max_seconds: int = 16
 
     class Config:
         env_file = ".env"

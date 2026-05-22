@@ -24,6 +24,7 @@ from app.services.realistic_cover_guidance import (
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _safe_error_message(err, fallback: str) -> str:
@@ -140,6 +141,43 @@ def _reference_paths_from_tags(raw_tags: dict[str, object] | None) -> list[str]:
         return upload_paths
 
     return []
+
+
+def _project_source_thumbnail_path(project: VideoProject) -> str:
+    tags_data = project.tags if isinstance(project.tags, dict) else {}
+    candidates: list[str] = [str(path or "").strip() for path in _reference_paths_from_tags(tags_data)]
+
+    if bool(getattr(project, "use_custom_images", False)):
+        image_dir = Path(settings.media_dir) / "images" / str(project.id)
+        if image_dir.exists():
+            candidates.extend(
+                str(path)
+                for path in sorted(image_dir.iterdir())
+                if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+            )
+
+    style_prompt_path = str(getattr(project, "style_prompt", "") or "").strip()
+    if style_prompt_path and os.path.splitext(style_prompt_path)[1].lower() in IMAGE_EXTS:
+        candidates.append(style_prompt_path)
+
+    return next((candidate for candidate in candidates if candidate and os.path.exists(candidate)), "")
+
+
+def _copy_thumbnail_image(source_path: str, thumb_dir: Path, stem: str = "thumbnail") -> str:
+    normalized_source = str(source_path or "").strip()
+    if not normalized_source or not os.path.exists(normalized_source):
+        return ""
+
+    suffix = Path(normalized_source).suffix.lower()
+    if suffix not in IMAGE_EXTS:
+        suffix = ".jpg"
+
+    for old_path in thumb_dir.glob(f"{stem}.*"):
+        old_path.unlink(missing_ok=True)
+
+    target_path = thumb_dir / f"{stem}{suffix}"
+    shutil.copy2(normalized_source, target_path)
+    return str(target_path)
 
 
 async def _normalize_video_aspect(input_path: str, aspect_ratio: str, output_path: str) -> str:
@@ -679,7 +717,7 @@ async def _run_custom_video_pipeline(db, project, project_id: int):
 
     custom_thumb = next(thumb_dir.glob("custom_thumbnail.*"), None)
     if custom_thumb:
-        shutil.copy2(str(custom_thumb), thumb_path)
+        thumb_path = _copy_thumbnail_image(str(custom_thumb), thumb_dir)
         logger.info(f"Using custom thumbnail for project {project_id}")
     else:
         from app.services.thumbnail_generator import generate_thumbnail_from_frame
@@ -1268,25 +1306,30 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
 
             custom_thumb = next(thumb_dir.glob("custom_thumbnail.*"), None)
             if custom_thumb:
-                shutil.copy2(str(custom_thumb), thumb_path)
+                thumb_path = _copy_thumbnail_image(str(custom_thumb), thumb_dir)
                 logger.info(f"Using custom thumbnail for project {project_id}")
             else:
-                from app.services.thumbnail_generator import generate_thumbnail
-                try:
-                    generate_thumbnail(
-                        title=project.track_title or project.title,
-                        artist=project.track_artist or "",
-                        output_path=thumb_path,
-                    )
-                except Exception as e:
-                    logger.warning(f"Thumbnail generation failed, using frame fallback: {e}")
-                    from app.services.thumbnail_generator import generate_thumbnail_from_frame
-                    generate_thumbnail_from_frame(
-                        video_path=render_result["file_path"],
-                        title=project.track_title or project.title,
-                        artist=project.track_artist or "",
-                        output_path=thumb_path,
-                    )
+                source_thumb = _project_source_thumbnail_path(project)
+                if source_thumb:
+                    thumb_path = _copy_thumbnail_image(source_thumb, thumb_dir)
+                    logger.info(f"Using source image thumbnail for project {project_id}: {source_thumb}")
+                else:
+                    from app.services.thumbnail_generator import generate_thumbnail
+                    try:
+                        generate_thumbnail(
+                            title=project.track_title or project.title,
+                            artist=project.track_artist or "",
+                            output_path=thumb_path,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Thumbnail generation failed, using frame fallback: {e}")
+                        from app.services.thumbnail_generator import generate_thumbnail_from_frame
+                        generate_thumbnail_from_frame(
+                            video_path=render_result["file_path"],
+                            title=project.track_title or project.title,
+                            artist=project.track_artist or "",
+                            output_path=thumb_path,
+                        )
 
             # ── Save render to DB ──
             render = VideoRender(
@@ -1571,14 +1614,15 @@ async def run_realistic_video_pipeline(project_id: int):
             if not project:
                 return
 
-            from app.services.seedance_video import optimize_prompt_for_seedance, generate_realistic_video, sanitize_prompt_for_retry
+            from app.services.seedance_video import optimize_prompt_for_seedance, generate_realistic_video, generate_vidu_q3_video, sanitize_prompt_for_retry
             from app.services.video_composer import _get_duration as get_duration
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "wan2", "grok", "avatar31"):
+            if engine not in ("seedance", "mega15", "lite2", "viduq3", "wan2", "grok", "avatar31"):
                 engine = "wan2"
-            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+            seedance_family_engine = engine in {"seedance", "mega15", "lite2", "viduq3"}
+            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "mega15": "Lite 2.0 Fast", "lite2": "Mega 1.5 Real", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
             engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -1613,7 +1657,7 @@ async def run_realistic_video_pipeline(project_id: int):
             reference_source_early = str(tags_data_early.get("reference_source", "") or "").strip().lower()
             reference_mode = str(tags_data_early.get("reference_mode", "") or "").strip().lower()
             preserve_prompt_exactly = bool(tags_data_early.get("preserve_prompt_exactly"))
-            use_last_image_as_final_frame = bool(tags_data_early.get("use_last_image_as_final_frame")) and engine == "seedance"
+            use_last_image_as_final_frame = bool(tags_data_early.get("use_last_image_as_final_frame")) and engine in {"seedance", "mega15"}
             cover_context_early = str(tags_data_early.get("cover_context", "") or "")
             cover_visual_mode_early = str(
                 tags_data_early.get("cover_visual_mode", "")
@@ -1772,8 +1816,14 @@ async def run_realistic_video_pipeline(project_id: int):
             duration = int(project.track_duration or 7)
             if engine == "grok":
                 duration = max(1, min(duration, 60))
+            elif engine == "viduq3":
+                duration = max(1, min(duration, 16))
             elif engine == "wan2":
                 duration = _resolve_wan_effective_duration(duration)
+            elif engine == "mega15":
+                duration = max(1, min(duration, 15))
+            elif engine == "lite2":
+                duration = max(1, min(duration, 12))
             elif engine == "seedance":
                 duration = max(1, min(duration, 15))
             elif engine == "avatar31":
@@ -1791,7 +1841,7 @@ async def run_realistic_video_pipeline(project_id: int):
             seedance_native_audio_only = bool(tags_data.get("seedance_native_audio_only", False))
             use_last_image_as_final_frame = bool(
                 tags_data.get("use_last_image_as_final_frame", use_last_image_as_final_frame)
-            ) and engine == "seedance"
+            ) and seedance_family_engine
             external_audio_url_for_prompt = str(
                 tags_data.get("audio_upload_path")
                 or tags_data.get("audio_url", "")
@@ -1877,7 +1927,7 @@ async def run_realistic_video_pipeline(project_id: int):
             prebuilt_narration_path = ""
             prebuilt_music_path = ""
             seedance_expect_native_audio = (
-                engine == "seedance"
+                engine in {"seedance", "mega15"}
                 and provider_generate_audio_requested
                 and seedance_native_audio_only
                 and not external_audio_url_for_prompt
@@ -1962,7 +2012,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 if prompt_optimized:
                     optimized_prompt = user_prompt
                     logger.info(f"Realistic prompt already optimized, using as-is: {optimized_prompt[:200]}...")
-                elif engine == "seedance" and upload_reference_lock_mode:
+                elif seedance_family_engine and upload_reference_lock_mode:
                     optimized_prompt = user_prompt
                     logger.info(
                         "Seedance upload reference mode active for project %s: skipping prompt rewrite to preserve uploaded scene fidelity",
@@ -2052,7 +2102,7 @@ async def run_realistic_video_pipeline(project_id: int):
 
             aspect_ratio = project.aspect_ratio or "16:9"
             generate_audio = bool(tags_data.get("provider_generate_audio", not getattr(project, "no_background_music", False)))
-            if engine in {"seedance", "avatar31"} and not generate_audio:
+            if engine in {"seedance", "mega15", "lite2", "viduq3", "avatar31"} and not generate_audio:
                 generate_audio = True
             scene_reference_path = image_path
             grok_direct_reference_path = image_path if (image_path and os.path.exists(image_path)) else ""
@@ -2078,7 +2128,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 and bool(upload_reference_paths)
             )
             use_direct_upload_reference_for_seedance = (
-                engine == "seedance"
+                seedance_family_engine
                 and use_direct_upload_reference
             )
             enable_grok_persona_anchor = (
@@ -2238,6 +2288,28 @@ async def run_realistic_video_pipeline(project_id: int):
                     grok_direct_reference_path,
                 )
 
+            if engine == "lite2":
+                lite2_reference_path = upload_reference_paths[0] if upload_reference_paths else scene_reference_path
+                if not lite2_reference_path or not os.path.exists(lite2_reference_path):
+                    from app.services.scene_generator import generate_scene_image
+
+                    await _on_progress(16, "Gerando imagem-base para o Mega 1.5 Real...")
+                    lite2_ref_dir = render_dir / "lite2_ref"
+                    lite2_ref_dir.mkdir(parents=True, exist_ok=True)
+                    lite2_reference_path = str(lite2_ref_dir / "reference.png")
+                    lite2_prompt = optimized_prompt[:500]
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None,
+                        generate_scene_image,
+                        lite2_prompt,
+                        aspect_ratio,
+                        lite2_reference_path,
+                        True,
+                    )
+                    logger.info("Mega 1.5 Real reference image generated: %s", lite2_reference_path)
+                    scene_reference_path = lite2_reference_path
+
             if engine == "grok":
                 grok_base_image_path = grok_direct_reference_path or scene_reference_path
                 if duration > 15:
@@ -2334,6 +2406,33 @@ async def run_realistic_video_pipeline(project_id: int):
                     audio_source=avatar_audio_path,
                     output_path=output_path,
                     aspect_ratio=aspect_ratio,
+                    on_progress=_on_progress,
+                )
+
+            elif engine == "viduq3":
+                vidu_start_image = scene_reference_path or (upload_reference_paths[0] if upload_reference_paths else image_path)
+                vidu_end_image = vidu_start_image
+                if len(upload_reference_paths) > 1:
+                    vidu_end_image = upload_reference_paths[-1] or vidu_start_image
+                elif image_path and os.path.exists(image_path):
+                    vidu_end_image = image_path
+
+                if not vidu_start_image or not os.path.exists(vidu_start_image):
+                    raise RuntimeError("Pro 3.1 Start exige uma imagem de referencia valida.")
+
+                await _on_progress(18, "Iniciando geracao de video Pro 3.1 Start...")
+                await generate_vidu_q3_video(
+                    prompt=optimized_prompt,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    output_path=output_path,
+                    resolution="540p",
+                    generate_audio=generate_audio,
+                    image_path=vidu_start_image,
+                    end_image_path=vidu_end_image,
+                    image_paths=upload_reference_paths if len(upload_reference_paths) > 1 else None,
+                    movement_amplitude="auto",
+                    bgm=add_music,
                     on_progress=_on_progress,
                 )
 
@@ -2519,6 +2618,7 @@ async def run_realistic_video_pipeline(project_id: int):
                                 image_paths=clip_image_paths,
                                 use_last_image_as_final_frame=use_last_image_as_final_frame,
                                 preserve_prompt_exactly=preserve_prompt_exactly,
+                                engine_variant=engine,
                                 on_progress=clip_progress,
                             )
                             final_prompt = prompt_for_attempt
@@ -2623,8 +2723,8 @@ async def run_realistic_video_pipeline(project_id: int):
             has_audio = False
             provider_has_audio = await _video_has_audio_stream(output_path)
             provider_generate_audio = bool(tags.get("provider_generate_audio", False))
-            provider_missing_audio = engine in {"seedance", "avatar31"} and provider_generate_audio and not provider_has_audio
-            seedance_missing_audio = engine == "seedance" and provider_missing_audio
+            provider_missing_audio = engine in {"seedance", "mega15", "lite2", "viduq3", "avatar31"} and provider_generate_audio and not provider_has_audio
+            seedance_missing_audio = seedance_family_engine and provider_missing_audio
             if provider_missing_audio:
                 logger.warning(
                     "%s returned video without native audio for project %s.",
@@ -2685,7 +2785,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     grok_shadow_audio_path,
                 )
 
-            elif engine in ("wan2", "grok", "seedance") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
+            elif engine in ("wan2", "grok", "seedance", "mega15", "lite2") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2924,17 +3024,22 @@ async def run_realistic_video_pipeline(project_id: int):
             thumb_dir.mkdir(parents=True, exist_ok=True)
             thumb_path = str(thumb_dir / "thumbnail.jpg")
 
-            from app.services.thumbnail_generator import generate_thumbnail_from_frame
-            try:
-                generate_thumbnail_from_frame(
-                    video_path=final_video_path,
-                    title=project.title or "Video Realista",
-                    artist=engine_label,
-                    output_path=thumb_path,
-                )
-            except Exception as e:
-                logger.warning(f"Realistic video thumbnail failed: {e}")
-                thumb_path = ""
+            source_thumb = _project_source_thumbnail_path(project)
+            if source_thumb:
+                thumb_path = _copy_thumbnail_image(source_thumb, thumb_dir)
+                logger.info(f"Using source image thumbnail for realistic project {project_id}: {source_thumb}")
+            else:
+                from app.services.thumbnail_generator import generate_thumbnail_from_frame
+                try:
+                    generate_thumbnail_from_frame(
+                        video_path=final_video_path,
+                        title=project.title or "Video Realista",
+                        artist=engine_label,
+                        output_path=thumb_path,
+                    )
+                except Exception as e:
+                    logger.warning(f"Realistic video thumbnail failed: {e}")
+                    thumb_path = ""
 
             project.progress = 95
             await db.commit()
