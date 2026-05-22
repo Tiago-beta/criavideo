@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v527 loaded");
+console.log("[CriaVideo] app.js v528 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28611,6 +28611,18 @@ function selectPersonaUploadSource(sourceKind) {
     }
 }
 
+function _buildPersonaAutoName(fileName = "") {
+    const normalized = String(fileName || "")
+        .split(/[\\/]/)
+        .pop()
+        ?.replace(/\.[^.]+$/, "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return normalized || "Minha voz";
+}
+
 async function _applyPersonaSampleFile(file, prefix, sourceKind = "audio") {
     if (!file) return false;
 
@@ -28666,7 +28678,12 @@ async function handlePersonaVideoUpload(event, prefix) {
         const extractedFile = await _downloadExtractedScriptAudioFile(payload, file.name);
         const applied = await _applyPersonaSampleFile(extractedFile, prefix, "video");
         if (applied) {
-            showToast("Áudio extraído do vídeo. Agora é só salvar o perfil.", "success");
+            const nameInput = document.getElementById(`${prefix}-persona-name`);
+            if (nameInput) {
+                nameInput.value = _buildPersonaAutoName(file.name);
+            }
+            _setPersonaHintText(prefix, "Clonando voz no Fish Audio...");
+            await savePersonaVoice(prefix);
         }
     } catch (error) {
         _setPersonaHintText(prefix);
@@ -28788,6 +28805,7 @@ async function savePersonaVoice(prefix) {
 
         personaSampleBlobs[prefix] = null;
         cancelPersonaPreview(prefix);
+        _setPersonaHintText(prefix);
         await loadVoiceProfiles();
 
         // Select the new profile
@@ -28798,6 +28816,7 @@ async function savePersonaVoice(prefix) {
             }, 200);
         }
     } catch (error) {
+        _setPersonaHintText(prefix);
         alert(`Erro ao salvar: ${error.message}`);
     }
 }
