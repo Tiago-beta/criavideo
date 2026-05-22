@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260522-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260522-06">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 525;
+        var REQUIRED_VER = 526;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -4254,10 +4254,10 @@
                                 <span id="script-image-generator-reference-count" class="photo-upload-hint">0/5</span>
                             </div>
                             <div class="script-image-generator-reference-strip">
-                                <button type="button" class="script-image-generator-reference-add" onclick="triggerScriptImageCreatorReferenceUpload()" aria-label="Adicionar referências">
-                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                                </button>
-                                <div id="script-image-generator-reference-preview" class="photo-preview-grid script-image-generator-reference-preview"></div>
+                                        <div id="script-image-generator-reference-preview" class="script-image-generator-reference-preview"></div>
+                                        <button type="button" class="script-image-generator-reference-add" onclick="triggerScriptImageCreatorReferenceUpload()" aria-label="Adicionar referências">
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        </button>
                             </div>
                             <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
                         </div>
@@ -4420,8 +4420,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260522-05"></script>
-    <script src="/video/static/pwa.js?v=20260522-05"></script>
+    <script src="/video/static/app.js?v=20260522-06"></script>
+    <script src="/video/static/pwa.js?v=20260522-06"></script>
 </body>
 </html>
 

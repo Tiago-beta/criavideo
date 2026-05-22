@@ -6529,18 +6529,21 @@ svg.spin {
 .script-image-generator-reference-preview {
     margin-top: 0;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 10px;
     align-items: center;
-    grid-template-columns: none;
+    min-width: 0;
 }
 
 .script-image-generator-reference-strip {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 10px;
     align-items: center;
     margin-top: 4px;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .script-image-generator-context-shell {
@@ -6602,6 +6605,7 @@ svg.spin {
 .script-image-generator-reference-add {
     width: 74px;
     height: 74px;
+    flex: 0 0 74px;
     border: 1px dashed rgba(0, 212, 255, 0.34);
     border-radius: 18px;
     background: rgba(6, 24, 42, 0.72);
@@ -6624,6 +6628,7 @@ svg.spin {
 .script-image-generator-reference-preview .photo-preview-item {
     width: 74px;
     min-width: 74px;
+    flex: 0 0 74px;
     border-radius: 18px;
     border: 1px solid rgba(96, 129, 162, 0.26);
 }
