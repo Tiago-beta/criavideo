@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v526 loaded");
+console.log("[CriaVideo] app.js v527 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -437,6 +437,12 @@ function _clearCreatePersonaPreview(prefix) {
     const preview = document.getElementById(`${prefix}-realistic-persona-preview`);
     if (!preview) return;
     preview.innerHTML = '<div class="realistic-persona-empty">Opcional: escolha uma persona apenas se quiser guiar a interação da cena.</div>';
+}
+
+function _clearScriptImageCreatorPersonaPreview() {
+    const preview = document.getElementById("script-image-generator-persona-preview");
+    if (!preview) return;
+    preview.innerHTML = '<div class="realistic-persona-empty">Opcional: selecione uma persona apenas se quiser guiar a interação da cena.</div>';
 }
 
 function _syncCreatePersonaUi(prefix) {
@@ -15204,11 +15210,7 @@ function resetCreateWizard(options = {}) {
         defAiPersona.classList.add("selected");
     }
     if (!preserveScriptImageCreatorState) {
-        const defImageCreatorPersona = document.querySelector('#script-image-generator-persona-tags [data-persona="homem"]');
-        if (defImageCreatorPersona) {
-            document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
-            defImageCreatorPersona.classList.add("selected");
-        }
+        document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
     }
 
     [
@@ -15241,7 +15243,6 @@ function resetCreateWizard(options = {}) {
         _personaNoReferenceByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
         _personaNoReferenceByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
         _resetScriptImageCreatorPersonaContexts();
-        _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, "homem");
         _refreshPersonaContext(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
     }
 
@@ -16162,17 +16163,19 @@ function _normalizePersonaContext(context) {
 
 function _getScriptImageCreatorSelectedReferenceProfiles() {
     const selectedProfiles = [];
-    const personaType = _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT);
-    const personaIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, personaType)
-        ? []
-        : _getSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, personaType);
-    const personaProfiles = _getPersonaProfiles(personaType);
-    personaIds.forEach((profileId) => {
-        const profile = personaProfiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === profileId);
-        if (profile) {
-            selectedProfiles.push(profile);
-        }
-    });
+    const personaType = _getSelectedScriptImageCreatorPersonaType();
+    if (personaType) {
+        const personaIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, personaType)
+            ? []
+            : _getSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, personaType);
+        const personaProfiles = _getPersonaProfiles(personaType);
+        personaIds.forEach((profileId) => {
+            const profile = personaProfiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === profileId);
+            if (profile) {
+                selectedProfiles.push(profile);
+            }
+        });
+    }
 
     const locationIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_LOCATION_CONTEXT, "local")
         ? []
@@ -16196,26 +16199,39 @@ function _hasScriptImageCreatorAnyReference() {
     return (_scriptImageCreatorState.referenceFiles.length + _getScriptImageCreatorSelectedReferenceCount()) > 0;
 }
 
-function _ensureScriptImageCreatorPersonaTagSelection() {
+function _getSelectedScriptImageCreatorPersonaType() {
     const container = document.getElementById("script-image-generator-persona-tags");
-    if (!container || container.querySelector(".style-tag.selected")) {
-        return;
+    const selected = container?.querySelector(".style-tag.selected");
+    if (!selected?.dataset?.persona) {
+        return "";
     }
-    container.querySelector('[data-persona="homem"]')?.classList.add("selected");
+    return _normalizeRealisticPersonaType(selected.dataset.persona || "");
+}
+
+function _clearScriptImageCreatorPersonaTagSelection() {
+    document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((tag) => tag.classList.remove("selected"));
 }
 
 function _resetScriptImageCreatorPersonaContexts() {
-    _ensureScriptImageCreatorPersonaTagSelection();
-    const selectedPersonaType = _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT);
-    _setSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType, []);
-    _setPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType, true);
+    _clearScriptImageCreatorPersonaTagSelection();
+    _personaSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+    _personaSelectionByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+    _personaMultiSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+    _personaMultiSelectionByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+    _personaNoReferenceByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+    _personaNoReferenceByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+    _clearScriptImageCreatorPersonaPreview();
     _setSelectedPersonaProfileIds(IMAGE_CREATOR_LOCATION_CONTEXT, "local", []);
     _setPersonaNoReferenceEnabled(IMAGE_CREATOR_LOCATION_CONTEXT, "local", true);
 }
 
 async function _refreshScriptImageCreatorReferenceContexts() {
-    _ensureScriptImageCreatorPersonaTagSelection();
-    await _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT));
+    const selectedPersonaType = _getSelectedScriptImageCreatorPersonaType();
+    if (selectedPersonaType) {
+        await _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType);
+    } else {
+        _clearScriptImageCreatorPersonaPreview();
+    }
     await _refreshPersonaContext(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
 }
 
@@ -16858,6 +16874,7 @@ function resetScriptImageCreatorModalState() {
 
 function openScriptImageCreatorModal() {
     _scriptImageCreatorLaunchSource = "script";
+    setScriptImageCreatorContextCollapsed(true);
     const scriptPrompt = String(document.getElementById("script-text")?.value || "").trim();
     _ensureScriptImageCreatorPromptCapacity(1);
     if (!String(_scriptImageCreatorState.promptValues[0] || "").trim() && scriptPrompt) {
@@ -16875,6 +16892,7 @@ function openScriptImageCreatorModal() {
 
 function openScriptImageCreatorFromCreateMode() {
     _scriptImageCreatorLaunchSource = "create-mode";
+    setScriptImageCreatorContextCollapsed(true);
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
@@ -19893,7 +19911,13 @@ function _renderPersonaPreview(context) {
     const el = _getRealisticPersonaPreviewElement(context);
     if (!el) return;
 
-    const type = _getRealisticPersonaTypeByContext(context);
+    const type = context === IMAGE_CREATOR_PERSONA_CONTEXT
+        ? _getSelectedScriptImageCreatorPersonaType()
+        : _getRealisticPersonaTypeByContext(context);
+    if (context === IMAGE_CREATOR_PERSONA_CONTEXT && !type) {
+        _clearScriptImageCreatorPersonaPreview();
+        return;
+    }
     const supportsNoReference = _supportsPersonaNoReference(context);
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
@@ -20060,7 +20084,15 @@ function _renderPersonaPreview(context) {
 }
 
 async function _refreshPersonaContext(context, forcedPersonaType = "") {
-    const type = _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
+    const type = context === IMAGE_CREATOR_PERSONA_CONTEXT
+        ? (forcedPersonaType ? _normalizeRealisticPersonaType(forcedPersonaType) : _getSelectedScriptImageCreatorPersonaType())
+        : _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
+    if (context === IMAGE_CREATOR_PERSONA_CONTEXT && !type) {
+        _clearScriptImageCreatorPersonaPreview();
+        renderScriptImageCreatorReferencePreview();
+        scheduleScriptImageCreatorEstimate(0);
+        return;
+    }
     try {
         await _loadPersonaProfiles(type, false);
     } catch (error) {
