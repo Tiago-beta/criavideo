@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v519 loaded");
+console.log("[CriaVideo] app.js v520 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4114,11 +4114,11 @@ function _updateCardInPlace(project) {
 // ═══ Creation Wizard State ═══
 let createMode = "wizard"; // "wizard" | "script" | "similar" | "workflow" | "library"
 let wizardStep = 1;
-let wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
+let wizardData = { topic: "", videoType: "", tone: "", voice: "", duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
 let scriptStep = 1;
 let scriptData = {
     text: "",
-    videoType: "imagens_ia",
+    videoType: "",
     tone: "",
     voice: "",
     title: "",
@@ -6318,12 +6318,16 @@ function _getSelectedCreateVideoType(prefix) {
         return selectedCard.dataset.type;
     }
     return prefix === "wizard"
-        ? (wizardData.videoType || "imagens_ia")
-        : (scriptData.videoType || "imagens_ia");
+        ? (wizardData.videoType || "")
+        : (scriptData.videoType || "");
 }
 
 function _getCreateSinglePageVisibleSteps(prefix) {
-    return _getSelectedCreateVideoType(prefix) === "realista"
+    const selectedType = _getSelectedCreateVideoType(prefix);
+    if (!selectedType) {
+        return [2];
+    }
+    return selectedType === "realista"
         ? [2, 1, 7]
         : [2, 1, 3, 4, 5, 6];
 }
@@ -6359,6 +6363,8 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     }
 
     if (isSinglePage) {
+        const selectedType = _getSelectedCreateVideoType(prefix);
+        const hasSelectedType = !!selectedType;
         const visibleSteps = new Set(_getCreateSinglePageVisibleSteps(prefix));
 
         panel.querySelectorAll(".wizard-step").forEach((s) => {
@@ -6376,9 +6382,14 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
         }
         if (backBtn) backBtn.hidden = false;
         if (nextBtn) nextBtn.hidden = true;
-        if (createBtn) createBtn.hidden = false;
-        if (estimateBadge) estimateBadge.hidden = false;
+        if (createBtn) createBtn.hidden = !hasSelectedType;
+        if (estimateBadge) estimateBadge.hidden = !hasSelectedType;
         _syncCreateActionRow(prefix);
+
+        if (!hasSelectedType) {
+            _setCreditEstimateBadge(`${prefix}-credit-estimate`, "", "ready", true);
+            return;
+        }
 
         if (prefix === "wizard") {
             scheduleWizardCreditEstimate();
@@ -14848,11 +14859,11 @@ function resetCreateWizard(options = {}) {
     createMode = "wizard";
     _setNewProjectModalWorkflowLayout(false);
     wizardStep = 1;
-    wizardData = { topic: "", videoType: "imagens_ia", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
+    wizardData = { topic: "", videoType: "", tone: "", voice: "", voiceProfileId: 0, duration: 60, aspect: "16:9", style: "", realisticStyle: "" };
     scriptStep = 1;
     scriptData = {
         text: "",
-        videoType: "imagens_ia",
+        videoType: "",
         tone: "",
         voice: "",
         voiceProfileId: 0,
@@ -15160,8 +15171,8 @@ function resetCreateWizard(options = {}) {
     initPauseOptions();
     _resetScriptAudioBuilderControls();
     // Reset video type cards
-    document.querySelectorAll(".video-type-card").forEach(c => {
-        c.classList.toggle("selected", c.dataset.type === "imagens_ia");
+    document.querySelectorAll("#wizard-video-type-grid .video-type-card, #script-video-type-grid .video-type-card").forEach((card) => {
+        card.classList.remove("selected");
     });
     // Reset realistic settings in both panels
     _syncCreateRealisticDurationOptions("wizard", 8);
@@ -15176,7 +15187,7 @@ function resetCreateWizard(options = {}) {
         if (el) el.checked = true;
     });
     // Reset script step adaptations back to normal mode
-    adaptScriptStepForVideoType("imagens_ia");
+    adaptScriptStepForVideoType(scriptData.videoType || "");
     // Update UI for both wizards
     updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
