@@ -33798,6 +33798,7 @@ function _editorApplyImageSequenceLayers(layers, options = {}) {
         const layer = _editorPushMediaLayer(layerKind, payload, {
             startTime,
             endTime,
+            sequenceInTrack: layerKind === "video",
             select: idx === sequence.length - 1,
         });
         if (layerKind === "audio" && layer) {
@@ -35176,6 +35177,66 @@ function _editorGetLayerTrackIndex(layer) {
     return Math.max(0, Math.floor(raw));
 }
 
+function _editorReflowTrackSequenceMediaLayers() {
+    const groups = new Map();
+
+    (_editor.mediaLayers || []).forEach((layer) => {
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        if (normalizedLayer.layoutMode !== "track-sequence") return;
+
+        const groupKey = _editorBuildMediaLayerTrackId(
+            _editorGetMediaLayerTrackType(normalizedLayer),
+            _editorGetLayerTrackIndex(normalizedLayer),
+        );
+
+        if (!groups.has(groupKey)) {
+            groups.set(groupKey, []);
+        }
+        groups.get(groupKey).push({ rawLayer: layer, normalizedLayer });
+    });
+
+    let changed = false;
+
+    groups.forEach((layers) => {
+        layers.sort((left, right) => {
+            return (left.normalizedLayer.startTime - right.normalizedLayer.startTime)
+                || (left.normalizedLayer.endTime - right.normalizedLayer.endTime)
+                || String(left.normalizedLayer.id || "").localeCompare(String(right.normalizedLayer.id || ""));
+        });
+
+        let cursor = Math.max(0, Number(layers[0]?.normalizedLayer.startTime || 0));
+        layers.forEach(({ rawLayer, normalizedLayer }) => {
+            const span = Math.max(0.1, Number(normalizedLayer.endTime || 0) - Number(normalizedLayer.startTime || 0));
+            const nextStart = cursor;
+            const nextEnd = nextStart + span;
+
+            if (Math.abs(Number(rawLayer.startTime || 0) - nextStart) > 0.0001 || Math.abs(Number(rawLayer.endTime || 0) - nextEnd) > 0.0001) {
+                changed = true;
+            }
+
+            rawLayer.startTime = nextStart;
+            rawLayer.endTime = nextEnd;
+            cursor = nextEnd;
+        });
+    });
+
+    return changed;
+}
+
+function _editorFinalizeTrackSequenceMediaLayerEdit(layerId) {
+    const layer = _editorGetMediaLayerById(layerId);
+    if (!layer) return false;
+
+    const normalizedLayer = _editorNormalizeMediaLayer(layer);
+    if (normalizedLayer.layoutMode !== "track-sequence") {
+        return false;
+    }
+
+    const reflowed = _editorReflowTrackSequenceMediaLayers();
+    const collapsed = _editorCollapseVisibleTimelineDeadZones();
+    return reflowed || collapsed;
+}
+
 function _editorBuildMediaLayerTrackId(trackType = "video", trackIndex = 0) {
     const safeType = String(trackType || "").trim().toLowerCase() === "audio" ? "audio" : "video";
     const safeIndex = Math.max(0, Math.floor(Number(trackIndex || 0)));
@@ -36083,6 +36144,7 @@ function _editorSetMediaLayerStart(id, val) {
     if (maxTimeline > 0) {
         layer.endTime = Math.min(maxTimeline, layer.endTime);
     }
+    _editorFinalizeTrackSequenceMediaLayerEdit(id);
     _editorRenderTimeline();
     _editorSyncMediaLayersWithTime(Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0));
     _editorRenderProps();
@@ -36100,6 +36162,7 @@ function _editorSetMediaLayerEnd(id, val) {
     if (Number.isFinite(maxSpan)) {
         layer.endTime = Math.min(layer.endTime, layer.startTime + maxSpan);
     }
+    _editorFinalizeTrackSequenceMediaLayerEdit(id);
     _editorRenderTimeline();
     _editorSyncMediaLayersWithTime(Number(_editor.timelineTime || document.getElementById("editor-video")?.currentTime || 0));
     _editorRenderProps();
@@ -42175,6 +42238,9 @@ function _editorOnTimelineDragEnd() {
     _editorTimelineDrag = null;
 
     if (moved) {
+        if (kind === "media-layer") {
+            _editorFinalizeTrackSequenceMediaLayerEdit(id);
+        }
         _editorRenderTimeline();
         if (kind === "media-layer") {
             _editorRenderMediaLayers();
