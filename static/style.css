@@ -13911,6 +13911,24 @@ th,
     color: var(--text);
 }
 
+.realistic-persona-add {
+    border-style: dashed;
+    border-color: rgba(var(--accent-rgb), 0.32);
+    background: linear-gradient(160deg, rgba(var(--accent-rgb), 0.18), rgba(255, 255, 255, 0.03));
+    color: var(--text);
+}
+
+.realistic-persona-add:hover {
+    border-color: rgba(var(--accent-rgb), 0.52);
+    box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.18);
+}
+
+.realistic-persona-add-icon {
+    font-size: 1.8rem;
+    font-weight: 500;
+    line-height: 1;
+}
+
 .realistic-persona-actions {
     margin-top: 8px;
     display: flex;
@@ -14155,21 +14173,47 @@ th,
 }
 
 .persona-manager-create-modal {
-    width: min(calc(100% - 1rem), 900px);
+    width: min(calc((100vh - 1.5rem) * 0.5625), calc(100% - 1rem), 430px);
+    max-height: calc(100vh - 1rem);
+    aspect-ratio: 9 / 16;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .persona-manager-create-modal .modal-body {
-    display: grid;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: block;
+}
+
+#modal-persona-voice-builder .modal-content {
+    width: min(calc((100vh - 1.5rem) * 0.5625), calc(100% - 1rem), 430px);
+    max-height: calc(100vh - 1rem);
+    aspect-ratio: 9 / 16;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#modal-persona-voice-builder .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .persona-manager-create-shell {
     display: grid;
-    gap: 1rem;
-    padding: 1.15rem;
+    min-height: 100%;
+    gap: 0.85rem;
+    padding: 0.25rem 0;
     border-radius: 22px;
-    border: 1px solid rgba(0, 212, 255, 0.18);
-    background: linear-gradient(180deg, rgba(16, 42, 68, 0.94), rgba(11, 31, 51, 0.82));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    border: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .persona-manager-create-header {
@@ -14203,7 +14247,7 @@ th,
 
 .persona-manager-create-grid {
     display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 0.8rem;
     align-items: start;
 }
@@ -14221,31 +14265,31 @@ th,
 }
 
 .persona-manager-field-name {
-    grid-column: span 4;
+    grid-column: 1 / -1;
 }
 
 .persona-manager-field-age {
-    grid-column: span 3;
+    grid-column: 1 / -1;
 }
 
 .persona-manager-field-skin {
-    grid-column: span 5;
+    grid-column: 1 / -1;
 }
 
 .persona-manager-field-hair {
-    grid-column: span 4;
+    grid-column: 1 / -1;
 }
 
 .persona-manager-field-description {
-    grid-column: span 5;
+    grid-column: 1 / -1;
 }
 
 .persona-manager-field-voice {
-    grid-column: span 3;
+    grid-column: 1 / -1;
 }
 
 .persona-manager-field-inline {
-    grid-column: span 6;
+    grid-column: 1 / -1;
 }
 
 .persona-manager-field-reference {
@@ -14286,10 +14330,9 @@ th,
 }
 
 .persona-manager-create-shell .persona-reference-upload {
-    padding: 0.75rem 0.85rem;
-    border-radius: 16px;
-    border: 1px dashed rgba(0, 212, 255, 0.18);
-    background: rgba(6, 23, 39, 0.42);
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
 .persona-reference-upload {
@@ -14300,13 +14343,42 @@ th,
 }
 
 .persona-manager-voice-create-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 8px;
 }
 
 .persona-manager-voice-create-row .input {
     flex: 1;
+}
+
+.persona-manager-voice-create-trigger {
+    min-width: 86px;
+    height: 48px;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+
+.persona-reference-upload-btn {
+    width: 56px;
+    min-width: 56px;
+    height: 56px;
+    padding: 0;
+    border-radius: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.persona-reference-upload-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .persona-voice-builder-body .form-group {
@@ -14384,9 +14456,9 @@ th,
 }
 
 .persona-reference-preview {
-    width: 58px;
-    height: 58px;
-    border-radius: 10px;
+    width: 92px;
+    height: 164px;
+    border-radius: 18px;
     object-fit: cover;
     border: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.04);
@@ -14398,7 +14470,7 @@ th,
 
 @media (max-width: 900px) {
     .persona-manager-create-grid {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: 1fr;
     }
 
     .persona-manager-field-name,
@@ -14434,6 +14506,14 @@ th,
 
     .persona-manager-create-grid {
         grid-template-columns: 1fr;
+    }
+
+    .persona-manager-voice-create-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .persona-manager-voice-create-trigger {
+        grid-column: 1 / -1;
     }
 
     .persona-manager-field-name,

@@ -19893,15 +19893,35 @@ function _renderPersonaPreview(context) {
     const supportsNoReference = _supportsPersonaNoReference(context);
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
+    const supportsQuickAdd = ["wizard", "script", "ai", "auto", "pilot"].includes(String(context || "").toLowerCase());
+    const addOptionLabel = type === "local" ? "Adicionar local pela foto" : "Adicionar persona pela foto";
+    const addOptionHtml = supportsQuickAdd
+        ? `
+            <button
+                class="realistic-persona-option realistic-persona-add"
+                type="button"
+                onclick="openPersonaQuickAdd('${context}')"
+                title="${addOptionLabel}"
+                aria-label="${addOptionLabel}">
+                <span class="realistic-persona-add-icon" aria-hidden="true">+</span>
+            </button>
+        `
+        : "";
     if (!profiles.length) {
         if (!supportsNoReference) {
-            el.innerHTML = '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
+            el.innerHTML = addOptionHtml
+                ? `
+                    <div class="realistic-persona-grid">${addOptionHtml}</div>
+                    <div class="realistic-persona-empty">${type === "local" ? "Adicione um local pela foto para começar." : "Adicione uma persona pela foto para começar."}</div>
+                `
+                : '<div class="realistic-persona-empty">Nenhuma persona disponível para este tipo ainda.</div>';
             return;
         }
 
         const noneSelectedClass = noReferenceEnabled ? " selected" : "";
         el.innerHTML = `
             <div class="realistic-persona-grid">
+                ${addOptionHtml}
                 <button
                     class="realistic-persona-option realistic-persona-option-none${noneSelectedClass}"
                     type="button"
@@ -19912,7 +19932,7 @@ function _renderPersonaPreview(context) {
                     <span class="realistic-persona-none-label">Nenhum</span>
                 </button>
             </div>
-            <div class="realistic-persona-empty">Sem persona fixa: a IA segue apenas o prompt e as referências opcionais enviadas.</div>
+            <div class="realistic-persona-empty">${addOptionHtml ? "Adicione uma persona pela foto ou siga apenas o prompt." : "Sem persona fixa: a IA segue apenas o prompt e as referências opcionais enviadas."}</div>
         `;
         return;
     }
@@ -19946,7 +19966,16 @@ function _renderPersonaPreview(context) {
                 </button>
             `
             : "";
-        const cards = profiles.map((profile) => {
+        const selectedProfiles = [...selectedIds]
+            .reverse()
+            .map((sid) => profiles.find((profile) => (parseInt(profile.id, 10) || 0) === sid))
+            .filter(Boolean);
+        const remainingProfiles = profiles.filter((profile) => {
+            const pid = parseInt(profile.id, 10) || 0;
+            return !selectedSet.has(pid);
+        });
+        const orderedProfiles = [...selectedProfiles, ...remainingProfiles];
+        const cards = orderedProfiles.map((profile) => {
             const pid = parseInt(profile.id, 10) || 0;
             const isSelected = selectedSet.has(pid);
             const selectedClass = isSelected ? " selected" : "";
@@ -19970,6 +19999,7 @@ function _renderPersonaPreview(context) {
 
         el.innerHTML = `
             <div class="realistic-persona-grid">
+                ${addOptionHtml}
                 ${noneOptionHtml}
                 ${cards}
             </div>
@@ -20143,9 +20173,10 @@ function _updatePersonaManagerFormByType() {
     const createHeading = document.getElementById("persona-manager-create-heading");
     const createButton = document.getElementById("persona-manager-create-btn");
     const entityBase = isLocation ? "local" : "persona";
-    const entityLabel = isQuickAdd ? `Adicionar ${entityBase} pela foto` : (isLocation ? "Criar novo local" : "Criar nova persona");
+    const fullCreateLabel = isLocation ? "Criar local" : "Criar persona";
+    const entityLabel = isQuickAdd ? `Adicionar ${entityBase} pela foto` : fullCreateLabel;
     const entityKicker = isQuickAdd ? "Upload rapido" : (isLocation ? "Novo local" : "Nova persona");
-    const actionLabel = isQuickAdd ? `Salvar ${entityBase}` : (isLocation ? "Gerar novo local" : "Gerar nova persona");
+    const actionLabel = isQuickAdd ? `Salvar ${entityBase}` : fullCreateLabel;
 
     if (humanFields) humanFields.hidden = isQuickAdd || !isHuman;
     if (natureSubtypeGroup) natureSubtypeGroup.hidden = isQuickAdd || !isNature;
@@ -20160,7 +20191,7 @@ function _updatePersonaManagerFormByType() {
     }
     if (customDescGroup) customDescGroup.hidden = isQuickAdd || !isCustom;
     if (locationFields) locationFields.hidden = isQuickAdd || !isLocation;
-    if (voiceField) voiceField.hidden = isQuickAdd || isLocation;
+    if (voiceField) voiceField.hidden = isLocation;
     if (extraGroup) extraGroup.hidden = isQuickAdd;
     if (nameLabel) nameLabel.textContent = isQuickAdd ? `${isLocation ? "Nome do local" : "Nome da persona"} *` : "Nome (opcional)";
     if (nameInput) {
@@ -20168,8 +20199,12 @@ function _updatePersonaManagerFormByType() {
             ? (isLocation ? "Ex: Sala premium, Studio principal" : "Ex: Lia, Mascote da marca, Menina principal")
             : "Ex: Minha personagem principal";
     }
-    if (referenceLabel) referenceLabel.textContent = isQuickAdd ? `${isLocation ? "Foto do local" : "Foto da persona"} *` : "Imagem de referência (opcional)";
-    if (referenceButton) referenceButton.textContent = isQuickAdd ? "Enviar foto" : "Enviar imagem";
+    if (referenceLabel) referenceLabel.textContent = "";
+    if (referenceButton) {
+        const referenceActionLabel = isQuickAdd ? "Enviar foto" : "Enviar imagem";
+        referenceButton.title = referenceActionLabel;
+        referenceButton.setAttribute("aria-label", referenceActionLabel);
+    }
     if (createTitle) createTitle.textContent = entityLabel;
     if (createKicker) createKicker.textContent = entityKicker;
     if (createHeading) createHeading.textContent = entityLabel;
@@ -20531,11 +20566,68 @@ async function previewPersonaCreateVoice() {
     await previewVoice(voiceProfileId);
 }
 
-function openPersonaVoiceBuilder(profileId) {
-    const pid = parseInt(profileId || "0", 10) || 0;
-    if (!pid) return;
+function _buildPersonaDraftProfileFromCreateForm() {
+    const type = _normalizeRealisticPersonaType(_personaManagerType);
+    const name = String(document.getElementById("persona-manager-name")?.value || "").trim();
+    const attributes = {};
 
-    const profile = _getPersonaProfileById(pid, _personaManagerType);
+    if (type === "natureza") {
+        const subtype = String(document.getElementById("persona-manager-nature-subtype")?.value || "gato").trim();
+        if (subtype) attributes.subtipo = subtype;
+        if (subtype === "outros") {
+            const other = String(document.getElementById("persona-manager-nature-other")?.value || "").trim();
+            if (other) attributes.outros_texto = other;
+        }
+    } else if (type === "desenho") {
+        const drawingStyle = String(document.getElementById("persona-manager-drawing-style")?.value || "cartoon").trim();
+        const drawingOther = String(document.getElementById("persona-manager-drawing-other")?.value || "").trim();
+        if (drawingStyle) attributes.estilo_desenho = drawingStyle;
+        if (drawingStyle === "outros" && drawingOther) {
+            attributes.estilo_desenho_custom = drawingOther;
+        }
+    } else if (type === "personalizado") {
+        const customDesc = String(document.getElementById("persona-manager-custom-desc")?.value || "").trim();
+        if (customDesc) attributes.descricao_persona = customDesc;
+    } else if (type === "local") {
+        const locationType = String(document.getElementById("persona-manager-location-type")?.value || "").trim();
+        const locationStyle = String(document.getElementById("persona-manager-location-style")?.value || "").trim();
+        const locationLighting = String(document.getElementById("persona-manager-location-lighting")?.value || "").trim();
+        const locationElements = String(document.getElementById("persona-manager-location-elements")?.value || "").trim();
+        if (locationType) attributes.tipo_local = locationType;
+        if (locationStyle) attributes.estilo_arquitetura = locationStyle;
+        if (locationLighting) attributes.iluminacao = locationLighting;
+        if (locationElements) attributes.elementos_principais = locationElements;
+    } else {
+        const age = String(document.getElementById("persona-manager-age")?.value || "").trim();
+        const skin = String(document.getElementById("persona-manager-skin")?.value || "").trim();
+        const hair = String(document.getElementById("persona-manager-hair")?.value || "").trim();
+        if (age) {
+            if (type === "familia") attributes.faixa_etaria = age;
+            else attributes.idade_aparente = age;
+        }
+        if (skin) attributes.cor_pele = skin;
+        if (hair) attributes.cabelo = hair;
+    }
+
+    const extra = String(document.getElementById("persona-manager-extra")?.value || "").trim();
+    if (extra) {
+        attributes.descricao_extra = extra;
+    }
+
+    return {
+        id: 0,
+        name: name || (type === "local" ? "Novo local" : "Nova persona"),
+        persona_type: type,
+        attributes,
+    };
+}
+
+function openPersonaVoiceBuilder(profileId = 0) {
+    const pid = parseInt(profileId || "0", 10) || 0;
+    const isDraftPersona = !pid;
+    const profile = isDraftPersona
+        ? _buildPersonaDraftProfileFromCreateForm()
+        : _getPersonaProfileById(pid, _personaManagerType);
     if (!profile) {
         alert("Persona nao encontrada.");
         return;
@@ -20544,7 +20636,7 @@ function openPersonaVoiceBuilder(profileId) {
     _personaVoiceBuilderProfileId = pid;
     const titleEl = document.getElementById("persona-voice-builder-title");
     if (titleEl) {
-        titleEl.textContent = `Criar voz para ${profile.name || "persona"}`;
+        titleEl.textContent = `Criar voz para ${profile.name || (isDraftPersona ? "nova persona" : "persona")}`;
     }
 
     const hiddenProfileId = document.getElementById("persona-voice-builder-profile-id");
@@ -20552,7 +20644,7 @@ function openPersonaVoiceBuilder(profileId) {
 
     const nameEl = document.getElementById("persona-voice-builder-name");
     if (nameEl) {
-        const suggestedName = `Voz ${profile.name || "Persona"}`;
+        const suggestedName = `Voz ${profile.name || (isDraftPersona ? "Nova persona" : "Persona")}`;
         nameEl.value = suggestedName.slice(0, 80);
     }
 
@@ -20568,7 +20660,14 @@ function openPersonaVoiceBuilder(profileId) {
 
     const statusEl = document.getElementById("persona-voice-builder-status");
     if (statusEl) {
-        statusEl.textContent = "Descreva o estilo da voz (ex: mulher, jovem, alegre).";
+        statusEl.textContent = isDraftPersona
+            ? "Crie a voz agora para ja deixar a nova persona pronta para vinculacao."
+            : "Descreva o estilo da voz (ex: mulher, jovem, alegre).";
+    }
+
+    const saveBtn = document.getElementById("persona-voice-builder-save");
+    if (saveBtn) {
+        saveBtn.textContent = isDraftPersona ? "Criar voz" : "Gerar e vincular";
     }
 
     openModal("modal-persona-voice-builder");
@@ -20594,10 +20693,7 @@ function addPersonaVoiceTrait(trait) {
 async function createPersonaVoiceFromDescription() {
     const profileIdInput = document.getElementById("persona-voice-builder-profile-id");
     const pid = parseInt(profileIdInput?.value || _personaVoiceBuilderProfileId || "0", 10) || 0;
-    if (!pid) {
-        alert("Persona invalida para vincular voz.");
-        return;
-    }
+    const isDraftPersona = pid <= 0;
 
     const nameEl = document.getElementById("persona-voice-builder-name");
     const descriptionEl = document.getElementById("persona-voice-builder-description");
@@ -20614,7 +20710,9 @@ async function createPersonaVoiceFromDescription() {
         return;
     }
 
-    const personaProfile = _getPersonaProfileById(pid, _personaManagerType);
+    const personaProfile = isDraftPersona
+        ? _buildPersonaDraftProfileFromCreateForm()
+        : _getPersonaProfileById(pid, _personaManagerType);
     const personaName = String(personaProfile?.name || "").trim();
 
     if (saveBtn) {
@@ -20645,12 +20743,32 @@ async function createPersonaVoiceFromDescription() {
             throw new Error("Nao foi possivel criar o perfil de voz.");
         }
 
+        await loadVoiceProfiles();
+
+        if (isDraftPersona) {
+            _renderPersonaManagerCreateVoiceSelect();
+            const selectEl = document.getElementById("persona-manager-voice-profile");
+            if (selectEl) {
+                selectEl.value = String(voiceProfileId);
+            }
+
+            const playBtn = document.getElementById("persona-manager-voice-play");
+            if (playBtn) {
+                playBtn.disabled = false;
+                playBtn.classList.remove("disabled");
+            }
+
+            closeModal("modal-persona-voice-builder");
+            showToast("Voz criada e pronta para vincular a nova persona.", "success");
+            await previewVoice(voiceProfileId);
+            return;
+        }
+
         await api(`/persona/profiles/${pid}/voice`, {
             method: "PUT",
             body: JSON.stringify({ voice_profile_id: voiceProfileId }),
         });
 
-        await loadVoiceProfiles();
         await _refreshPersonaManagerList();
 
         const providerInfo = response?.provider_info || {};
@@ -20685,7 +20803,7 @@ async function createPersonaVoiceFromDescription() {
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
-            saveBtn.textContent = "Gerar e vincular";
+            saveBtn.textContent = isDraftPersona ? "Criar voz" : "Gerar e vincular";
         }
     }
 }
@@ -20832,6 +20950,8 @@ async function openPersonaQuickAdd(context = "") {
     _preparePersonaManagerContext(context || _personaManagerContext || "script");
     _personaManagerCreateMode = "quick";
     _resetPersonaManagerCreateForm();
+    await loadVoiceProfiles();
+    _renderPersonaManagerCreateVoiceSelect();
     _updatePersonaManagerFormByType();
     openModal("modal-persona-manager-create");
 
@@ -20913,7 +21033,7 @@ async function createPersonaFromManager() {
         const locationLighting = (document.getElementById("persona-manager-location-lighting")?.value || "").trim();
         const locationElements = (document.getElementById("persona-manager-location-elements")?.value || "").trim();
         const extra = (document.getElementById("persona-manager-extra")?.value || "").trim();
-        const selectedVoiceProfileId = isQuickAdd
+        const selectedVoiceProfileId = _personaManagerType === "local"
             ? 0
             : (parseInt(document.getElementById("persona-manager-voice-profile")?.value || "0", 10) || 0);
         const hasReferenceImage = !!personaManagerReferenceImageFile;
@@ -21049,7 +21169,7 @@ async function createPersonaFromManager() {
             if (isQuickAdd) {
                 button.textContent = _personaManagerType === "local" ? "Salvar local" : "Salvar persona";
             } else {
-                button.textContent = _personaManagerType === "local" ? "Gerar novo local" : "Gerar nova persona";
+                button.textContent = _personaManagerType === "local" ? "Criar local" : "Criar persona";
             }
         }
     }
