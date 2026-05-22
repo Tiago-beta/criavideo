@@ -2387,7 +2387,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     end_image_path=vidu_end_image,
                     image_paths=upload_reference_paths if len(upload_reference_paths) > 1 else None,
                     movement_amplitude="auto",
-                    bgm=effective_add_music,
+                    bgm=add_music,
                     on_progress=_on_progress,
                 )
 

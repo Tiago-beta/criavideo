@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v515 loaded");
+console.log("[CriaVideo] app.js v520 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -322,7 +322,8 @@ function _normalizeAutomaticAudioDurationSeconds(value) {
 }
 
 function _getRealisticSelectedEngine(prefix) {
-    return document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
+    const fallback = (prefix === "wizard" || prefix === "script") ? "viduq3" : "wan2";
+    return document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || fallback;
 }
 
 function _getAvatarAutomaticDurationSeconds(prefix) {
@@ -344,10 +345,12 @@ function _getAvatarEstimatePendingMessage(prefix) {
         : "Envie um audio ou escolha um trecho do Tevoxi para calcular o custo automaticamente.";
 }
 
+function _buildCreateCreditOnlyMessage(creditsNeeded) {
+    return `${_formatCreditsInt(creditsNeeded)} créditos`;
+}
+
 function _buildAvatarEstimateMessage(prefix, creditsNeeded, label) {
-    const durationSeconds = _getAvatarAutomaticDurationSeconds(prefix);
-    const durationChunk = durationSeconds > 0 ? ` • duracao automatica: ${durationSeconds}s` : "";
-    return `${label}: ${_formatCreditsInt(creditsNeeded)} créditos${durationChunk}${_buildBalanceSuffix(creditsNeeded)}`;
+    return _buildCreateCreditOnlyMessage(creditsNeeded);
 }
 
 async function _resolveLocalAudioFileDurationSeconds(file, fallbackDuration = 0) {
@@ -408,14 +411,47 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
 function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
     if (!toggleGroup) return;
-    const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
-    toggleGroup.hidden = !_isSeedanceFamilyEngine(engine);
+    const engine = _getRealisticSelectedEngine(prefix);
+    if (!_isSeedanceFamilyEngine(engine)) {
+        toggleGroup.hidden = true;
+        return;
+    }
+    if (prefix !== "script") {
+        toggleGroup.hidden = false;
+        return;
+    }
+    const isRealistic = _getSelectedCreateVideoType("script") === "realista";
+    const usePhotos = !!document.getElementById("script-use-photos")?.checked;
+    toggleGroup.hidden = !(isRealistic && usePhotos);
+}
+
+function _getSelectedCreatePersonaType(prefix) {
+    const selected = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
+    if (!selected?.dataset?.persona) {
+        return "";
+    }
+    return _normalizeRealisticPersonaType(selected.dataset.persona || "");
+}
+
+function _clearCreatePersonaPreview(prefix) {
+    const preview = document.getElementById(`${prefix}-realistic-persona-preview`);
+    if (!preview) return;
+    preview.innerHTML = '<div class="realistic-persona-empty">Opcional: escolha uma persona apenas se quiser guiar a interação da cena.</div>';
+}
+
+function _syncCreatePersonaUi(prefix) {
+    const selectedPersona = _getSelectedCreatePersonaType(prefix);
+    if (!selectedPersona) {
+        _clearCreatePersonaPreview(prefix);
+        return;
+    }
+    _refreshPersonaContext(prefix, selectedPersona);
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-    const engine = engineBtn?.dataset.value || "wan2";
+    const engine = engineBtn?.dataset.value || "viduq3";
     const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
 }
@@ -4107,6 +4143,7 @@ let similarState = {
     progress: 0,
     bulkFrameTextRemovalBusy: false,
     activeUploadSceneId: 0,
+    activeUploadSceneFrameTarget: "",
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
     sourceVideoName: "",
@@ -4261,6 +4298,14 @@ const _creditEstimateAddButtonByBadge = {
     "script-credit-estimate": "script-credit-add-btn",
     "auto-credit-estimate": "auto-credit-add-btn",
 };
+const _createCreditButtonByBadge = {
+    "wizard-credit-estimate": "wizard-create-btn-credit",
+    "script-credit-estimate": "script-create-btn-credit",
+};
+const _createCreditRowByBadge = {
+    "wizard-credit-estimate": "wizard-credit-actions",
+    "script-credit-estimate": "script-credit-actions",
+};
 
 function _formatCreditsInt(value) {
     const parsed = parseInt(value || "0", 10);
@@ -4303,11 +4348,37 @@ function _setCreditEstimateAddButton(targetId, show = false) {
     const btn = document.getElementById(btnId);
     if (!btn) return;
     btn.hidden = !show;
+    const rowId = _createCreditRowByBadge[targetId];
+    const row = rowId ? document.getElementById(rowId) : null;
+    if (row) {
+        row.hidden = btn.hidden;
+    }
+}
+
+function _extractCreateButtonCreditLabel(message = "") {
+    const match = String(message || "").match(/\d[\d.]*/);
+    return match ? match[0] : "";
+}
+
+function _setCreateButtonCredit(targetId, message = "", kind = "ready", hidden = false) {
+    const creditId = _createCreditButtonByBadge[targetId];
+    if (!creditId) return;
+    const creditEl = document.getElementById(creditId);
+    if (!creditEl) return;
+
+    const value = hidden ? "" : _extractCreateButtonCreditLabel(message);
+    creditEl.hidden = !value;
+    creditEl.textContent = value;
+    creditEl.className = `btn-create-video-credit is-${kind}`;
 }
 
 function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden = false) {
+    _setCreateButtonCredit(targetId, message, kind, hidden);
     const el = document.getElementById(targetId);
-    if (!el) return;
+    if (!el) {
+        _setCreditEstimateAddButton(targetId, !hidden && kind === "warning");
+        return;
+    }
     if (hidden) {
         el.hidden = true;
         _setCreditEstimateAddButton(targetId, false);
@@ -4375,10 +4446,12 @@ function _buildRealisticEstimatePayload(prefix) {
         ? !!document.getElementById("auto-realistic-subtitles")?.checked
         : false;
 
-    const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
     const contextKey = prefix === "auto" ? "auto" : prefix;
-    const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+    const selectedPersona = (prefix === "wizard" || prefix === "script")
+        ? _getSelectedCreatePersonaType(prefix)
+        : _normalizeRealisticPersonaType(document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`)?.dataset.persona || "natureza");
+    const interactionPersona = selectedPersona || "none";
+    const disablePersonaReference = !selectedPersona || _isPersonaNoReferenceEnabled(contextKey, selectedPersona);
     const hasScriptPhotoReference = prefix === "script"
         ? (!!document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0)
         : false;
@@ -4679,7 +4752,7 @@ async function updateWizardCreditEstimate() {
         payload,
         (creditsNeeded) => _getRealisticSelectedEngine("wizard") === "avatar31"
             ? _buildAvatarEstimateMessage("wizard", creditsNeeded, "Custo")
-            : `Custo: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+            : _buildCreateCreditOnlyMessage(creditsNeeded),
     );
 }
 
@@ -4700,7 +4773,7 @@ async function updateScriptCreditEstimate() {
         payload,
         (creditsNeeded) => _getRealisticSelectedEngine("script") === "avatar31"
             ? _buildAvatarEstimateMessage("script", creditsNeeded, "Custo estimado")
-            : `Custo estimado: ${_formatCreditsInt(creditsNeeded)} créditos${_buildBalanceSuffix(creditsNeeded)}`,
+            : _buildCreateCreditOnlyMessage(creditsNeeded),
     );
 }
 
@@ -5847,6 +5920,21 @@ function initCreateWizard() {
             if (!card) return;
             grid.querySelectorAll(".video-type-card").forEach((c) => c.classList.remove("selected"));
             card.classList.add("selected");
+
+            const selectedType = card.dataset.type || "imagens_ia";
+            if (grid.id === "wizard-video-type-grid") {
+                wizardData.videoType = selectedType;
+                const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
+                if (topicInspirationEl) topicInspirationEl.hidden = selectedType !== "realista";
+                updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
+                return;
+            }
+
+            if (grid.id === "script-video-type-grid") {
+                scriptData.videoType = selectedType;
+                adaptScriptStepForVideoType(selectedType);
+                updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+            }
         });
     });
 
@@ -5865,15 +5953,30 @@ function initCreateWizard() {
         if (personaTag) {
             const group = personaTag.closest(".realistic-inspiration-tags");
             if (group) {
+                const wasSelected = personaTag.classList.contains("selected");
+                const isWizardCreatePersonaGroup = group.id === "wizard-realistic-persona-tags";
+                const isScriptCreatePersonaGroup = group.id === "script-realistic-persona-tags";
                 group.querySelectorAll(".style-tag").forEach((t) => t.classList.remove("selected"));
+
+                if ((isWizardCreatePersonaGroup || isScriptCreatePersonaGroup) && wasSelected) {
+                    if (isWizardCreatePersonaGroup) {
+                        _syncCreatePersonaUi("wizard");
+                        scheduleWizardCreditEstimate();
+                    } else {
+                        _syncCreatePersonaUi("script");
+                        scheduleScriptCreditEstimate();
+                    }
+                    return;
+                }
+
                 personaTag.classList.add("selected");
 
                 const selectedPersona = _normalizeRealisticPersonaType(personaTag.dataset.persona || "natureza");
-                if (group.id === "wizard-realistic-persona-tags") {
-                    _refreshPersonaContext("wizard", selectedPersona);
+                if (isWizardCreatePersonaGroup) {
+                    _syncCreatePersonaUi("wizard");
                     scheduleWizardCreditEstimate();
-                } else if (group.id === "script-realistic-persona-tags") {
-                    _refreshPersonaContext("script", selectedPersona);
+                } else if (isScriptCreatePersonaGroup) {
+                    _syncCreatePersonaUi("script");
                     scheduleScriptCreditEstimate();
                 } else if (group.id === "ai-suggest-persona-tags") {
                     setSelectedRealisticPersona(selectedPersona);
@@ -6162,9 +6265,19 @@ function switchCreateMode(mode) {
 
     if (mode === "library") {
         populateSongSelector();
+    } else if (mode === "wizard") {
+        wizardData.videoType = _getSelectedCreateVideoType("wizard");
+        const topicInspirationEl = document.getElementById("wizard-topic-inspiration");
+        if (topicInspirationEl) topicInspirationEl.hidden = wizardData.videoType !== "realista";
+        updateFlowUI("create-panel-wizard", wizardStep, getWizardFlow(), "wizard");
+        _syncCreatePersonaUi("wizard");
     } else if (mode === "script") {
+        scriptData.videoType = _getSelectedCreateVideoType("script");
+        adaptScriptStepForVideoType(scriptData.videoType);
+        updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
         _updateScriptSubtitlePositionVisibility();
         _updateScriptDetailsForTevoxiMode();
+        _syncCreatePersonaUi("script");
     } else if (mode === "similar") {
         if (similarState.projectId > 0) {
             if (similarState.lastProjectSnapshot) {
@@ -6194,10 +6307,86 @@ function switchCreateMode(mode) {
 
 // ── Flow-based Wizard UI Update ──
 
+function _isSinglePageCreatePanel(panel) {
+    return !!(panel && panel.classList && panel.classList.contains("create-panel--single-page"));
+}
+
+function _getSelectedCreateVideoType(prefix) {
+    const gridId = prefix === "wizard" ? "wizard-video-type-grid" : "script-video-type-grid";
+    const selectedCard = document.querySelector(`#${gridId} .video-type-card.selected`);
+    if (selectedCard?.dataset?.type) {
+        return selectedCard.dataset.type;
+    }
+    return prefix === "wizard"
+        ? (wizardData.videoType || "imagens_ia")
+        : (scriptData.videoType || "imagens_ia");
+}
+
+function _getCreateSinglePageVisibleSteps(prefix) {
+    return _getSelectedCreateVideoType(prefix) === "realista"
+        ? [2, 1, 7]
+        : [2, 1, 3, 4, 5, 6];
+}
+
+function _syncCreateActionRow(prefix) {
+    const actionRow = document.getElementById(`${prefix}-create-action-row`);
+    const createBtn = document.getElementById(`${prefix}-create-btn`);
+    const aspectGroup = document.getElementById(`${prefix}-realistic-aspect-group`);
+    if (!actionRow || !createBtn) return;
+
+    const isRealistic = _getSelectedCreateVideoType(prefix) === "realista";
+    actionRow.dataset.mode = isRealistic ? "realistic" : "default";
+    actionRow.hidden = !!createBtn.hidden;
+    if (aspectGroup) {
+        aspectGroup.hidden = !isRealistic;
+    }
+}
+
 function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const panel = document.getElementById(panelId);
     if (!panel) return;
+    const isSinglePage = _isSinglePageCreatePanel(panel);
     const currentDataStep = flow[stepIndex - 1];
+    const dotsContainer = document.getElementById(`${prefix}-dots-container`);
+    const backBtn = document.getElementById(`${prefix}-back`);
+    const nextBtn = document.getElementById(`${prefix}-next`);
+    const createBtn = document.getElementById(`${prefix}-create-btn`);
+    const estimateBadge = document.getElementById(`${prefix}-credit-estimate`);
+    const nav = panel.querySelector(".wizard-nav");
+
+    if (nav) {
+        nav.classList.toggle("wizard-nav--single-page", isSinglePage);
+    }
+
+    if (isSinglePage) {
+        const visibleSteps = new Set(_getCreateSinglePageVisibleSteps(prefix));
+
+        panel.querySelectorAll(".wizard-step").forEach((s) => {
+            const show = visibleSteps.has(parseInt(s.dataset.step, 10));
+            s.hidden = !show;
+            s.classList.remove("wizard-step-enter");
+            if (show) {
+                requestAnimationFrame(() => s.classList.add("wizard-step-enter"));
+            }
+        });
+
+        if (dotsContainer) {
+            dotsContainer.hidden = true;
+            dotsContainer.innerHTML = "";
+        }
+        if (backBtn) backBtn.hidden = false;
+        if (nextBtn) nextBtn.hidden = true;
+        if (createBtn) createBtn.hidden = false;
+        if (estimateBadge) estimateBadge.hidden = false;
+        _syncCreateActionRow(prefix);
+
+        if (prefix === "wizard") {
+            scheduleWizardCreditEstimate();
+        } else if (prefix === "script") {
+            scheduleScriptCreditEstimate();
+        }
+        return;
+    }
 
     // Show/hide steps
     panel.querySelectorAll(".wizard-step").forEach((s) => {
@@ -6211,22 +6400,19 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     });
 
     // Update dots dynamically
-    const dotsContainer = document.getElementById(`${prefix}-dots-container`);
     if (dotsContainer) {
+        dotsContainer.hidden = false;
         dotsContainer.innerHTML = flow.map((_, i) =>
             `<span class="wizard-dot${i < stepIndex ? ' active' : ''}"></span>`
         ).join('');
     }
 
     // Update buttons
-    const backBtn = document.getElementById(`${prefix}-back`);
-    const nextBtn = document.getElementById(`${prefix}-next`);
-    const createBtn = document.getElementById(`${prefix}-create-btn`);
     if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
+    _syncCreateActionRow(prefix);
 
-    const estimateBadge = document.getElementById(`${prefix}-credit-estimate`);
     if (estimateBadge) {
         estimateBadge.hidden = !(createBtn && !createBtn.hidden);
     }
@@ -7545,6 +7731,95 @@ function _getSimilarProjectScene(sceneId) {
     return scenes.find((scene) => Number(scene?.id || 0) === targetId) || null;
 }
 
+function _setSimilarSceneBoundaryFramePreview(sceneId, frameTarget, previewUrl = "") {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return;
+
+    const previewKey = _normalizeSimilarSceneFrameTarget(frameTarget) === "end"
+        ? "frameEndPreviewUrl"
+        : "frameStartPreviewUrl";
+    const nextPreviewUrl = String(previewUrl || "").trim();
+    const nextDraft = {
+        ...(similarState.sceneDraftsBySceneId[key] || {}),
+    };
+    const previousPreviewUrl = String(nextDraft[previewKey] || "").trim();
+    if (previousPreviewUrl && previousPreviewUrl !== nextPreviewUrl) {
+        _revokeSimilarPreviewUrl(previousPreviewUrl);
+    }
+
+    if (nextPreviewUrl) {
+        nextDraft[previewKey] = nextPreviewUrl;
+    } else {
+        delete nextDraft[previewKey];
+    }
+
+    if (Object.keys(nextDraft).length) {
+        similarState.sceneDraftsBySceneId[key] = nextDraft;
+    } else {
+        delete similarState.sceneDraftsBySceneId[key];
+    }
+}
+
+function _getSimilarSceneBoundaryFramePreview(sceneId, frameTarget) {
+    const key = _similarSceneStateKey(sceneId);
+    if (!key) return "";
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    return _normalizeSimilarSceneFrameTarget(frameTarget) === "end"
+        ? String(draft.frameEndPreviewUrl || "").trim()
+        : String(draft.frameStartPreviewUrl || "").trim();
+}
+
+function _patchSimilarSceneBoundaryFrameSnapshot(sceneId, frameTarget, frameUrl) {
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const resolvedFrameUrl = String(frameUrl || "").trim();
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    if (!resolvedFrameUrl || !scenes.length) return;
+
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return;
+
+    const sceneIndex = scenes.findIndex((scene) => Number(scene?.id || 0) === targetId);
+    if (sceneIndex < 0) return;
+
+    const currentScene = scenes[sceneIndex];
+    currentScene.clip_url = "";
+    currentScene.clip_path = "";
+    currentScene.scene_type = "image";
+
+    if (normalizedFrameTarget === "end") {
+        currentScene.reference_frame_end_url = resolvedFrameUrl;
+        const nextScene = scenes[sceneIndex + 1];
+        if (nextScene) {
+            nextScene.reference_frame_url = resolvedFrameUrl;
+            nextScene.reference_frame_text_detected = false;
+            nextScene.reference_frame_text_excerpt = "";
+            nextScene.clip_url = "";
+            nextScene.clip_path = "";
+            nextScene.scene_type = "image";
+        }
+        return;
+    }
+
+    currentScene.reference_frame_url = resolvedFrameUrl;
+    currentScene.reference_frame_text_detected = false;
+    currentScene.reference_frame_text_excerpt = "";
+    const previousScene = scenes[sceneIndex - 1];
+    if (previousScene) {
+        previousScene.reference_frame_end_url = resolvedFrameUrl;
+    }
+}
+
+function _resetSimilarSceneUploadIntent() {
+    similarState.activeUploadSceneId = 0;
+    similarState.activeUploadSceneFrameTarget = "";
+    const input = document.getElementById("similar-scene-image-input");
+    if (input) {
+        input.multiple = true;
+    }
+}
+
 function _setSimilarSceneServerPromptValue(sceneId, promptValue) {
     const targetId = Number(sceneId || 0);
     if (!targetId) return;
@@ -8153,6 +8428,9 @@ function _clearAllSimilarScenePendingUploads() {
 function _forgetSimilarSceneDraft(sceneId) {
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    _revokeSimilarPreviewUrl(draft.frameStartPreviewUrl);
+    _revokeSimilarPreviewUrl(draft.frameEndPreviewUrl);
     delete similarState.sceneDraftsBySceneId[key];
 }
 
@@ -8679,8 +8957,12 @@ function _renderSimilarScenes(project, options = {}) {
         const hasClipPreview = !!clipUrlRaw.trim();
         const startFrameUrlRaw = String(scene.reference_frame_url || scene.reference_frame_path || "").trim();
         const endFrameUrlRaw = String(scene.reference_frame_end_url || scene.reference_frame_end_path || "").trim();
-        const hasReferenceFrame = !!startFrameUrlRaw;
-        const hasBoundaryFrame = hasReferenceFrame || !!endFrameUrlRaw;
+        const startFramePreviewUrlRaw = _getSimilarSceneBoundaryFramePreview(sceneId, "start");
+        const endFramePreviewUrlRaw = _getSimilarSceneBoundaryFramePreview(sceneId, "end");
+        const renderedStartFrameUrlRaw = startFramePreviewUrlRaw || startFrameUrlRaw;
+        const renderedEndFrameUrlRaw = endFramePreviewUrlRaw || endFrameUrlRaw;
+        const hasReferenceFrame = !!renderedStartFrameUrlRaw;
+        const hasBoundaryFrame = hasReferenceFrame || !!renderedEndFrameUrlRaw;
         const isGeneratingSceneClip = activeBusySceneIds.has(sceneId) && (
             ["generating_scene", "regenerating_scene", "generating_previews"].includes(activeBusyStage)
             || activeBusySceneIds.size > 0
@@ -8805,7 +9087,7 @@ function _renderSimilarScenes(project, options = {}) {
         const frameGalleryItems = hasReferenceFrame
             ? [
                 buildFrameGalleryItem({
-                    url: startFrameUrlRaw,
+                    url: renderedStartFrameUrlRaw,
                     alt: startFrameAltRaw,
                     badge: "Entrada",
                     downloadName: startFrameDownloadName,
@@ -8814,17 +9096,17 @@ function _renderSimilarScenes(project, options = {}) {
                     clipBusyMarkup: sceneClipBusyMarkup,
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
-                            <a class="similar-frame-image-action" href="${esc(startFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
+                            <a class="similar-frame-image-action" href="${esc(renderedStartFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
                             <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 }),
             ]
             : [];
-        if (endFrameUrlRaw) {
+        if (renderedEndFrameUrlRaw) {
             frameGalleryItems.push(
                 buildFrameGalleryItem({
-                    url: endFrameUrlRaw,
+                    url: renderedEndFrameUrlRaw,
                     alt: endFrameAltRaw,
                     badge: "Saida",
                     downloadName: endFrameDownloadName,
@@ -8832,7 +9114,7 @@ function _renderSimilarScenes(project, options = {}) {
                     clipBusyMarkup: sceneClipBusyMarkup,
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
-                            <a class="similar-frame-image-action" href="${esc(endFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
+                            <a class="similar-frame-image-action" href="${esc(renderedEndFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
                             <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'end')" title="Editar frame final" aria-label="Editar frame final" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
@@ -13328,10 +13610,14 @@ async function similarSaveScene(sceneId, options = {}) {
     }
 }
 
-function similarUploadSceneImage(sceneId) {
+function similarUploadSceneImage(sceneId, { frameTarget = "" } = {}) {
     const input = document.getElementById("similar-scene-image-input");
     if (!input) return;
     similarState.activeUploadSceneId = Number(sceneId || 0);
+    similarState.activeUploadSceneFrameTarget = frameTarget
+        ? _normalizeSimilarSceneFrameTarget(frameTarget)
+        : "";
+    input.multiple = !similarState.activeUploadSceneFrameTarget;
     input.value = "";
     input.click();
 }
@@ -13343,7 +13629,85 @@ function similarUploadFrameReference(sceneId, frameTarget = "") {
             frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
         });
     }
-    similarUploadSceneImage(sceneId);
+    similarUploadSceneImage(sceneId, { frameTarget });
+}
+
+async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files) {
+    const projectId = Number(similarState.projectId || 0);
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const selectedFiles = Array.from(files || []).slice(0, 1);
+    const frameLabelLower = _getSimilarSceneFrameLabel(normalizedFrameTarget, { lower: true });
+    if (!projectId || !sceneId || !selectedFiles.length) {
+        return;
+    }
+
+    const file = selectedFiles[0];
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+        throw new Error("Use somente imagens JPG, PNG ou WebP.");
+    }
+
+    const scene = _getSimilarProjectScene(sceneId);
+    const promptEl = document.getElementById(`similar-scene-prompt-${sceneId}`);
+    const promptOverride = String(promptEl?.value || scene?.prompt || "").trim();
+    const localPreviewUrl = URL.createObjectURL(file);
+    _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, localPreviewUrl);
+    _setSimilarSceneFrameEditorDraft(sceneId, {
+        open: true,
+        frameTarget: normalizedFrameTarget,
+        frameBusy: true,
+        frameBusyLabel: normalizedFrameTarget === "end"
+            ? "Atualizando o frame final com a foto enviada..."
+            : "Atualizando o frame inicial com a foto enviada...",
+    });
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+    }
+    _setSimilarStatus(`Atualizando o ${frameLabelLower} com a nova foto...`, "running");
+    _queueSimilarScroll({ sceneId, preferStatus: true });
+
+    try {
+        const uploaded = await uploadTempFileWithRetry(file, "image", frameLabelLower, { showProgress: false });
+        const uploadId = String(uploaded?.upload_id || "").trim();
+        if (!uploadId) {
+            throw new Error("Upload da imagem retornou sem identificador. Tente novamente.");
+        }
+
+        const response = await api(`/video/projects/${projectId}/similar/scenes/${sceneId}/boundary-frame`, {
+            method: "POST",
+            body: JSON.stringify({
+                frame_kind: normalizedFrameTarget,
+                generate_from_prompt: false,
+                prompt_override: promptOverride,
+                image_upload_ids: [uploadId],
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+
+        _patchSimilarSceneBoundaryFrameSnapshot(sceneId, normalizedFrameTarget, response?.frame_url || "");
+        _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            open: true,
+            frameTarget: normalizedFrameTarget,
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        showToast(normalizedFrameTarget === "end" ? "Frame final atualizado." : "Frame inicial atualizado.", "success");
+        await _refreshSimilarProject({ silent: true });
+    } catch (error) {
+        _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
+        _setSimilarSceneFrameEditorDraft(sceneId, {
+            frameTarget: normalizedFrameTarget,
+            frameBusy: false,
+            frameBusyLabel: "",
+        });
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
+        }
+        throw error;
+    }
 }
 
 function _applySimilarNarrationToPrompt(sceneId, { closeEditor = false, notify = false } = {}) {
@@ -13371,15 +13735,24 @@ function _applySimilarNarrationToPrompt(sceneId, { closeEditor = false, notify =
 async function _handleSimilarSceneImageInput(event) {
     const projectId = Number(similarState.projectId || 0);
     const sceneId = Number(similarState.activeUploadSceneId || 0);
+    const frameTarget = String(similarState.activeUploadSceneFrameTarget || "").trim();
     const files = Array.from(event.target?.files || []);
     event.target.value = "";
 
     if (!projectId || !sceneId || !files.length) {
-        similarState.activeUploadSceneId = 0;
+        _resetSimilarSceneUploadIntent();
         return;
     }
 
     try {
+        if (frameTarget) {
+            if (files.length > 1) {
+                showToast("Para substituir o frame, envie uma imagem por vez. So a primeira foi usada.", "info");
+            }
+            await _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files);
+            return;
+        }
+
         const existingUploads = _getSimilarScenePendingUploads(sceneId);
         const remainingSlots = Math.max(0, 6 - existingUploads.length);
         if (!remainingSlots) {
@@ -13419,7 +13792,7 @@ async function _handleSimilarSceneImageInput(event) {
     } catch (error) {
         showToast(`Erro ao enviar imagem: ${error.message}`, "error");
     } finally {
-        similarState.activeUploadSceneId = 0;
+        _resetSimilarSceneUploadIntent();
     }
 }
 
@@ -14137,7 +14510,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
 
-    const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value || "grok";
+    const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value
+        || (prefix === "auto" ? "wan2" : "viduq3");
     if (!finalPrompt && selectedEngineForPromptCheck !== "avatar31") {
         alert("Descreva a cena que você quer ver no vídeo.");
         return;
@@ -14195,8 +14569,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
     const engineLabel = getRealisticEngineLabel(engine);
-    const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    const selectedPersona = _getSelectedCreatePersonaType(prefix);
+    const interactionPersona = selectedPersona || "none";
     let personaProfileId = 0;
     let personaProfileIds = [];
 
@@ -14232,19 +14606,19 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
 
     try {
         const contextKey = prefix === "wizard" ? "wizard" : "script";
-        const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+        const disablePersonaReference = !selectedPersona || _isPersonaNoReferenceEnabled(contextKey, selectedPersona);
         if (disablePersonaReference) {
             personaProfileIds = [];
             personaProfileId = 0;
         } else {
-            personaProfileIds = await _ensurePersonaSelections(contextKey, interactionPersona);
+            personaProfileIds = await _ensurePersonaSelections(contextKey, selectedPersona);
             personaProfileId = personaProfileIds[0] || 0;
         }
 
         const selectedPersonaProfiles = disablePersonaReference
             ? []
             : personaProfileIds
-                .map((sid) => _getPersonaProfiles(interactionPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
+                .map((sid) => _getPersonaProfiles(selectedPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
                 .filter(Boolean)
                 .slice(0, 4);
 
@@ -14728,10 +15102,6 @@ function resetCreateWizard(options = {}) {
         }
         tag.classList.remove("selected");
     });
-    const defWizardPersona = document.querySelector('#wizard-realistic-persona-tags [data-persona="natureza"]');
-    if (defWizardPersona) defWizardPersona.classList.add("selected");
-    const defScriptPersona = document.querySelector('#script-realistic-persona-tags [data-persona="natureza"]');
-    if (defScriptPersona) defScriptPersona.classList.add("selected");
     const defAiPersona = document.querySelector('#ai-suggest-persona-tags [data-persona="natureza"]');
     if (defAiPersona) {
         document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
@@ -14764,8 +15134,8 @@ function resetCreateWizard(options = {}) {
     _personaNoReferenceByContext.wizard = {};
     _personaNoReferenceByContext.script = {};
     _personaNoReferenceByContext.ai = {};
-    _refreshPersonaContext("wizard", "natureza");
-    _refreshPersonaContext("script", "natureza");
+    _clearCreatePersonaPreview("wizard");
+    _clearCreatePersonaPreview("script");
     _refreshPersonaContext("ai", "natureza");
     if (!preserveScriptImageCreatorState) {
         _personaSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
@@ -14813,6 +15183,50 @@ function resetCreateWizard(options = {}) {
 }
 
 // ── Wizard (Assistente) Navigation ──
+
+function _resolveCreateToneSelection(prefix) {
+    const panelId = prefix === "wizard" ? "create-panel-wizard" : "create-panel-script";
+    const selected = document.querySelector(`#${panelId} .wizard-step[data-step='3'] .wizard-option.selected`);
+    return selected ? String(selected.dataset.value || "").trim() : "";
+}
+
+function _resolveCreateVoiceSelection(prefix) {
+    const panelId = prefix === "wizard" ? "create-panel-wizard" : "create-panel-script";
+    const personaSel = document.querySelector(`#${prefix}-persona-list .persona-item.selected`);
+    const builtinSel = document.querySelector(`#${panelId} .wizard-step[data-step='4'] .wizard-option[data-voice-type='builtin'].selected`);
+    const elevenlabsSel = document.querySelector(`#${panelId} .wizard-step[data-step='4'] .wizard-option[data-voice-type='elevenlabs'].selected`);
+    const sunoSel = document.querySelector(`#${panelId} .wizard-step[data-step='4'] .wizard-option[data-voice-type='suno'].selected`);
+
+    if (personaSel) {
+        return {
+            voice: personaSel.dataset.value || "",
+            voiceProfileId: parseInt(personaSel.dataset.profileId || "0", 10) || 0,
+            voiceType: "custom",
+        };
+    }
+    if (sunoSel) {
+        return {
+            voice: sunoSel.dataset.value || "",
+            voiceProfileId: 0,
+            voiceType: "suno",
+        };
+    }
+    if (elevenlabsSel) {
+        return {
+            voice: elevenlabsSel.dataset.value || "",
+            voiceProfileId: 0,
+            voiceType: "elevenlabs",
+        };
+    }
+    if (builtinSel) {
+        return {
+            voice: builtinSel.dataset.value || "",
+            voiceProfileId: 0,
+            voiceType: "builtin",
+        };
+    }
+    return null;
+}
 
 function wizardNext() {
     const flow = getWizardFlow();
@@ -14882,6 +15296,21 @@ function wizardBack() {
 }
 
 async function handleWizardCreate() {
+    const selectedVideoType = _getSelectedCreateVideoType("wizard");
+    if (!selectedVideoType) {
+        alert("Escolha o tipo de vídeo.");
+        return;
+    }
+    wizardData.videoType = selectedVideoType;
+
+    const topic = document.getElementById("wizard-topic").value.trim();
+    if (!topic) {
+        alert("Digite o tema do vídeo.");
+        return;
+    }
+    wizardData.topic = topic;
+    wizardData.realisticStyle = document.querySelector("#wizard-topic-style-tags .style-tag.selected")?.dataset.style || "";
+
     // Check if this is a realistic video
     if (wizardData.videoType === "realista") {
         await handleRealisticVideoCreate(
@@ -14896,6 +15325,22 @@ async function handleWizardCreate() {
         );
         return;
     }
+
+    const tone = _resolveCreateToneSelection("wizard");
+    if (!tone) {
+        alert("Escolha o tom da narração.");
+        return;
+    }
+    wizardData.tone = tone;
+
+    const voiceSelection = _resolveCreateVoiceSelection("wizard");
+    if (!voiceSelection) {
+        alert("Escolha a voz.");
+        return;
+    }
+    wizardData.voice = voiceSelection.voice;
+    wizardData.voiceProfileId = voiceSelection.voiceProfileId;
+    wizardData.voiceType = voiceSelection.voiceType;
 
     // Collect step 5 (style) + step 6 (duration/format) data
     const durBtn = document.querySelector("#create-panel-wizard .duration-option.selected");
@@ -15148,10 +15593,18 @@ function scriptBack() {
 }
 
 async function handleScriptCreate() {
+    const selectedVideoType = _getSelectedCreateVideoType("script");
+    if (!selectedVideoType) {
+        alert("Escolha o tipo de vídeo.");
+        return;
+    }
+    scriptData.videoType = selectedVideoType;
+    adaptScriptStepForVideoType(scriptData.videoType);
+
     // Check if this is a realistic video
     if (scriptData.videoType === "realista") {
         const scriptText = document.getElementById("script-text").value.trim();
-        const selectedRealisticEngine = document.querySelector("#script-realistic-engine .engine-option.selected")?.dataset.value || "grok";
+        const selectedRealisticEngine = _getRealisticSelectedEngine("script");
         const prompt = selectedRealisticEngine === "avatar31"
             ? scriptText
             : (scriptText || scriptData.title || "");
@@ -15213,6 +15666,29 @@ async function handleScriptCreate() {
     scriptData.text = (scriptData.useCustomAudio || scriptData.useTevoxiAudio)
         ? scriptData.text
         : (createNarration ? scriptData.text : "");
+
+    const requiresAiNarrationSelection = !!(scriptData.text && !scriptData.useCustomAudio && !scriptData.useTevoxiAudio && scriptData.createNarration);
+    if (requiresAiNarrationSelection) {
+        const tone = _resolveCreateToneSelection("script");
+        if (!tone) {
+            alert("Escolha o tom da narração.");
+            return;
+        }
+        const voiceSelection = _resolveCreateVoiceSelection("script");
+        if (!voiceSelection) {
+            alert("Escolha a voz.");
+            return;
+        }
+        scriptData.tone = tone;
+        scriptData.voice = voiceSelection.voice;
+        scriptData.voiceProfileId = voiceSelection.voiceProfileId;
+        scriptData.voiceType = voiceSelection.voiceType;
+    } else {
+        scriptData.tone = "informativo";
+        scriptData.voice = "onyx";
+        scriptData.voiceProfileId = 0;
+        scriptData.voiceType = "builtin";
+    }
     scriptData.enableSubtitles = document.getElementById("script-enable-subtitles").checked;
 
     const subtitlePosEl = document.getElementById("script-subtitle-position-y");
@@ -18589,7 +19065,9 @@ function toggleScriptPhotoDependentFields() {
     const subtitlesGroup = document.getElementById("script-subtitles-group");
     if (imageSecondsGroup) imageSecondsGroup.hidden = !usePhotos || useVideo;
     // Subtitles group is always visible so user can toggle subtitles for any mode
+    updateNarrationChoiceVisibility();
     _updateScriptRealisticPersonaVisibility();
+    _syncSeedanceLastFrameToggle("script");
 }
 
 function toggleScriptNarration() {
@@ -18617,21 +19095,13 @@ function toggleScriptNarration() {
 }
 
 function updateNarrationChoiceVisibility() {
-    const usePhotos = document.getElementById("script-use-photos").checked;
     const narChoice = document.getElementById("script-narration-choice");
     const narCb = document.getElementById("script-create-narration");
-    // In realistic mode, never show narration choice
-    if (scriptData.videoType === "realista") {
-        if (narChoice) narChoice.hidden = true;
-        toggleScriptNarration();
-        return;
-    }
-    const wasHidden = narChoice ? narChoice.hidden : true;
-    const shouldShow = usePhotos && scriptPhotos.length > 0;
+    const useVideo = document.getElementById("script-use-video") ? document.getElementById("script-use-video").checked : false;
+    const shouldShow = _getSelectedCreateVideoType("script") !== "realista" && !useVideo;
     if (narChoice) narChoice.hidden = !shouldShow;
-    // When photos are first added, default narration to OFF
-    if (shouldShow && wasHidden && narCb) {
-        narCb.checked = false;
+    if (!shouldShow && narCb) {
+        narCb.checked = true;
     }
     toggleScriptNarration();
 }
@@ -19029,9 +19499,12 @@ function adaptScriptStepForVideoType(videoType) {
             : "Cole ou escreva o roteiro completo da narração aqui...";
     }
     updateScriptVideoAreaVisibility();
+    updateNarrationChoiceVisibility();
     _updateScriptDetailsForTevoxiMode();
     _updateScriptSubtitlePositionVisibility();
     _updateScriptRealisticPersonaVisibility();
+    _syncSeedanceLastFrameToggle("script");
+    _syncCreatePersonaUi("script");
 }
 
 function _normalizeRealisticPersonaType(value) {
