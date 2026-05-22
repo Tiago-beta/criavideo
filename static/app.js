@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -3713,15 +3713,22 @@ async function loadProjects() {
         }
         container.innerHTML = visibleData.map((project) => {
             const normalizedStatus = String(project.status || "").trim().toLowerCase();
+            const workflowType = String(project.workflow_type || "").trim().toLowerCase();
+            const isSimilarProject = workflowType === "similar";
             const dateStr = _renderExpiryOrDate(project);
             const statusPt = _statusPt(project.status);
             const isExpired = project.video_expired || false;
             const canWatch = (normalizedStatus === "completed" || normalizedStatus === "published") && !isExpired;
             const isGenerating = _isProjectProcessingStatus(normalizedStatus);
-            const thumbClick = canWatch ? `onclick="watchVideo(${project.id})" style="cursor:pointer"` : "";
+            const thumbClick = canWatch
+                ? `onclick="watchVideo(${project.id})" style="cursor:pointer"`
+                : (isSimilarProject ? `onclick="openSimilarProject(${project.id})" style="cursor:pointer"` : "");
             const cardClasses = `card${isGenerating ? " is-generating" : ""}`;
             const thumbnailDownloadButton = canWatch && project.thumbnail_url
                 ? `<a class="card-btn card-btn-download" href="${esc(project.thumbnail_url)}" download="${esc(`${project.title || "thumbnail"}.jpg`)}" title="Baixar thumbnail" aria-label="Baixar thumbnail"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M21 21H3"/></svg></a>`
+                : "";
+            const reopenSimilarButton = isSimilarProject
+                ? `<button class="card-btn card-btn-similar" onclick="openSimilarProject(${project.id})" type="button" title="Abrir semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 4 1.5 3L20 8.5 16.5 10 15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m4 20 7-7"/><path d="M9 20H4v-5"/></svg></button>`
                 : "";
             const thumb = project.thumbnail_url
                 ? `<img class="card-thumb${isGenerating ? " is-generating" : ""}" src="${project.thumbnail_url}" alt="" loading="lazy" onerror="handleProjectThumbError(this, ${project.id}, ${canWatch})" ${thumbClick}>`
@@ -3738,9 +3745,10 @@ async function loadProjects() {
                     <div class="card-footer">
                         <div class="card-actions">
                             ${canWatch ? `<button class="card-btn card-btn-watch" onclick="watchVideo(${project.id})" type="button" title="Assistir"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                            ${reopenSimilarButton}
                             ${thumbnailDownloadButton}
                             ${canWatch ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
-                            ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                            ${((project.status === "pending" || project.status === "failed") && !isSimilarProject) ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                             ${canWatch ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
                             <button class="card-btn card-btn-edit" onclick="openRenameProjectModal(${project.id})" type="button" title="Editar nome"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
                             <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
@@ -3755,6 +3763,46 @@ async function loadProjects() {
         _startCountdownRefresh();
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
+    }
+}
+
+async function openSimilarProject(projectId) {
+    const parsedProjectId = Number(projectId || 0);
+    if (!parsedProjectId) {
+        return;
+    }
+
+    try {
+        const project = await api(`/video/projects/${parsedProjectId}`);
+        const tags = _safeSimilarTags(project?.tags);
+        const workflowType = String(tags.type || project?.workflow_type || "").trim().toLowerCase();
+        if (workflowType !== "similar") {
+            throw new Error("Projeto semelhante não encontrado.");
+        }
+
+        _resetSimilarModeState();
+        similarState.projectId = parsedProjectId;
+        similarState.lastProjectSnapshot = project;
+
+        const titleEl = document.getElementById("similar-title");
+        if (titleEl) {
+            titleEl.value = project.title || "";
+        }
+
+        const aspectEl = document.getElementById("similar-aspect");
+        if (aspectEl) {
+            aspectEl.value = _normalizeSimilarAspectRatio(project.aspect_ratio) || "16:9";
+        }
+
+        const sourceEl = document.getElementById("similar-source-url");
+        if (sourceEl) {
+            sourceEl.value = String(tags.similar_source_url || "").trim();
+        }
+
+        switchCreateMode("similar");
+        await _refreshSimilarProject({ silent: true });
+    } catch (error) {
+        showToast(`Erro ao abrir semelhante: ${error.message}`, "error");
     }
 }
 
@@ -7694,6 +7742,13 @@ function _renderSimilarMergePreview(project, tags = {}) {
     const renderDuration = Number(render?.duration || 0) || 0;
     const isMerging = stage === "merging_scenes" || (pendingStage === "merging_scenes" && status === "rendering");
     const isMergeFailed = stage === "merge_failed" || (status === "failed" && (stage === "merge_failed" || pendingStage === "merging_scenes"));
+    const isMergedReady = stage === "merged";
+
+    if (!isMerging && !isMergeFailed && !isMergedReady) {
+        wrapEl.innerHTML = "";
+        wrapEl.hidden = true;
+        return;
+    }
 
     if (!isMerging && !isMergeFailed && !renderUrl) {
         wrapEl.innerHTML = "";
@@ -26788,6 +26843,7 @@ window.generateVideo = generateVideo;
 window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
 window.openPublishForProject = openPublishForProject;
+window.openSimilarProject = openSimilarProject;
 window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;

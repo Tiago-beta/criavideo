@@ -1116,6 +1116,124 @@ def _clear_similar_unified_clip_tags(tags: dict | None) -> dict:
     return cleaned
 
 
+def _similar_render_output_path(project_id: int, aspect_ratio: str, kind: str) -> Path:
+    render_dir = Path(settings.media_dir) / "renders" / str(project_id)
+    render_dir.mkdir(parents=True, exist_ok=True)
+    safe_aspect_ratio = str(aspect_ratio or "16:9").replace(":", "x")
+    safe_kind = re.sub(r"[^a-z0-9_-]+", "_", str(kind or "preview").strip().lower() or "preview")
+    return render_dir / f"video_{safe_aspect_ratio}_similar_{safe_kind}.mp4"
+
+
+def _similar_render_thumbnail_path(project_id: int, kind: str) -> Path:
+    thumb_dir = Path(settings.media_dir) / "thumbnails" / str(project_id)
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    safe_kind = re.sub(r"[^a-z0-9_-]+", "_", str(kind or "preview").strip().lower() or "preview")
+    return thumb_dir / f"thumbnail_similar_{safe_kind}.jpg"
+
+
+async def _persist_similar_project_render(
+    db,
+    project: VideoProject,
+    *,
+    source_video_path: str,
+    aspect_ratio: str,
+    kind: str,
+) -> tuple[str, float]:
+    project_id = int(project.id or 0)
+    if project_id <= 0:
+        raise RuntimeError("Projeto semelhante inválido para salvar render")
+
+    source_path = Path(str(source_video_path or "").strip())
+    if not source_path.exists() or source_path.stat().st_size <= 0:
+        raise RuntimeError("Nenhum vídeo pronto para salvar na lista de projetos")
+
+    output_path = _similar_render_output_path(project_id, aspect_ratio, kind)
+    try:
+        same_target = source_path.resolve() == output_path.resolve()
+    except Exception:
+        same_target = str(source_path) == str(output_path)
+
+    if not same_target:
+        shutil.copyfile(str(source_path), str(output_path))
+
+    if not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError("Falha ao preparar o vídeo para salvar na lista de projetos")
+
+    thumb_path = _similar_render_thumbnail_path(project_id, kind)
+    thumbnail_value = ""
+    try:
+        generate_thumbnail_from_frame(
+            video_path=str(output_path),
+            title=project.title or "Video Semelhante",
+            artist="Semelhante",
+            output_path=str(thumb_path),
+        )
+        if thumb_path.exists() and thumb_path.stat().st_size > 0:
+            thumbnail_value = str(thumb_path)
+    except Exception as thumb_exc:
+        logger.warning(
+            "Similar render thumbnail failed for project %s kind %s: %s",
+            project_id,
+            kind,
+            thumb_exc,
+        )
+
+    duration = float(get_duration(str(output_path)) or 0)
+    file_size = int(output_path.stat().st_size)
+    result = await db.execute(
+        select(VideoRender)
+        .where(
+            VideoRender.project_id == project_id,
+            VideoRender.file_path == str(output_path),
+        )
+        .order_by(VideoRender.id.desc())
+    )
+    render = result.scalars().first()
+    if render is None:
+        render = VideoRender(project_id=project_id)
+        db.add(render)
+
+    render.format = aspect_ratio
+    render.file_path = str(output_path)
+    render.file_size = file_size
+    render.thumbnail_path = thumbnail_value or None
+    render.duration = duration or None
+    render.created_at = datetime.utcnow()
+    return str(output_path), duration
+
+
+async def _persist_similar_preview_render(
+    db,
+    project: VideoProject,
+    scenes: list[VideoScene],
+    aspect_ratio: str,
+    tags: dict | None = None,
+) -> tuple[str, float]:
+    clip_paths = [
+        str(scene.clip_path)
+        for scene in (scenes or [])
+        if scene.clip_path and os.path.exists(str(scene.clip_path))
+    ]
+    if not clip_paths:
+        raise RuntimeError("Nenhum clip pronto para salvar na lista de projetos")
+
+    output_path = _similar_render_output_path(int(project.id or 0), aspect_ratio, "preview")
+    safe_tags = _safe_tags_dict(tags)
+    use_hard_cuts = str(safe_tags.get("similar_scene_strategy") or "").strip().lower() in {"shot_detect", "time_window"}
+    await concatenate_clips(clip_paths, str(output_path), crossfade_dur=0.0 if use_hard_cuts else 0.5)
+
+    if not output_path.exists() or output_path.stat().st_size <= 0:
+        raise RuntimeError("Falha ao preparar a prévia do vídeo")
+
+    return await _persist_similar_project_render(
+        db,
+        project,
+        source_video_path=str(output_path),
+        aspect_ratio=aspect_ratio,
+        kind="preview",
+    )
+
+
 def _collect_similar_reference_frame_paths(
     scenes: list[VideoScene],
     reference_frames_by_scene_index: dict[str, str] | None = None,
@@ -2814,14 +2932,24 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
                 project.progress = 10 + int(80 * ((idx + 1) / max(len(scenes), 1)))
                 await db.commit()
 
+            _, preview_duration = await _persist_similar_preview_render(
+                db,
+                project,
+                scenes,
+                aspect_ratio,
+                project.tags,
+            )
+
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "preview_ready"})
             tags.pop("similar_current_scene_id", None)
             tags.pop("similar_current_scene_index", None)
             tags.pop("similar_total_scenes", None)
             project.tags = tags
-            project.status = VideoStatus.PENDING
-            project.progress = 0
+            project.status = VideoStatus.COMPLETED
+            project.progress = 100
+            project.track_duration = preview_duration or float(project.track_duration or 0)
+            project.error_message = None
             await db.commit()
 
         except Exception as exc:
@@ -2904,14 +3032,23 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                 reference_frames_by_scene_index=reference_frames_by_scene_index,
             )
 
+            _, preview_duration = await _persist_similar_preview_render(
+                db,
+                project,
+                all_scenes,
+                aspect_ratio,
+                project.tags,
+            )
+
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "preview_ready"})
             tags.pop("similar_current_scene_id", None)
             tags.pop("similar_current_scene_index", None)
             tags.pop("similar_generation_mode", None)
             project.tags = tags
-            project.status = VideoStatus.PENDING
-            project.progress = 0
+            project.status = VideoStatus.COMPLETED
+            project.progress = 100
+            project.track_duration = preview_duration or float(project.track_duration or 0)
             project.error_message = None
             await db.commit()
 
@@ -3065,6 +3202,14 @@ async def run_similar_generate_unified_scene(
             if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
                 raise RuntimeError("Falha ao gerar a cena unica")
 
+            _, unified_duration = await _persist_similar_project_render(
+                db,
+                project,
+                source_video_path=output_path,
+                aspect_ratio=aspect_ratio,
+                kind="unified",
+            )
+
             tags = _clear_similar_unified_clip_tags(project.tags)
             tags.update(
                 {
@@ -3080,8 +3225,9 @@ async def run_similar_generate_unified_scene(
             if merged_reference_path and os.path.exists(merged_reference_path):
                 tags["similar_unified_reference_image_path"] = merged_reference_path
             project.tags = tags
-            project.status = VideoStatus.PENDING
-            project.progress = 0
+            project.status = VideoStatus.COMPLETED
+            project.progress = 100
+            project.track_duration = unified_duration or float(project.track_duration or 0)
             project.error_message = None
             await db.commit()
 
