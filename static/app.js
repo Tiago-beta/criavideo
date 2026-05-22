@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v514 loaded");
+console.log("[CriaVideo] app.js v515 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -30890,6 +30890,55 @@ function _editorMapTimeAcrossRemovedGaps(timeValue, gaps = []) {
     return Math.max(0, safeTime - removedBefore);
 }
 
+function _editorCollapseTimelineItemsByGaps(gaps = [], options = {}) {
+    const normalizedGaps = _editorMergeTimelineRanges(gaps).map((range) => ({
+        start: Number(range[0] || 0),
+        end: Number(range[1] || 0),
+    }));
+    if (!normalizedGaps.length) return false;
+
+    const shiftCollection = (items, startKey, endKey, minDuration = 0.02) => {
+        if (!Array.isArray(items) || !items.length) return [];
+        return items.reduce((nextItems, item) => {
+            if (!item) return nextItems;
+            const start = Math.max(0, Number(item[startKey] || 0));
+            const end = Math.max(start, Number(item[endKey] || 0));
+            const mappedStart = _editorMapTimeAcrossRemovedGaps(start, normalizedGaps);
+            const mappedEnd = Math.max(mappedStart, _editorMapTimeAcrossRemovedGaps(end, normalizedGaps));
+            item[startKey] = mappedStart;
+            item[endKey] = mappedEnd;
+            if (mappedEnd - mappedStart >= minDuration) {
+                nextItems.push(item);
+            }
+            return nextItems;
+        }, []);
+    };
+
+    if (options.includeVideo) {
+        _editor.videoSegments = shiftCollection(_editor.videoSegments || [], "start", "end", 0.05);
+        _editorSortSegments("video");
+    }
+    if (options.includeAudio) {
+        _editor.audioSegments = shiftCollection(_editor.audioSegments || [], "start", "end", 0.05);
+        _editorSortSegments("audio");
+    }
+    if (options.includeMediaLayers !== false) {
+        _editor.mediaLayers = shiftCollection(_editor.mediaLayers || [], "startTime", "endTime", 0.02);
+    }
+    if (options.includeTexts !== false) {
+        _editor.texts = shiftCollection(_editor.texts || [], "startTime", "endTime", 0.02);
+    }
+    if (options.includeSubtitles !== false) {
+        _editor.subtitles = shiftCollection(_editor.subtitles || [], "startTime", "endTime", 0.02);
+    }
+    if (options.includeStickers !== false) {
+        _editor.stickers = shiftCollection(_editor.stickers || [], "startTime", "endTime", 0.02);
+    }
+
+    _editor.timelineTime = Math.max(0, Number(_editor.timelineTime || 0));
+    return true;
+}
+
 function _editorCollapseHiddenBaseTimelineGaps() {
     if (!_editor.hideBaseVideoTrack) return false;
 
@@ -30906,20 +30955,10 @@ function _editorCollapseHiddenBaseTimelineGaps() {
         }
     }
 
-    const shiftWindow = (item, startKey, endKey) => {
-        if (!item) return;
-        const start = Math.max(0, Number(item[startKey] || 0));
-        const end = Math.max(start, Number(item[endKey] || 0));
-        item[startKey] = _editorMapTimeAcrossRemovedGaps(start, gaps);
-        item[endKey] = Math.max(item[startKey], _editorMapTimeAcrossRemovedGaps(end, gaps));
-    };
-
     if (gaps.length) {
-        (_editor.audioSegments || []).forEach((segment) => shiftWindow(segment, "start", "end"));
-        (_editor.mediaLayers || []).forEach((layer) => shiftWindow(layer, "startTime", "endTime"));
-        (_editor.texts || []).forEach((item) => shiftWindow(item, "startTime", "endTime"));
-        (_editor.subtitles || []).forEach((item) => shiftWindow(item, "startTime", "endTime"));
-        (_editor.stickers || []).forEach((item) => shiftWindow(item, "startTime", "endTime"));
+        _editorCollapseTimelineItemsByGaps(gaps, {
+            includeAudio: true,
+        });
     }
 
     const recalculatedRanges = _editorCollectNonBaseTimelineRanges();
@@ -40630,6 +40669,14 @@ function _editorDeleteSelectedClip() {
     const selKind = _editor.selectedClip.kind;
     const selId = _editor.selectedClip.id;
     const selTrack = _editor.selectedClip.track || "video";
+    const removedTimelineWindows = [];
+    const pushRemovedTimelineWindow = (start, end) => {
+        const safeStart = Math.max(0, Number(start || 0));
+        const safeEnd = Math.max(safeStart, Number(end || 0));
+        if (safeEnd - safeStart >= 0.02) {
+            removedTimelineWindows.push([safeStart, safeEnd]);
+        }
+    };
     if (selKind === "segment") {
         const trackSegments = _editorGetSegments(selTrack);
         const segmentCount = _editorIsAudioTrack(selTrack) ? trackSegments.length : _editor.videoSegments.length;
@@ -40671,6 +40718,10 @@ function _editorDeleteSelectedClip() {
     _editorSaveState();
 
     if (selKind === "segment") {
+        const removedSegment = _editorFindSegment(selTrack, selId);
+        if (removedSegment && _editorIsVideoTrack(selTrack)) {
+            pushRemovedTimelineWindow(removedSegment.start, removedSegment.end);
+        }
         const next = _editorGetSegments(selTrack).filter(seg => String(seg.id) !== selId);
         _editorSetSegments(selTrack, next);
         _editorSortSegments(selTrack);
@@ -40687,6 +40738,11 @@ function _editorDeleteSelectedClip() {
     } else if (selKind === "sticker") {
         _editor.stickers = _editor.stickers.filter(s => String(s.id) !== selId);
     } else if (selKind === "media-layer") {
+        const removedLayer = _editorGetMediaLayerById(selId);
+        const normalizedRemovedLayer = removedLayer ? _editorNormalizeMediaLayer(removedLayer) : null;
+        if (normalizedRemovedLayer && String(normalizedRemovedLayer.layoutMode || "") === "track-sequence") {
+            pushRemovedTimelineWindow(normalizedRemovedLayer.startTime, normalizedRemovedLayer.endTime);
+        }
         _editor.mediaLayers = _editor.mediaLayers.filter(layer => String(layer.id) !== selId);
         _editor.transitions = (_editor.transitions || []).filter((transition) => String(transition?.fromId || "") !== selId && String(transition?.toId || "") !== selId);
     } else if (selKind === "transition") {
@@ -40700,7 +40756,11 @@ function _editorDeleteSelectedClip() {
 
     if (_editor.hideBaseVideoTrack) {
         _editorCollapseHiddenBaseTimelineGaps();
+    } else if (removedTimelineWindows.length) {
+        _editorCollapseTimelineItemsByGaps(removedTimelineWindows);
     }
+
+    _editor.timelineTime = Math.max(0, Math.min(Number(_editor.timelineTime || 0), _editorGetTimelineDuration()));
 
     _editor.selectedClip = { kind: "", id: "", track: "" };
     _editorRenderProps();
