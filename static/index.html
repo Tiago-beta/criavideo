@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260523-03">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260523-04">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 537;
+        var REQUIRED_VER = 538;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2393,37 +2393,36 @@
                     <div id="create-live-session" class="create-live-session" hidden>
                         <div class="create-live-session-shell">
                             <div class="create-live-session-head">
-                                <div>
-                                    <span id="create-live-session-kicker" class="create-live-session-kicker">Criar cena a cena</span>
-                                    <h3 id="create-live-session-title" class="create-live-session-title">A geracao continua neste modal</h3>
-                                    <p id="create-live-session-meta" class="create-live-session-meta">As cenas e os frames retornados aparecem aqui sem fechar o Criar.</p>
+                                <div class="create-live-session-head-copy">
+                                    <span id="create-live-session-kicker" class="create-live-session-kicker">REALISTA</span>
+                                    <h3 id="create-live-session-title" class="create-live-session-title">Cena 1</h3>
+                                    <p id="create-live-session-meta" class="create-live-session-meta" hidden></p>
                                 </div>
                                 <div class="create-live-session-head-actions">
                                     <button class="btn btn-secondary btn-sm" id="create-live-session-refresh-btn" type="button" onclick="refreshCreateLiveSession()">Atualizar</button>
-                                    <button class="btn btn-primary btn-sm" id="create-live-session-editor-btn" type="button" onclick="createSessionOpenInEditor()" hidden>Finalizar video</button>
                                 </div>
                             </div>
 
                             <div id="create-live-session-status" class="similar-status create-live-session-status" hidden></div>
 
                             <div id="create-live-session-source-wrap" class="create-live-session-section" hidden>
-                                <div class="create-live-session-section-head">
-                                    <div>
-                                        <strong>Referencias carregadas</strong>
-                                        <span>As imagens e o video enviados ficam grandes aqui enquanto a geracao roda.</span>
-                                    </div>
+                                <div class="create-live-session-section-head create-live-session-section-head--compact">
+                                    <strong>Referência</strong>
                                 </div>
-                                <div id="create-live-session-source-list" class="create-live-session-media-grid"></div>
+                                <div id="create-live-session-source-list" class="create-live-session-source-list"></div>
                             </div>
 
                             <div id="create-live-session-scenes-wrap" class="create-live-session-section" hidden>
-                                <div class="create-live-session-section-head">
-                                    <div>
-                                        <strong>Cenas geradas aqui</strong>
-                                        <span id="create-live-session-scenes-meta">As cenas vao aparecendo no proprio modal.</span>
-                                    </div>
+                                <div class="create-live-session-section-head create-live-session-section-head--compact">
+                                    <strong id="create-live-session-scenes-meta">Cenas</strong>
                                 </div>
                                 <div id="create-live-session-scenes-list" class="similar-scenes-list create-live-session-scenes-list"></div>
+                            </div>
+
+                            <div id="create-live-session-next-wrap" class="create-live-session-section" hidden></div>
+
+                            <div id="create-live-session-footer" class="create-live-session-footer" hidden>
+                                <button class="btn btn-primary" id="create-live-session-editor-btn" type="button" onclick="createSessionOpenInEditor()" hidden>Finalizar video</button>
                             </div>
                         </div>
                     </div>
@@ -4531,8 +4530,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260523-03"></script>
-    <script src="/video/static/pwa.js?v=20260523-03"></script>
+    <script src="/video/static/app.js?v=20260523-04"></script>
+    <script src="/video/static/pwa.js?v=20260523-04"></script>
 </body>
 </html>
 

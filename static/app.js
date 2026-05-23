@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v537 loaded");
+console.log("[CriaVideo] app.js v538 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4289,6 +4289,11 @@ function _createLiveSessionDefaultState() {
         returnFrameEnabled: true,
         useLastImageAsFinalFrame: false,
         sourceItems: [],
+        sceneProjects: [],
+        continuationConfig: null,
+        nextScenePrompt: "",
+        nextSceneBusy: false,
+        nextSceneError: "",
         pollingTimer: null,
         lastProjectSnapshot: null,
         openingEditor: false,
@@ -6710,6 +6715,8 @@ function _clearCreateLiveSessionDom() {
     const sourceList = document.getElementById("create-live-session-source-list");
     const scenesWrap = document.getElementById("create-live-session-scenes-wrap");
     const scenesList = document.getElementById("create-live-session-scenes-list");
+    const nextWrap = document.getElementById("create-live-session-next-wrap");
+    const footerEl = document.getElementById("create-live-session-footer");
     const titleEl = document.getElementById("create-live-session-title");
     const metaEl = document.getElementById("create-live-session-meta");
     const kickerEl = document.getElementById("create-live-session-kicker");
@@ -6725,10 +6732,18 @@ function _clearCreateLiveSessionDom() {
     if (sourceList) sourceList.innerHTML = "";
     if (scenesWrap) scenesWrap.hidden = true;
     if (scenesList) scenesList.innerHTML = "";
-    if (titleEl) titleEl.textContent = "A geracao continua neste modal";
-    if (metaEl) metaEl.textContent = "As cenas e os frames retornados aparecem aqui sem fechar o Criar.";
-    if (kickerEl) kickerEl.textContent = "Criar cena a cena";
-    if (scenesMetaEl) scenesMetaEl.textContent = "As cenas vao aparecendo no proprio modal.";
+    if (nextWrap) {
+        nextWrap.hidden = true;
+        nextWrap.innerHTML = "";
+    }
+    if (footerEl) footerEl.hidden = true;
+    if (titleEl) titleEl.textContent = "Cena 1";
+    if (metaEl) {
+        metaEl.hidden = true;
+        metaEl.textContent = "";
+    }
+    if (kickerEl) kickerEl.textContent = "REALISTA";
+    if (scenesMetaEl) scenesMetaEl.textContent = "Cenas";
     if (editorBtn) {
         editorBtn.hidden = true;
         editorBtn.disabled = false;
@@ -6835,6 +6850,274 @@ function _setCreateLiveSessionStatus(message, kind = "running", options = {}) {
     statusEl.appendChild(progressEl);
 }
 
+function _getCreateLiveSceneProjects() {
+    return Array.isArray(createLiveSessionState.sceneProjects) ? createLiveSessionState.sceneProjects : [];
+}
+
+function _findCreateLiveSceneIndexByProjectId(projectId) {
+    const resolvedProjectId = Number(projectId || 0);
+    if (!(resolvedProjectId > 0)) {
+        return -1;
+    }
+    return _getCreateLiveSceneProjects().findIndex((item) => Number(item?.projectId || 0) === resolvedProjectId);
+}
+
+function _getCreateLiveLastSceneProject() {
+    const sceneProjects = _getCreateLiveSceneProjects();
+    return sceneProjects.length ? sceneProjects[sceneProjects.length - 1] : null;
+}
+
+function _isCreateLiveSceneItemActive(sceneItem) {
+    return _isCreateLiveProjectActive({
+        status: sceneItem?.status,
+        progress: sceneItem?.progress,
+    });
+}
+
+function _getCreateLivePreferredSourcePreviewUrl(sourceItems = createLiveSessionState.sourceItems) {
+    const items = Array.isArray(sourceItems) ? sourceItems : [];
+    const imageItem = items.find((item) => String(item?.kind || "").trim() === "image" && String(item?.url || "").trim());
+    if (imageItem?.url) {
+        return String(imageItem.url || "").trim();
+    }
+    return "";
+}
+
+function _formatCreateLiveSceneDuration(sceneItem) {
+    const duration = Number(sceneItem?.duration || 0);
+    if (duration > 0.05) {
+        return `${duration >= 10 ? duration.toFixed(0) : duration.toFixed(1)}s`;
+    }
+    return "";
+}
+
+function _getCreateLiveSceneStatusLabel(sceneItem) {
+    if (!sceneItem) {
+        return "Pronta";
+    }
+    const status = String(sceneItem.status || "").trim().toLowerCase();
+    if (status === "failed") {
+        return "Falhou";
+    }
+    if (sceneItem.returnedFrameUploadId) {
+        return "Pronta";
+    }
+    if (sceneItem.extractingFrame) {
+        return "Frame final";
+    }
+    if (_isCreateLiveSceneItemActive(sceneItem)) {
+        return `${Math.max(4, Math.min(99, Number(sceneItem.progress || 0) || 4))}%`;
+    }
+    if (String(sceneItem.videoUrl || "").trim()) {
+        return "Vídeo pronto";
+    }
+    return "Processando";
+}
+
+function _buildCreateLiveFrameGalleryItem(options = {}) {
+    const previewAspectClass = options.previewAspectClass || _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
+    const badge = workflowEscapeHtml(String(options.badge || "Frame").trim() || "Frame");
+    const url = String(options.url || "").trim();
+    const alt = workflowEscapeHtml(String(options.alt || badge).trim() || badge);
+    const placeholderTitle = workflowEscapeHtml(String(options.placeholderTitle || badge).trim() || badge);
+    const placeholderCopy = workflowEscapeHtml(String(options.placeholderCopy || "").trim());
+    const busy = !!options.busy;
+    const busyTitle = workflowEscapeHtml(String(options.busyTitle || "Processando").trim() || "Processando");
+    const busySubtitle = workflowEscapeHtml(String(options.busySubtitle || "").trim());
+    const contentMarkup = url
+        ? `<img src="${workflowEscapeHtml(url)}" alt="${alt}" loading="lazy">`
+        : `
+            <div class="similar-scene-clip-placeholder">
+                <strong>${placeholderTitle}</strong>
+                ${placeholderCopy ? `<small>${placeholderCopy}</small>` : ""}
+            </div>
+        `;
+    const busyMarkup = busy
+        ? `
+            <div class="similar-scene-clip-busy-overlay" role="status" aria-live="polite">
+                <span class="similar-scene-clip-spinner" aria-hidden="true"></span>
+                <div class="similar-scene-clip-busy-copy">
+                    <strong>${busyTitle}</strong>
+                    ${busySubtitle ? `<span>${busySubtitle}</span>` : ""}
+                </div>
+            </div>
+        `
+        : "";
+
+    return `
+        <article class="similar-frame-gallery-item${busy ? " is-busy" : ""}">
+            <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${busy ? " is-generating-clip" : ""}">
+                ${contentMarkup}
+                <span class="similar-frame-gallery-badge">${badge}</span>
+                ${busyMarkup}
+            </div>
+        </article>
+    `;
+}
+
+function _buildCreateLiveClipColumn(options = {}) {
+    const previewAspectClass = options.previewAspectClass || _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
+    const videoUrl = String(options.url || "").trim();
+    const posterUrl = String(options.posterUrl || "").trim();
+    const placeholderTitle = workflowEscapeHtml(String(options.placeholderTitle || "Vídeo").trim() || "Vídeo");
+    const placeholderCopy = workflowEscapeHtml(String(options.placeholderCopy || "Aguardando.").trim() || "Aguardando.");
+    const busy = !!options.busy && !videoUrl;
+    const busyTitle = workflowEscapeHtml(String(options.busyTitle || "Gerando cena").trim() || "Gerando cena");
+    const busySubtitle = workflowEscapeHtml(String(options.busySubtitle || "").trim());
+    const clipMarkup = videoUrl
+        ? `<video src="${workflowEscapeHtml(videoUrl)}" ${posterUrl ? `poster="${workflowEscapeHtml(posterUrl)}"` : ""} controls preload="metadata" playsinline></video>`
+        : `
+            <div class="similar-scene-clip-placeholder" role="status" aria-live="polite">
+                <span class="similar-scene-clip-spinner" aria-hidden="true"></span>
+                <strong>${placeholderTitle}</strong>
+                <small>${placeholderCopy}</small>
+            </div>
+        `;
+
+    return `
+        <aside class="similar-scene-clip-column">
+            <div class="similar-scene-clip-card similar-preview-box ${previewAspectClass}${videoUrl ? "" : " is-generating"}">
+                ${clipMarkup}
+                ${busy
+                    ? `
+                        <div class="similar-scene-clip-busy-overlay" role="status" aria-live="polite">
+                            <span class="similar-scene-clip-spinner" aria-hidden="true"></span>
+                            <div class="similar-scene-clip-busy-copy">
+                                <strong>${busyTitle}</strong>
+                                ${busySubtitle ? `<span>${busySubtitle}</span>` : ""}
+                            </div>
+                        </div>
+                    `
+                    : ""}
+            </div>
+        </aside>
+    `;
+}
+
+function _buildCreateLiveReferencePanel(options = {}) {
+    const title = workflowEscapeHtml(String(options.title || "Cena").trim() || "Cena");
+    const subtitle = workflowEscapeHtml(String(options.subtitle || "").trim());
+    const frameItems = Array.isArray(options.frameItems) ? options.frameItems.filter(Boolean) : [];
+    const clipMarkup = String(options.clipMarkup || "").trim();
+    const galleryClass = frameItems.length <= 1 || options.forceSingle
+        ? "similar-reference-frame-gallery similar-reference-frame-gallery-single"
+        : "similar-reference-frame-gallery";
+    const framesMarkup = frameItems.length
+        ? `<div class="${galleryClass}">${frameItems.join("")}</div>`
+        : '<div class="create-live-session-empty create-live-session-empty--compact">Aguardando.</div>';
+
+    return `
+        <section class="similar-reference-frame-panel create-live-session-panel">
+            <div class="similar-reference-frame-head">
+                <div>
+                    <strong>${title}</strong>
+                    ${subtitle ? `<span>${subtitle}</span>` : ""}
+                </div>
+            </div>
+            <div class="similar-reference-frame-body${clipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
+                <div class="similar-reference-frame-primary-column">
+                    ${framesMarkup}
+                </div>
+                ${clipMarkup}
+            </div>
+            ${options.afterMarkup || ""}
+        </section>
+    `;
+}
+
+function _upsertCreateLiveSceneProject(project, options = {}) {
+    const projectId = Number(project?.id || options.projectId || 0);
+    if (!(projectId > 0)) {
+        return null;
+    }
+
+    const sceneProjects = _getCreateLiveSceneProjects();
+    const existingIndex = _findCreateLiveSceneIndexByProjectId(projectId);
+    const existing = existingIndex >= 0 ? sceneProjects[existingIndex] : null;
+    const latestRender = _pickLatestAvailableRender(Array.isArray(project?.renders) ? project.renders : []);
+    const sceneNumber = Number(existing?.sceneNumber || options.sceneNumber || sceneProjects.length + 1) || 1;
+    const nextScene = {
+        sceneNumber,
+        projectId,
+        title: String(options.title ?? existing?.title ?? project?.title ?? `Cena ${sceneNumber}`).trim() || `Cena ${sceneNumber}`,
+        promptText: String(options.promptText ?? existing?.promptText ?? "").trim(),
+        sourceFrameUrl: String(options.sourceFrameUrl ?? existing?.sourceFrameUrl ?? "").trim(),
+        sourceFrameUploadId: String(options.sourceFrameUploadId ?? existing?.sourceFrameUploadId ?? "").trim(),
+        status: String(project?.status || existing?.status || "queued").trim().toLowerCase(),
+        progress: Math.max(0, Math.min(100, Number(project?.progress ?? existing?.progress ?? 0) || 0)),
+        errorMessage: String(project?.error_message || existing?.errorMessage || "").trim(),
+        videoUrl: String(latestRender?.video_url || existing?.videoUrl || "").trim(),
+        thumbnailUrl: String(latestRender?.thumbnail_url || existing?.thumbnailUrl || "").trim(),
+        duration: Number(latestRender?.duration || existing?.duration || 0),
+        returnedFrameUrl: String(options.returnedFrameUrl ?? existing?.returnedFrameUrl ?? "").trim(),
+        returnedFrameUploadId: String(options.returnedFrameUploadId ?? existing?.returnedFrameUploadId ?? "").trim(),
+        extractingFrame: !!(options.extractingFrame ?? existing?.extractingFrame),
+        extractError: String(options.extractError ?? existing?.extractError ?? "").trim(),
+        snapshot: project || existing?.snapshot || null,
+    };
+
+    if (existingIndex >= 0) {
+        sceneProjects.splice(existingIndex, 1, nextScene);
+    } else {
+        sceneProjects.push(nextScene);
+    }
+    return nextScene;
+}
+
+function _updateCreateLiveSceneProject(projectId, patch = {}) {
+    const sceneIndex = _findCreateLiveSceneIndexByProjectId(projectId);
+    if (sceneIndex < 0) {
+        return null;
+    }
+    const sceneProjects = _getCreateLiveSceneProjects();
+    const nextScene = {
+        ...sceneProjects[sceneIndex],
+        ...patch,
+    };
+    sceneProjects.splice(sceneIndex, 1, nextScene);
+    return nextScene;
+}
+
+async function _ensureCreateLiveSceneContinuationFrame(sceneItem) {
+    if (!createLiveSessionState.returnFrameEnabled || !sceneItem || !(Number(sceneItem.projectId || 0) > 0)) {
+        return sceneItem;
+    }
+    if (sceneItem.returnedFrameUploadId || sceneItem.extractingFrame) {
+        return sceneItem;
+    }
+
+    _updateCreateLiveSceneProject(sceneItem.projectId, {
+        extractingFrame: true,
+        extractError: "",
+    });
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+
+    try {
+        const lastFrame = await api(`/video/projects/${sceneItem.projectId}/extract-last-frame`, {
+            method: "POST",
+        });
+        const updated = _updateCreateLiveSceneProject(sceneItem.projectId, {
+            extractingFrame: false,
+            returnedFrameUploadId: String(lastFrame?.upload_id || "").trim(),
+            returnedFrameUrl: String(lastFrame?.image_url || "").trim(),
+            extractError: "",
+        });
+        _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+        if (updated?.returnedFrameUploadId) {
+            showToast(`Cena ${updated.sceneNumber}: quadro final pronto.`, "success");
+        }
+        return updated;
+    } catch (error) {
+        const updated = _updateCreateLiveSceneProject(sceneItem.projectId, {
+            extractingFrame: false,
+            extractError: String(error?.message || "Nao foi possivel ler o quadro final.").trim(),
+        });
+        _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+        showToast(`Cena ${updated?.sceneNumber || sceneItem.sceneNumber}: ${updated?.extractError || "Nao foi possivel ler o quadro final."}`, "error");
+        return updated;
+    }
+}
+
 function _renderCreateLiveSessionSourceItems() {
     const wrap = document.getElementById("create-live-session-source-wrap");
     const list = document.getElementById("create-live-session-source-list");
@@ -6847,183 +7130,283 @@ function _renderCreateLiveSessionSourceItems() {
         return;
     }
 
-    const aspectRatioCss = _getCreateLiveAspectRatioCss(createLiveSessionState.aspectRatio);
-    list.innerHTML = sourceItems.map((item, index) => {
+    const previewAspectClass = _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
+    const frameItems = [];
+    let clipMarkup = "";
+    const noteCards = [];
+
+    sourceItems.forEach((item, index) => {
         const kind = String(item?.kind || "image").trim();
-        const title = workflowEscapeHtml(String(item?.label || item?.name || `Referencia ${index + 1}`));
-        const subtitle = workflowEscapeHtml(String(item?.name || "").trim());
-        const note = workflowEscapeHtml(String(item?.note || "").trim());
-        let mediaHtml = `<div class="create-live-session-media-note">${note || "Referencia carregada para esta criacao."}</div>`;
-        let noteClass = " is-note";
+        const label = String(item?.label || item?.name || `Referencia ${index + 1}`).trim() || `Referencia ${index + 1}`;
         if (kind === "image" && item?.url) {
-            mediaHtml = `<img src="${workflowEscapeHtml(item.url)}" alt="${title}">`;
-            noteClass = "";
-        } else if (kind === "video" && item?.url) {
-            mediaHtml = `<video src="${workflowEscapeHtml(item.url)}" controls playsinline preload="metadata"></video>`;
-            noteClass = "";
+            frameItems.push(_buildCreateLiveFrameGalleryItem({
+                previewAspectClass,
+                badge: index === 0 ? "Entrada" : `Base ${index + 1}`,
+                url: String(item.url || "").trim(),
+                alt: label,
+            }));
+            return;
         }
-        return `
-            <div class="create-live-session-media-card">
-                <div class="create-live-session-media-card-head">
-                    <strong>${title}</strong>
-                    ${subtitle ? `<span>${subtitle}</span>` : ""}
-                </div>
-                <div class="create-live-session-media-frame${noteClass}" style="--create-session-aspect:${aspectRatioCss};">
-                    ${mediaHtml}
-                </div>
+        if (kind === "video" && item?.url && !clipMarkup) {
+            clipMarkup = _buildCreateLiveClipColumn({
+                previewAspectClass,
+                url: String(item.url || "").trim(),
+                placeholderTitle: label,
+            });
+            return;
+        }
+
+        const note = workflowEscapeHtml(String(item?.note || item?.name || "Pronto para usar.").trim() || "Pronto para usar.");
+        noteCards.push(`
+            <div class="create-live-session-note-card">
+                <strong>${workflowEscapeHtml(label)}</strong>
+                <span>${note}</span>
             </div>
-        `;
-    }).join("");
+        `);
+    });
+
+    list.innerHTML = _buildCreateLiveReferencePanel({
+        title: "Referência",
+        frameItems,
+        clipMarkup,
+        forceSingle: frameItems.length <= 1,
+        afterMarkup: noteCards.length
+            ? `<div class="create-live-session-note-grid">${noteCards.join("")}</div>`
+            : "",
+    });
     wrap.hidden = false;
 }
 
-function _formatCreateLiveSceneDuration(scene) {
-    const detected = Number(scene?.detected_duration_seconds || 0);
-    if (detected > 0.05) {
-        return `${detected >= 10 ? detected.toFixed(0) : detected.toFixed(1)}s`;
-    }
-    const start = Number(scene?.start_time || 0);
-    const end = Number(scene?.end_time || 0);
-    if (end > start) {
-        const total = end - start;
-        return `${total >= 10 ? total.toFixed(0) : total.toFixed(1)}s`;
-    }
-    return "";
-}
+function _buildCreateLiveSceneCard(sceneItem) {
+    const sceneNumber = Number(sceneItem?.sceneNumber || 0) || 1;
+    const previewAspectClass = _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
+    const durationLabel = _formatCreateLiveSceneDuration(sceneItem);
+    const statusLabel = _getCreateLiveSceneStatusLabel(sceneItem);
+    const inputFrameUrl = String(sceneItem?.sourceFrameUrl || "").trim() || (sceneNumber === 1 ? _getCreateLivePreferredSourcePreviewUrl() : "");
+    const outputFrameUrl = String(sceneItem?.returnedFrameUrl || "").trim();
+    const frameItems = [];
 
-function _buildCreateLiveSessionMediaCard(options = {}) {
-    const kind = String(options.kind || "image").trim();
-    const url = String(options.url || "").trim();
-    const title = workflowEscapeHtml(String(options.title || "Midia").trim() || "Midia");
-    const subtitle = workflowEscapeHtml(String(options.subtitle || "").trim());
-    const emptyCopy = workflowEscapeHtml(String(options.emptyCopy || "Aguardando processamento.").trim() || "Aguardando processamento.");
-    const busyTitle = workflowEscapeHtml(String(options.busyTitle || "Gerando video...").trim() || "Gerando video...");
-    const busySubtitle = workflowEscapeHtml(String(options.busySubtitle || "").trim());
-    const aspectRatioCss = _getCreateLiveAspectRatioCss(options.aspectRatio || createLiveSessionState.aspectRatio);
-
-    let mediaHtml = `<div class="similar-scene-clip-placeholder"><strong>${title}</strong><small>${emptyCopy}</small></div>`;
-    let frameClass = " is-note";
-    if (kind === "image" && url) {
-        mediaHtml = `<img src="${workflowEscapeHtml(url)}" alt="${title}">`;
-        frameClass = "";
-    } else if (kind === "video" && url) {
-        mediaHtml = `<video src="${workflowEscapeHtml(url)}" controls playsinline preload="metadata"></video>`;
-        frameClass = "";
+    if (inputFrameUrl) {
+        frameItems.push(_buildCreateLiveFrameGalleryItem({
+            previewAspectClass,
+            badge: "Entrada",
+            url: inputFrameUrl,
+            alt: `Cena ${sceneNumber} entrada`,
+        }));
     }
 
-    const busyHtml = options.busy
-        ? `
-            <div class="similar-scene-clip-busy-overlay">
-                <div class="similar-scene-clip-spinner"></div>
-                <div class="similar-scene-clip-busy-copy">
-                    <strong>${busyTitle}</strong>
-                    ${busySubtitle ? `<span>${busySubtitle}</span>` : ""}
-                </div>
-            </div>
-        `
-        : "";
+    if (createLiveSessionState.returnFrameEnabled || outputFrameUrl || sceneItem?.extractingFrame) {
+        frameItems.push(_buildCreateLiveFrameGalleryItem({
+            previewAspectClass,
+            badge: "Saída",
+            url: outputFrameUrl,
+            alt: `Cena ${sceneNumber} saída`,
+            busy: !!sceneItem?.extractingFrame,
+            busyTitle: "Lendo frame",
+            busySubtitle: "Próxima cena",
+            placeholderTitle: sceneItem?.extractingFrame ? "Lendo frame" : "Saída",
+            placeholderCopy: sceneItem?.extractingFrame
+                ? "O quadro final entra aqui automaticamente."
+                : "A próxima cena abre daqui.",
+        }));
+    }
+
+    if (!frameItems.length) {
+        frameItems.push(_buildCreateLiveFrameGalleryItem({
+            previewAspectClass,
+            badge: "Cena",
+            placeholderTitle: `Cena ${sceneNumber}`,
+            placeholderCopy: "A referência aparece aqui.",
+        }));
+    }
+
+    const isActive = _isCreateLiveSceneItemActive(sceneItem);
+    const isFailed = String(sceneItem?.status || "").trim().toLowerCase() === "failed";
+    const clipMarkup = _buildCreateLiveClipColumn({
+        previewAspectClass,
+        url: String(sceneItem?.videoUrl || "").trim(),
+        posterUrl: String(sceneItem?.thumbnailUrl || "").trim(),
+        busy: isActive,
+        busyTitle: "Gerando cena",
+        busySubtitle: statusLabel,
+        placeholderTitle: isFailed ? "Falhou" : "Vídeo",
+        placeholderCopy: isFailed
+            ? (sceneItem?.errorMessage || "Tente gerar novamente.")
+            : (isActive ? "A cena aparece aqui assim que terminar." : "Aguardando vídeo."),
+    });
+    const panelSubtitle = outputFrameUrl
+        ? "Entrada, vídeo e retorno prontos."
+        : sceneItem?.extractingFrame
+            ? "Vídeo pronto. Lendo o quadro final."
+            : isActive
+                ? "A cena continua neste modal."
+                : isFailed
+                    ? "Revise o erro abaixo."
+                    : "Vídeo pronto.";
 
     return `
-        <div class="create-live-session-media-card">
-            <div class="create-live-session-media-card-head">
-                <strong>${title}</strong>
-                ${subtitle ? `<span>${subtitle}</span>` : ""}
-            </div>
-            <div class="create-live-session-media-frame${frameClass}" style="--create-session-aspect:${aspectRatioCss};">
-                ${mediaHtml}
-                ${busyHtml}
-            </div>
-        </div>
-    `;
-}
-
-function _buildCreateLiveSceneCard(scene, project) {
-    const sceneNumber = Number(scene?.scene_index || 0) + 1;
-    const scenePrompt = String(scene?.prompt || "").trim();
-    const durationLabel = _formatCreateLiveSceneDuration(scene);
-    const cards = [];
-    const projectBusy = _isCreateLiveProjectActive(project);
-    const initialFrameUrl = String(scene?.reference_frame_url || "").trim();
-    const returnedFrameUrl = String(scene?.reference_frame_end_url || "").trim();
-    const imageUrl = String(scene?.image_url || "").trim();
-    const clipUrl = String(scene?.clip_url || "").trim();
-
-    if (imageUrl) {
-        cards.push(_buildCreateLiveSessionMediaCard({
-            kind: "image",
-            url: imageUrl,
-            title: scene?.is_user_uploaded ? "Imagem enviada" : "Base da cena",
-            subtitle: durationLabel || "Imagem usada nesta etapa",
-        }));
-    } else if (initialFrameUrl) {
-        cards.push(_buildCreateLiveSessionMediaCard({
-            kind: "image",
-            url: initialFrameUrl,
-            title: "Quadro inicial",
-            subtitle: "Frame usado para iniciar a cena",
-        }));
-    }
-
-    if (createLiveSessionState.returnFrameEnabled && returnedFrameUrl) {
-        cards.push(_buildCreateLiveSessionMediaCard({
-            kind: "image",
-            url: returnedFrameUrl,
-            title: "Frame retornado",
-            subtitle: "Pronto para abrir a proxima cena",
-        }));
-    }
-
-    cards.push(_buildCreateLiveSessionMediaCard({
-        kind: "video",
-        url: clipUrl,
-        title: clipUrl ? "Video da cena" : "Video em geracao",
-        subtitle: clipUrl ? (durationLabel || "Cena pronta para revisar") : "A IA continua gerando neste modal",
-        busy: !clipUrl && projectBusy,
-        busyTitle: "Gerando cena...",
-        busySubtitle: `${Math.max(4, Math.min(99, Number(project?.progress || 0) || 4))}%`,
-        emptyCopy: projectBusy
-            ? "A cena ainda esta processando e vai aparecer aqui automaticamente."
-            : "Esta cena entrou no render final do projeto.",
-    }));
-
-    const promptCopy = workflowEscapeHtml(scenePrompt.length > 280 ? `${scenePrompt.slice(0, 277)}...` : (scenePrompt || "O prompt salvo desta cena aparece aqui quando disponivel."));
-    return `
-        <article class="similar-scene-card create-live-session-scene-card">
+        <article class="similar-scene-card create-live-session-scene-card${isActive ? " is-active" : ""}">
             <div class="similar-scene-head">
                 <strong>Cena ${sceneNumber}</strong>
-                <span class="similar-scene-time">${workflowEscapeHtml(durationLabel || "Pronta para acompanhar")}</span>
+                <span class="similar-scene-time">${workflowEscapeHtml(durationLabel || statusLabel)}</span>
             </div>
-            <p class="create-live-session-scene-copy"><strong>Prompt</strong>${promptCopy}</p>
-            <div class="create-live-session-scene-grid">
-                ${cards.join("")}
-            </div>
+            ${_buildCreateLiveReferencePanel({
+                title: `Cena ${sceneNumber}`,
+                subtitle: panelSubtitle,
+                frameItems,
+                clipMarkup,
+                afterMarkup: sceneItem?.errorMessage
+                    ? `<p class="create-live-session-next-error">${workflowEscapeHtml(sceneItem.errorMessage)}</p>`
+                    : sceneItem?.extractError
+                        ? `<p class="create-live-session-next-error">${workflowEscapeHtml(sceneItem.extractError)}</p>`
+                        : "",
+            })}
         </article>
     `;
 }
 
-function _buildCreateLiveFinalRenderCard(render) {
-    const duration = Number(render?.duration || 0);
-    const durationLabel = duration > 0.05
-        ? `${duration >= 10 ? duration.toFixed(0) : duration.toFixed(1)}s`
-        : "Video completo do projeto";
+function _buildCreateLiveNextSceneCard() {
+    const previousScene = _getCreateLiveLastSceneProject();
+    const sceneNumber = _getCreateLiveSceneProjects().length + 1;
+    const previewAspectClass = _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
+    const hasContinuationFrame = !!String(previousScene?.returnedFrameUploadId || "").trim();
+    const waitingCopy = previousScene?.extractingFrame
+        ? "Lendo o quadro final da cena anterior."
+        : _isCreateLiveSceneItemActive(previousScene)
+            ? "O quadro final entra aqui quando a cena terminar."
+            : (previousScene?.extractError || "O próximo quadro aparece aqui automaticamente.");
+    const frameItems = [
+        _buildCreateLiveFrameGalleryItem({
+            previewAspectClass,
+            badge: "Entrada",
+            url: String(previousScene?.returnedFrameUrl || "").trim(),
+            alt: `Cena ${sceneNumber} entrada`,
+            busy: !!previousScene?.extractingFrame,
+            busyTitle: "Aguardando",
+            busySubtitle: `Cena ${sceneNumber}`,
+            placeholderTitle: "Aguardando",
+            placeholderCopy: waitingCopy,
+        }),
+    ];
+    const promptValue = workflowEscapeHtml(String(createLiveSessionState.nextScenePrompt || "").trim());
+    const nextSceneDisabled = !hasContinuationFrame || createLiveSessionState.nextSceneBusy;
+
     return `
-        <article class="similar-scene-card create-live-session-scene-card create-live-session-final-card">
+        <article class="similar-scene-card create-live-session-next-card">
             <div class="similar-scene-head">
-                <strong>Video pronto</strong>
-                <span class="similar-scene-time">${workflowEscapeHtml(durationLabel)}</span>
+                <strong>Cena ${sceneNumber}</strong>
+                <span class="similar-scene-time">${createLiveSessionState.nextSceneBusy ? "Gerando" : (hasContinuationFrame ? "Pronta" : "Aguardando")}</span>
             </div>
-            <p class="create-live-session-scene-copy"><strong>Render final</strong>O video concluido aparece aqui antes de seguir para o Editor.</p>
-            <div class="create-live-session-scene-grid">
-                ${_buildCreateLiveSessionMediaCard({
-                    kind: "video",
-                    url: String(render?.video_url || "").trim(),
-                    title: "Render final",
-                    subtitle: "Use Finalizar video para abrir no Editor",
-                    emptyCopy: "O render final vai aparecer aqui quando terminar.",
-                })}
-            </div>
+            ${_buildCreateLiveReferencePanel({
+                title: `Cena ${sceneNumber}`,
+                subtitle: hasContinuationFrame ? "Escreva a próxima cena." : "A base da próxima cena aparece aqui.",
+                frameItems,
+                forceSingle: true,
+                afterMarkup: `
+                    <div class="similar-reference-frame-editor create-live-session-next-editor">
+                        <label for="create-live-session-next-prompt">Prompt</label>
+                        <textarea id="create-live-session-next-prompt" class="input similar-reference-frame-editor-input" rows="3" maxlength="1400" placeholder="Descreva a próxima cena." oninput="createLiveSessionSetNextPrompt(this.value)" ${nextSceneDisabled ? "disabled" : ""}>${promptValue}</textarea>
+                        ${createLiveSessionState.nextSceneError
+                            ? `<p class="create-live-session-next-error">${workflowEscapeHtml(createLiveSessionState.nextSceneError)}</p>`
+                            : ""}
+                        <div class="similar-reference-frame-editor-actions similar-reference-frame-create-actions">
+                            <button class="similar-frame-create-btn" type="button" onclick="createLiveSessionGenerateNextScene()" ${nextSceneDisabled ? "disabled" : ""}>${createLiveSessionState.nextSceneBusy ? "Gerando..." : "Gerar próxima cena"}</button>
+                        </div>
+                    </div>
+                `,
+            })}
         </article>
     `;
+}
+
+function createLiveSessionSetNextPrompt(value) {
+    createLiveSessionState.nextScenePrompt = String(value || "");
+    if (createLiveSessionState.nextSceneError) {
+        createLiveSessionState.nextSceneError = "";
+    }
+}
+
+async function createLiveSessionGenerateNextScene() {
+    if (createLiveSessionState.nextSceneBusy) {
+        return;
+    }
+
+    const continuationConfig = createLiveSessionState.continuationConfig;
+    const previousScene = _getCreateLiveLastSceneProject();
+    const sceneNumber = _getCreateLiveSceneProjects().length + 1;
+    const promptEl = document.getElementById("create-live-session-next-prompt");
+    const promptText = String(promptEl?.value || createLiveSessionState.nextScenePrompt || "").trim();
+    if (!continuationConfig?.endpoint || !continuationConfig?.requestBody) {
+        alert("Este fluxo ainda nao tem continuidade automatica.");
+        return;
+    }
+    if (!String(previousScene?.returnedFrameUploadId || "").trim()) {
+        alert("Aguarde o quadro final da cena anterior aparecer.");
+        return;
+    }
+    if (!promptText) {
+        alert(`Descreva a Cena ${sceneNumber}.`);
+        promptEl?.focus();
+        return;
+    }
+
+    createLiveSessionState.nextSceneBusy = true;
+    createLiveSessionState.nextSceneError = "";
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+
+    try {
+        const baseRequest = JSON.parse(JSON.stringify(continuationConfig.requestBody || {}));
+        const sceneTitle = `Cena ${sceneNumber}`;
+        const requestBody = {
+            ...baseRequest,
+            prompt: promptText,
+            title: sceneTitle,
+            image_upload_id: String(previousScene.returnedFrameUploadId || "").trim(),
+            image_upload_ids: [String(previousScene.returnedFrameUploadId || "").trim()],
+            interaction_persona: "none",
+            persona_profile_id: 0,
+            persona_profile_ids: [],
+            disable_persona_reference: true,
+        };
+
+        const response = await api(String(continuationConfig.endpoint || "/video/generate-realistic"), {
+            method: "POST",
+            body: JSON.stringify(requestBody),
+        });
+        const nextProjectId = Number(response?.id || 0) || 0;
+        if (!(nextProjectId > 0)) {
+            throw new Error("Nao foi possivel iniciar a proxima cena.");
+        }
+
+        createLiveSessionState.projectId = nextProjectId;
+        createLiveSessionState.lastProjectSnapshot = null;
+        createLiveSessionState.nextScenePrompt = "";
+        createLiveSessionState.nextSceneBusy = false;
+        _upsertCreateLiveSceneProject({
+            id: nextProjectId,
+            title: sceneTitle,
+            status: "queued",
+            progress: 4,
+            renders: [],
+        }, {
+            sceneNumber,
+            title: sceneTitle,
+            promptText,
+            sourceFrameUrl: String(previousScene.returnedFrameUrl || "").trim(),
+            sourceFrameUploadId: String(previousScene.returnedFrameUploadId || "").trim(),
+        });
+
+        _renderCreateLiveSession();
+        _startCreateLiveSessionPolling();
+        void _refreshCreateLiveSessionProject({ silent: true });
+        void loadProjects();
+        showToast(`${sceneTitle} enviada.`, "success");
+    } catch (error) {
+        createLiveSessionState.nextSceneBusy = false;
+        createLiveSessionState.nextSceneError = String(error?.message || `Nao foi possivel iniciar a Cena ${sceneNumber}.`).trim();
+        _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+        showToast(createLiveSessionState.nextSceneError, "error");
+    }
 }
 
 function _renderCreateLiveSession(project = null) {
@@ -7034,6 +7417,8 @@ function _renderCreateLiveSession(project = null) {
     const scenesWrap = document.getElementById("create-live-session-scenes-wrap");
     const scenesList = document.getElementById("create-live-session-scenes-list");
     const scenesMetaEl = document.getElementById("create-live-session-scenes-meta");
+    const nextWrap = document.getElementById("create-live-session-next-wrap");
+    const footerEl = document.getElementById("create-live-session-footer");
     const editorBtn = document.getElementById("create-live-session-editor-btn");
 
     if (!root) return;
@@ -7042,74 +7427,75 @@ function _renderCreateLiveSession(project = null) {
         return;
     }
 
+    const snapshot = project || createLiveSessionState.lastProjectSnapshot || null;
+    const aspectRatio = String((snapshot?.aspect_ratio || createLiveSessionState.aspectRatio || "9:16")).trim() || "9:16";
+    const sceneProjects = _getCreateLiveSceneProjects();
+    const activeScene = [...sceneProjects].reverse().find((sceneItem) => _isCreateLiveSceneItemActive(sceneItem)) || null;
+    const failedScene = [...sceneProjects].reverse().find((sceneItem) => String(sceneItem?.status || "").trim().toLowerCase() === "failed") || null;
+    const lastScene = _getCreateLiveLastSceneProject();
+    const hasEditorEntry = sceneProjects.some((sceneItem) => String(sceneItem?.videoUrl || "").trim());
+    const shouldShowNextScene = !!(createLiveSessionState.returnFrameEnabled && createLiveSessionState.continuationConfig);
+    const modeLabel = _getCreateLiveModeLabel(createLiveSessionState.mode, createLiveSessionState.videoType);
+
+    createLiveSessionState.aspectRatio = aspectRatio;
     root.hidden = false;
 
-    const snapshot = project || createLiveSessionState.lastProjectSnapshot || null;
-    const modeLabel = _getCreateLiveModeLabel(createLiveSessionState.mode, createLiveSessionState.videoType);
-    const aspectRatio = String((snapshot?.aspect_ratio || createLiveSessionState.aspectRatio || "9:16")).trim() || "9:16";
-    createLiveSessionState.aspectRatio = aspectRatio;
-
     if (kickerEl) kickerEl.textContent = modeLabel;
-    if (titleEl) {
-        titleEl.textContent = String(snapshot?.title || createLiveSessionState.title || "A geracao continua neste modal").trim() || "A geracao continua neste modal";
-    }
+    if (titleEl) titleEl.textContent = `Cena ${Number(activeScene?.sceneNumber || lastScene?.sceneNumber || 1)}`;
     if (metaEl) {
-        const metaParts = [aspectRatio, createLiveSessionState.returnFrameEnabled ? "retorno ligado" : "retorno desligado"];
-        if (createLiveSessionState.useLastImageAsFinalFrame) {
-            metaParts.push("ultima imagem como quadro final");
-        }
-        if (createLiveSessionState.engineLabel) {
-            metaParts.push(createLiveSessionState.engineLabel);
-        }
-        metaEl.textContent = `As cenas, clips e frames ficam aqui no modal. ${metaParts.join(" • ")}.`;
+        metaEl.hidden = true;
+        metaEl.textContent = "";
     }
 
     _renderCreateLiveSessionSourceItems();
 
-    const orderedScenes = _getCreateLiveOrderedScenes(snapshot);
-    const latestRender = _getCreateLiveLatestRender(snapshot);
-    const sceneCards = [];
-    if (latestRender?.video_url) {
-        sceneCards.push(_buildCreateLiveFinalRenderCard(latestRender));
-    }
-    orderedScenes.forEach((scene) => sceneCards.push(_buildCreateLiveSceneCard(scene, snapshot)));
-
     if (scenesWrap) {
-        scenesWrap.hidden = !sceneCards.length;
+        scenesWrap.hidden = !sceneProjects.length;
     }
     if (scenesList) {
-        scenesList.innerHTML = sceneCards.length
-            ? sceneCards.join("")
-            : '<div class="create-live-session-empty">Assim que o projeto responder com cenas ou video, elas aparecem aqui automaticamente.</div>';
+        scenesList.innerHTML = sceneProjects.length
+            ? sceneProjects.map((sceneItem) => _buildCreateLiveSceneCard(sceneItem)).join("")
+            : '<div class="create-live-session-empty">A Cena 1 aparece aqui automaticamente.</div>';
     }
     if (scenesMetaEl) {
-        const clipCount = orderedScenes.filter((scene) => String(scene?.clip_url || "").trim()).length;
-        scenesMetaEl.textContent = orderedScenes.length
-            ? `${orderedScenes.length} cena(s) registradas • ${clipCount} clip(s) pronto(s)`
-            : "Assim que a primeira cena sair, ela aparece aqui no proprio modal.";
+        scenesMetaEl.textContent = sceneProjects.length > 1
+            ? `${sceneProjects.length} cenas`
+            : "Cena 1";
     }
 
+    if (nextWrap) {
+        nextWrap.hidden = !shouldShowNextScene;
+        nextWrap.innerHTML = shouldShowNextScene ? _buildCreateLiveNextSceneCard() : "";
+    }
+
+    if (footerEl) {
+        footerEl.hidden = !hasEditorEntry;
+    }
     if (editorBtn) {
-        const hasEditorEntry = !!latestRender?.video_url || orderedScenes.some((scene) => String(scene?.clip_url || "").trim());
         editorBtn.hidden = !hasEditorEntry;
-        editorBtn.disabled = createLiveSessionState.openingEditor || _isCreateLiveProjectActive(snapshot);
+        editorBtn.disabled = createLiveSessionState.openingEditor || !!activeScene || createLiveSessionState.nextSceneBusy;
         editorBtn.textContent = createLiveSessionState.openingEditor ? "Abrindo editor..." : "Finalizar video";
     }
 
-    if (!snapshot) {
-        _setCreateLiveSessionStatus("Projeto criado. A geracao continua neste modal.", "running", { progress: 6 });
+    if (failedScene) {
+        _setCreateLiveSessionStatus(`Cena ${failedScene.sceneNumber} falhou.`, "error");
         return;
     }
-
-    const status = String(snapshot.status || "").trim().toLowerCase();
-    const progress = Math.max(4, Math.min(100, Number(snapshot.progress || 0) || 4));
-    if (status === "failed") {
-        _setCreateLiveSessionStatus(String(snapshot.error_message || "Falha ao gerar este video.").trim() || "Falha ao gerar este video.", "error");
-    } else if (status === "completed") {
-        _setCreateLiveSessionStatus("Video pronto. Revise as cenas e clique em Finalizar video para abrir no Editor.", "success");
-    } else {
-        _setCreateLiveSessionStatus(`${createLiveSessionState.engineLabel || "IA"} esta gerando seu video sem fechar o modal.`, "running", { progress });
+    if (activeScene) {
+        _setCreateLiveSessionStatus(`Gerando Cena ${activeScene.sceneNumber}.`, "running", {
+            progress: Math.max(4, Math.min(99, Number(activeScene.progress || 0) || 4)),
+        });
+        return;
     }
+    if (lastScene?.extractingFrame) {
+        _setCreateLiveSessionStatus(`Lendo o quadro final da Cena ${lastScene.sceneNumber}.`, "running", { progress: 92 });
+        return;
+    }
+    if (hasEditorEntry) {
+        _setCreateLiveSessionStatus("Cena pronta.", "success");
+        return;
+    }
+    _setCreateLiveSessionStatus("Preparando Cena 1.", "running", { progress: 6 });
 }
 
 function _startCreateLiveSessionPolling() {
@@ -7128,8 +7514,14 @@ async function _refreshCreateLiveSessionProject(options = {}) {
 
     createLiveSessionState.refreshing = true;
     try {
-        const previousStatus = String(createLiveSessionState.lastProjectSnapshot?.status || "").trim().toLowerCase();
+        const previousScene = _getCreateLiveSceneProjects()[_findCreateLiveSceneIndexByProjectId(projectId)] || null;
+        const previousStatus = String(previousScene?.status || createLiveSessionState.lastProjectSnapshot?.status || "").trim().toLowerCase();
         const project = await api(`/video/projects/${projectId}`);
+        const mergedScene = _upsertCreateLiveSceneProject(project, {
+            sceneNumber: Number(previousScene?.sceneNumber || options.sceneNumber || _getCreateLiveSceneProjects().length || 1) || 1,
+            title: String(previousScene?.title || project?.title || "").trim() || undefined,
+        });
+
         createLiveSessionState.lastProjectSnapshot = project;
         _renderCreateLiveSession(project);
 
@@ -7137,8 +7529,11 @@ async function _refreshCreateLiveSessionProject(options = {}) {
             _startCreateLiveSessionPolling();
         } else {
             _stopCreateLiveSessionPolling();
-            if (previousStatus !== String(project?.status || "").trim().toLowerCase()) {
+            if (previousStatus !== String(mergedScene?.status || project?.status || "").trim().toLowerCase()) {
                 void loadProjects();
+            }
+            if (mergedScene?.status === "completed" && createLiveSessionState.returnFrameEnabled && !mergedScene.returnedFrameUploadId) {
+                void _ensureCreateLiveSceneContinuationFrame(mergedScene);
             }
         }
         return project;
@@ -7184,7 +7579,26 @@ function _startCreateLiveSession(options = {}) {
     createLiveSessionState.aspectRatio = _resolveCreateLiveAspectRatio(prefix, options.aspectRatio);
     createLiveSessionState.returnFrameEnabled = options.returnFrameEnabled !== false;
     createLiveSessionState.useLastImageAsFinalFrame = !!options.useLastImageAsFinalFrame;
-    createLiveSessionState.sourceItems = _collectCreateLiveSessionSourceItems(prefix);
+    const collectedSourceItems = _collectCreateLiveSessionSourceItems(prefix);
+    createLiveSessionState.sourceItems = collectedSourceItems;
+    createLiveSessionState.continuationConfig = options.continuationConfig?.endpoint && options.continuationConfig?.requestBody
+        ? {
+            endpoint: String(options.continuationConfig.endpoint || "/video/generate-realistic").trim() || "/video/generate-realistic",
+            requestBody: JSON.parse(JSON.stringify(options.continuationConfig.requestBody || {})),
+        }
+        : null;
+    _upsertCreateLiveSceneProject({
+        id: projectId,
+        title: String(options.title || "Cena 1").trim() || "Cena 1",
+        status: "queued",
+        progress: 4,
+        renders: [],
+    }, {
+        sceneNumber: 1,
+        title: String(options.title || "Cena 1").trim() || "Cena 1",
+        promptText: String(options.promptText || "").trim(),
+        sourceFrameUrl: _getCreateLivePreferredSourcePreviewUrl(collectedSourceItems),
+    });
 
     const progressEl = document.getElementById("create-progress");
     if (progressEl) progressEl.hidden = true;
@@ -7233,13 +7647,13 @@ async function _fetchCreateLiveSessionMediaFile(url, fallbackName, mimeTypeFallb
 }
 
 async function _buildCreateLiveSessionEditorEntries(project) {
-    const orderedScenes = _getCreateLiveOrderedScenes(project).filter((scene) => String(scene?.clip_url || "").trim());
-    if (orderedScenes.length) {
+    const sceneProjects = _getCreateLiveSceneProjects().filter((sceneItem) => String(sceneItem?.videoUrl || "").trim());
+    if (sceneProjects.length) {
         const entries = [];
-        for (let index = 0; index < orderedScenes.length; index += 1) {
-            const scene = orderedScenes[index];
+        for (let index = 0; index < sceneProjects.length; index += 1) {
+            const scene = sceneProjects[index];
             const file = await _fetchCreateLiveSessionMediaFile(
-                scene.clip_url,
+                scene.videoUrl,
                 `scene-${String(index + 1).padStart(2, "0")}.mp4`,
                 "video/mp4"
             );
@@ -7262,13 +7676,18 @@ async function createSessionOpenInEditor() {
         return;
     }
 
-    const project = createLiveSessionState.lastProjectSnapshot || await _refreshCreateLiveSessionProject();
-    if (!project) {
-        alert("Nao foi possivel carregar o projeto agora.");
+    const hasActiveGeneration = _getCreateLiveSceneProjects().some((sceneItem) => _isCreateLiveSceneItemActive(sceneItem));
+    if (hasActiveGeneration || createLiveSessionState.nextSceneBusy) {
+        alert("Aguarde a geracao terminar para enviar tudo ao Editor.");
         return;
     }
-    if (_isCreateLiveProjectActive(project)) {
-        alert("Aguarde a geracao terminar para enviar tudo ao Editor.");
+
+    let project = createLiveSessionState.lastProjectSnapshot;
+    if (!project && createLiveSessionState.projectId > 0) {
+        project = await _refreshCreateLiveSessionProject();
+    }
+    if (!project && !_getCreateLiveSceneProjects().some((sceneItem) => String(sceneItem?.videoUrl || "").trim())) {
+        alert("Nao foi possivel carregar o projeto agora.");
         return;
     }
 
@@ -15576,43 +15995,45 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         setCreateProgress(10, "Gerando vídeo realista...", speechStatusLabel);
         _smoothProgressTarget = 15;
 
+        const realisticRequestBody = {
+            prompt: finalPrompt,
+            preserve_prompt_exactly: prefix === "script" || avatarPromptlessMode,
+            duration,
+            aspect_ratio: aspect,
+            generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong || !!audioUploadId || engine === "avatar31",
+            add_music: addMusicRequested,
+            add_narration: addNarration,
+            narration_text: narrationText,
+            narration_voice: narrationVoice,
+            dialogue_enabled: dialogueEnabled,
+            dialogue_characters: dialogueEnabled ? dialogueCharacters : [],
+            dialogue_voice_profile_ids: dialogueEnabled ? dialogueVoiceProfileIds : [],
+            dialogue_tone: "informativo",
+            dialogue_duration: dialogueEnabled ? duration : 0,
+            title: finalTitle || "",
+            image_upload_id: imageUploadId,
+            image_upload_ids: imageUploadIds,
+            audio_upload_id: audioUploadId,
+            engine: engine,
+            use_last_image_as_final_frame: _isSeedanceFamilyEngine(engine)
+                && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
+            audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
+            lyrics: selectedTevoxiSong
+                ? (selectedTevoxiClip?.lyrics_excerpt || selectedTevoxiSong.lyrics || "")
+                : "",
+            clip_start: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_start || 0) : 0,
+            clip_duration: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_duration || 0) : 0,
+            prompt_optimized: scriptData.promptOptimized || false,
+            realistic_style: realisticStyle || "",
+            interaction_persona: interactionPersona,
+            persona_profile_id: personaProfileId,
+            persona_profile_ids: personaProfileIds,
+            disable_persona_reference: disablePersonaReference,
+        };
+
         const resp = await api("/video/generate-realistic", {
             method: "POST",
-            body: JSON.stringify({
-                prompt: finalPrompt,
-                preserve_prompt_exactly: prefix === "script" || avatarPromptlessMode,
-                duration,
-                aspect_ratio: aspect,
-                generate_audio: addMusicRequested || addNarration || !!selectedTevoxiSong || !!audioUploadId || engine === "avatar31",
-                add_music: addMusicRequested,
-                add_narration: addNarration,
-                narration_text: narrationText,
-                narration_voice: narrationVoice,
-                dialogue_enabled: dialogueEnabled,
-                dialogue_characters: dialogueEnabled ? dialogueCharacters : [],
-                dialogue_voice_profile_ids: dialogueEnabled ? dialogueVoiceProfileIds : [],
-                dialogue_tone: "informativo",
-                dialogue_duration: dialogueEnabled ? duration : 0,
-                title: finalTitle || "",
-                image_upload_id: imageUploadId,
-                image_upload_ids: imageUploadIds,
-                audio_upload_id: audioUploadId,
-                engine: engine,
-                use_last_image_as_final_frame: _isSeedanceFamilyEngine(engine)
-                    && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
-                audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
-                lyrics: selectedTevoxiSong
-                    ? (selectedTevoxiClip?.lyrics_excerpt || selectedTevoxiSong.lyrics || "")
-                    : "",
-                clip_start: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_start || 0) : 0,
-                clip_duration: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_duration || 0) : 0,
-                prompt_optimized: scriptData.promptOptimized || false,
-                realistic_style: realisticStyle || "",
-                interaction_persona: interactionPersona,
-                persona_profile_id: personaProfileId,
-                persona_profile_ids: personaProfileIds,
-                disable_persona_reference: disablePersonaReference,
-            }),
+            body: JSON.stringify(realisticRequestBody),
         });
 
         const imageCreatorLaunch = prefix === "script"
@@ -15652,9 +16073,14 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 title: finalTitle || finalPrompt || "Video realista",
                 engineLabel,
                 aspectRatio: aspect,
+                promptText: finalPrompt,
                 returnFrameEnabled: !!document.getElementById(`${prefix}-return-frame-initial`)?.checked,
                 useLastImageAsFinalFrame: _isSeedanceFamilyEngine(engine)
                     && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
+                continuationConfig: {
+                    endpoint: "/video/generate-realistic",
+                    requestBody: realisticRequestBody,
+                },
             });
         }
         _scriptImageCreatorVideoLaunch = {
@@ -16287,6 +16713,7 @@ async function handleWizardCreate() {
             title: wizardData.topic,
             engineLabel: "IA",
             aspectRatio: wizardData.aspect,
+            promptText: wizardData.topic,
             returnFrameEnabled: !!document.getElementById("wizard-return-frame-initial")?.checked,
         });
     } catch (error) {
@@ -16771,6 +17198,7 @@ async function handleScriptCreate() {
                 ? getRealisticEngineLabel(_getRealisticSelectedEngine("script"))
                 : "IA",
             aspectRatio: scriptData.aspect,
+            promptText: scriptData.text || scriptData.title || "",
             returnFrameEnabled: !!document.getElementById("script-return-frame-initial")?.checked,
         });
     } catch (error) {
