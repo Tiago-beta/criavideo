@@ -15,7 +15,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1305,6 +1305,7 @@ class ExportRequest(BaseModel):
     original_volume: int = 100
     music_volume: int = 80
     music_path: str = ""
+    hide_base_video_track: bool = False
     texts: list[TextOverlay] = []
     subtitles: list[SubtitleEntry] = []
     stickers: list[StickerEntry] = []
@@ -1886,6 +1887,52 @@ async def upload_image_sequence(
             blank_video_path.unlink(missing_ok=True)
         for layer in uploaded_layers:
             raw_path = str(layer.get("path") or "").strip()
+            if raw_path:
+                Path(raw_path).unlink(missing_ok=True)
+        raise
+
+
+@router.post("/upload-audio-project")
+async def upload_audio_project(
+    file: UploadFile = File(...),
+    aspect_ratio: str = Form("9:16"),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    uploaded_audio: dict | None = None
+    blank_video_path: Path | None = None
+
+    try:
+        uploaded_audio = await _save_editor_layer_audio_upload(file, int(user["id"]))
+        audio_duration = max(1.0, float(uploaded_audio.get("duration") or 0.0))
+        canvas_width, canvas_height = _editor_canvas_size_for_aspect(aspect_ratio or "9:16")
+
+        blank_dir = Path(settings.media_dir) / "editor_uploads" / str(user["id"]) / "videos"
+        blank_dir.mkdir(parents=True, exist_ok=True)
+        blank_video_path = blank_dir / f"audio_project_{uuid.uuid4().hex[:10]}.mp4"
+        _create_editor_blank_video(blank_video_path, canvas_width, canvas_height, audio_duration)
+
+        original_label = str(file.filename or "Audio enviado").strip() or "Audio enviado"
+        payload = await _create_editor_video_project(
+            db=db,
+            user_id=int(user["id"]),
+            video_path=blank_video_path,
+            original_name=original_label,
+            file_size=int(blank_video_path.stat().st_size) if blank_video_path.exists() else 0,
+            description="Audio enviado para edição",
+        )
+        payload.update(
+            {
+                "layers": [uploaded_audio],
+                "source": "audio-project",
+            }
+        )
+        return payload
+    except Exception:
+        if blank_video_path and blank_video_path.exists():
+            blank_video_path.unlink(missing_ok=True)
+        if uploaded_audio:
+            raw_path = str(uploaded_audio.get("path") or "").strip()
             if raw_path:
                 Path(raw_path).unlink(missing_ok=True)
         raise
@@ -2653,7 +2700,11 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             (float(layer.get("end_time", 0.0) or 0.0) for layer in valid_media_layers),
             default=0.0,
         )
-        final_output_duration = max(output_video_duration, layer_timeline_end)
+        output_audio_duration = max(
+            sum(_segment_output_duration(item) for item in audio_segment_entries),
+            sum(_segment_output_duration(item) for item in base_audio_segment_entries),
+        )
+        final_output_duration = max(output_video_duration, output_audio_duration, layer_timeline_end)
         if final_output_duration <= 0 and src_duration > 0:
             final_output_duration = src_duration
         final_output_duration = max(0.1, final_output_duration)
@@ -2708,10 +2759,16 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         if aspect_filter:
             vfilters.append(aspect_filter)
 
+        if req.hide_base_video_track:
+            vfilters.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
+
+        overlay_timeline_end = 0.0
+
         # Text overlays using drawtext
         for txt in req.texts:
             mapped_ranges = _map_source_interval_to_output(txt.start_time, txt.end_time, video_segment_entries)
             for st, et in mapped_ranges:
+                overlay_timeline_end = max(overlay_timeline_end, float(et or 0.0))
                 base_fontsize = max(8, int(txt.font_size or 36))
                 fontsize_px = max(8, int(round(base_fontsize * overlay_scale)))
                 color = txt.color.lstrip("#")
@@ -2725,6 +2782,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         for sub in req.subtitles:
             mapped_ranges = _map_source_interval_to_output(sub.start_time, sub.end_time, video_segment_entries)
             for st, et in mapped_ranges:
+                overlay_timeline_end = max(overlay_timeline_end, float(et or 0.0))
                 color = sub.font_color.lstrip("#") if sub.font_color else "FFFFFF"
                 base_fontsize = max(8, int(sub.font_size or 28))
                 fontsize_px = max(8, int(round(base_fontsize * overlay_scale)))
@@ -2758,11 +2816,14 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         for stk in req.stickers:
             mapped_ranges = _map_source_interval_to_output(stk.start_time, stk.end_time, video_segment_entries)
             for st, et in mapped_ranges:
+                overlay_timeline_end = max(overlay_timeline_end, float(et or 0.0))
                 x_expr = f"(w*{stk.x/100})"
                 y_expr = f"(h*{stk.y/100})"
                 escaped = stk.emoji.replace("'", "'\\\\\\''").replace(":", "\\:")
                 dt = f"drawtext=text='{escaped}':fontsize={stk.size}:x={x_expr}-tw/2:y={y_expr}-th/2:enable='between(t,{st},{et})'"
                 vfilters.append(dt)
+
+        final_output_duration = max(final_output_duration, overlay_timeline_end)
 
         # Quality scaling
         if req.quality == "hd":
