@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260523-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260523-02">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 535;
+        var REQUIRED_VER = 536;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1809,62 +1809,73 @@
                                             </div>
                                             <div id="script-audio-builder-persona-preview" class="persona-preview" hidden>
                                                 <audio id="script-audio-builder-persona-audio" controls></audio>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Rafael<small>Masculina Suave</small></button><button class="voice-preview-btn" data-voice="echo" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="ash" data-voice-type="builtin" type="button">Pedro<small>Masculina Natural</small></button><button class="voice-preview-btn" data-voice="ash" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="nova" data-voice-type="builtin" type="button">Clara<small>Feminina Clara</small></button><button class="voice-preview-btn" data-voice="nova" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="shimmer" data-voice-type="builtin" type="button">Sofia<small>Feminina Suave</small></button><button class="voice-preview-btn" data-voice="shimmer" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="coral" data-voice-type="builtin" type="button">Beatriz<small>Feminina Natural</small></button><button class="voice-preview-btn" data-voice="coral" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="alloy" data-voice-type="builtin" type="button">Alex<small>Neutra</small></button><button class="voice-preview-btn" data-voice="alloy" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                    </div>
-                                                </div>
-
-                                                <div id="script-audio-direction-panel" class="script-audio-direction-panel" hidden>
-                                                    <div class="script-audio-direction-head">
-                                                        <strong>Direção da voz</strong>
-                                                        <small>Ajuste Style, Pace, Accent e detalhes finos para refinar a interpretação desta voz.</small>
-                                                    </div>
-                                                    <div class="script-audio-direction-grid">
-                                                        <div class="form-group">
-                                                            <label for="script-audio-style">Style</label>
-                                                            <select id="script-audio-style" class="input">
-                                                                <option value="natural">Natural</option>
-                                                                <option value="premium">Premium</option>
-                                                                <option value="close">Próxima</option>
-                                                                <option value="energetic">Energética</option>
-                                                                <option value="calm">Calma</option>
-                                                                <option value="dramatic">Dramática</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="form-group">
-                                                            <label for="script-audio-pace">Pace</label>
-                                                            <select id="script-audio-pace" class="input">
-                                                                <option value="natural">Natural</option>
-                                                                <option value="smooth">Suave</option>
-                                                                <option value="fast">Ágil</option>
-                                                                <option value="slow">Mais lenta</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="form-group">
-                                                            <label for="script-audio-accent">Accent</label>
-                                                            <select id="script-audio-accent" class="input">
-                                                                <option value="neutral">PT-BR neutro</option>
-                                                                <option value="paulista">Paulista discreto</option>
-                                                                <option value="carioca">Carioca discreto</option>
-                                                                <option value="nordestino">Nordestino discreto</option>
-                                                                <option value="gaucho">Gaúcho discreto</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="form-group">
-                                                            <label for="script-audio-notes">Detalhes</label>
-                                                            <input id="script-audio-notes" type="text" class="input" maxlength="240" placeholder="Ex.: mais sorridente, mais vendedor, tom de podcast...">
-                                                        </div>
-                                                    </div>
-                                                    <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
+                                                <div class="persona-save-row">
+                                                    <input id="script-audio-builder-persona-name" type="text" class="input" placeholder="Nome do perfil (ex: Minha voz)">
+                                                    <button class="btn btn-primary btn-sm" onclick="savePersonaVoice('script-audio-builder')" type="button">Salvar</button>
+                                                    <button class="btn-icon-sm" onclick="cancelPersonaPreview('script-audio-builder')" type="button">&times;</button>
                                                 </div>
                                             </div>
+                                            <p class="persona-hint">Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz</p>
                                         </div>
+
+                                        <div class="voice-section">
+                                            <span class="voice-section-title">Vozes IA</span>
+                                            <div class="wizard-grid" id="script-audio-builder-builtin-voices">
+                                                <div class="voice-card"><button class="wizard-option" data-value="onyx" data-voice-type="builtin" type="button">Lucas<small>Masculina Grave</small></button><button class="voice-preview-btn" data-voice="onyx" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Rafael<small>Masculina Suave</small></button><button class="voice-preview-btn" data-voice="echo" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="ash" data-voice-type="builtin" type="button">Pedro<small>Masculina Natural</small></button><button class="voice-preview-btn" data-voice="ash" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="nova" data-voice-type="builtin" type="button">Clara<small>Feminina Clara</small></button><button class="voice-preview-btn" data-voice="nova" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="shimmer" data-voice-type="builtin" type="button">Sofia<small>Feminina Suave</small></button><button class="voice-preview-btn" data-voice="shimmer" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="coral" data-voice-type="builtin" type="button">Beatriz<small>Feminina Natural</small></button><button class="voice-preview-btn" data-voice="coral" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="alloy" data-voice-type="builtin" type="button">Alex<small>Neutra</small></button><button class="voice-preview-btn" data-voice="alloy" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="script-audio-direction-panel" class="script-audio-direction-panel" hidden>
+                                        <div class="script-audio-direction-head">
+                                            <strong>Direção da voz</strong>
+                                            <small>Ajuste Style, Pace, Accent e detalhes finos para refinar a interpretação desta voz.</small>
+                                        </div>
+                                        <div class="script-audio-direction-grid">
+                                            <div class="form-group">
+                                                <label for="script-audio-style">Style</label>
+                                                <select id="script-audio-style" class="input">
+                                                    <option value="natural">Natural</option>
+                                                    <option value="premium">Premium</option>
+                                                    <option value="close">Próxima</option>
+                                                    <option value="energetic">Energética</option>
+                                                    <option value="calm">Calma</option>
+                                                    <option value="dramatic">Dramática</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-pace">Pace</label>
+                                                <select id="script-audio-pace" class="input">
+                                                    <option value="natural">Natural</option>
+                                                    <option value="smooth">Suave</option>
+                                                    <option value="fast">Ágil</option>
+                                                    <option value="slow">Mais lenta</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-accent">Accent</label>
+                                                <select id="script-audio-accent" class="input">
+                                                    <option value="neutral">PT-BR neutro</option>
+                                                    <option value="paulista">Paulista discreto</option>
+                                                    <option value="carioca">Carioca discreto</option>
+                                                    <option value="nordestino">Nordestino discreto</option>
+                                                    <option value="gaucho">Gaúcho discreto</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-notes">Detalhes</label>
+                                                <input id="script-audio-notes" type="text" class="input" maxlength="240" placeholder="Ex.: mais sorridente, mais vendedor, tom de podcast...">
+                                            </div>
+                                        </div>
+                                        <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
                                     </div>
 
                                     <div class="script-video-audio-builder-actions">
@@ -4466,8 +4477,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260523-01"></script>
-    <script src="/video/static/pwa.js?v=20260523-01"></script>
+    <script src="/video/static/app.js?v=20260523-02"></script>
+    <script src="/video/static/pwa.js?v=20260523-02"></script>
 </body>
 </html>
 
