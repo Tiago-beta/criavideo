@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v476 loaded");
+console.log("[CriaVideo] app.js v477 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -365,6 +365,18 @@ function _syncSeedanceLastFrameToggle(prefix) {
     if (!toggleGroup) return;
     const engine = document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || "wan2";
     toggleGroup.hidden = engine !== "seedance";
+}
+
+function _setCreatePersonaSectionCollapsed(prefix, collapsed = true) {
+    const group = document.getElementById(`${prefix}-realistic-persona-group`);
+    const toggleBtn = group ? group.querySelector(".collapsible-toggle") : null;
+    const body = group ? group.querySelector(".collapsible-body") : null;
+    if (toggleBtn) {
+        toggleBtn.setAttribute("aria-expanded", String(!collapsed));
+    }
+    if (body) {
+        body.hidden = !!collapsed;
+    }
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
@@ -1365,8 +1377,8 @@ function initDashboard() {
     }
 
     handleSocialCallbackResult();
-    _refreshPersonaContext("wizard", "natureza");
-    _refreshPersonaContext("script", "natureza");
+    _refreshPersonaContext("wizard");
+    _refreshPersonaContext("script");
     _refreshPersonaContext("ai", "natureza");
     _refreshPersonaContext("auto", "natureza");
 
@@ -4330,13 +4342,18 @@ function _buildRealisticEstimatePayload(prefix) {
         : false;
 
     const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    const selectedPersonaType = (prefix === "wizard" || prefix === "script")
+        ? _getSelectedCreateRealisticPersonaType(prefix)
+        : _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    const interactionPersona = selectedPersonaType || "nenhum";
     const contextKey = prefix === "auto" ? "auto" : prefix;
-    const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+    const disablePersonaReference = (prefix === "wizard" || prefix === "script")
+        ? (!selectedPersonaType || _isPersonaNoReferenceEnabled(contextKey, selectedPersonaType))
+        : _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
     const hasScriptPhotoReference = prefix === "script"
         ? (!!document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0)
         : false;
-    const hasReferenceImage = hasScriptPhotoReference || !disablePersonaReference;
+    const hasReferenceImage = hasScriptPhotoReference || (!disablePersonaReference && !!selectedPersonaType);
 
     const hasSelectedSong = prefix === "wizard"
         ? !!_wizardSelectedSong
@@ -5216,7 +5233,7 @@ async function createSimilar(projectId) {
         const narrationVoice = String(tagsData.narration_voice || "onyx").trim();
         _applyCreateRealisticVoiceSelection("script", narrationVoice);
 
-        const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "natureza");
+        const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "", "");
         setSelectedRealisticPersona(selectedPersona);
         const disablePersonaReference = !!tagsData.disable_persona_reference
             || String(tagsData.reference_source || "").trim().toLowerCase() === "none";
@@ -5232,15 +5249,19 @@ async function createSimilar(projectId) {
         const multiPersonaCb = document.getElementById("script-realistic-multi-persona");
         if (multiPersonaCb) multiPersonaCb.checked = !disablePersonaReference && personaIds.length > 1;
 
-        _setPersonaNoReferenceEnabled("script", selectedPersona, false);
-        await _refreshPersonaContext("script", selectedPersona);
-        if (disablePersonaReference) {
-            _setPersonaNoReferenceEnabled("script", selectedPersona, true);
-            _setSelectedPersonaProfileIds("script", selectedPersona, []);
-            _renderPersonaPreview("script");
-        } else if (personaIds.length) {
-            _setSelectedPersonaProfileIds("script", selectedPersona, personaIds);
-            _renderPersonaPreview("script");
+        if (selectedPersona) {
+            _setPersonaNoReferenceEnabled("script", selectedPersona, false);
+            await _refreshPersonaContext("script", selectedPersona);
+            if (disablePersonaReference) {
+                _setPersonaNoReferenceEnabled("script", selectedPersona, true);
+                _setSelectedPersonaProfileIds("script", selectedPersona, []);
+                _renderPersonaPreview("script");
+            } else if (personaIds.length) {
+                _setSelectedPersonaProfileIds("script", selectedPersona, personaIds);
+                _renderPersonaPreview("script");
+            }
+        } else {
+            _clearRealisticPersonaPreview("script");
         }
 
         if (usesTevoxiAudio) {
@@ -13499,8 +13520,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
     const engineLabel = getRealisticEngineLabel(engine);
-    const personaBtn = document.querySelector(`#${prefix}-realistic-persona-tags .style-tag.selected`);
-    const interactionPersona = _normalizeRealisticPersonaType(personaBtn ? (personaBtn.dataset.persona || "") : "natureza");
+    const selectedPersonaType = _getSelectedCreateRealisticPersonaType(prefix);
+    const interactionPersona = selectedPersonaType || "nenhum";
     let personaProfileId = 0;
     let personaProfileIds = [];
 
@@ -13536,19 +13557,19 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
 
     try {
         const contextKey = prefix === "wizard" ? "wizard" : "script";
-        const disablePersonaReference = _isPersonaNoReferenceEnabled(contextKey, interactionPersona);
+        const disablePersonaReference = !selectedPersonaType || _isPersonaNoReferenceEnabled(contextKey, selectedPersonaType);
         if (disablePersonaReference) {
             personaProfileIds = [];
             personaProfileId = 0;
         } else {
-            personaProfileIds = await _ensurePersonaSelections(contextKey, interactionPersona);
+            personaProfileIds = await _ensurePersonaSelections(contextKey, selectedPersonaType);
             personaProfileId = personaProfileIds[0] || 0;
         }
 
         const selectedPersonaProfiles = disablePersonaReference
             ? []
             : personaProfileIds
-                .map((sid) => _getPersonaProfiles(interactionPersona).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
+                .map((sid) => _getPersonaProfiles(selectedPersonaType).find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
                 .filter(Boolean)
                 .slice(0, 4);
 
@@ -14031,10 +14052,6 @@ function resetCreateWizard(options = {}) {
         }
         tag.classList.remove("selected");
     });
-    const defWizardPersona = document.querySelector('#wizard-realistic-persona-tags [data-persona="natureza"]');
-    if (defWizardPersona) defWizardPersona.classList.add("selected");
-    const defScriptPersona = document.querySelector('#script-realistic-persona-tags [data-persona="natureza"]');
-    if (defScriptPersona) defScriptPersona.classList.add("selected");
     const defAiPersona = document.querySelector('#ai-suggest-persona-tags [data-persona="natureza"]');
     if (defAiPersona) {
         document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
@@ -14067,8 +14084,15 @@ function resetCreateWizard(options = {}) {
     _personaNoReferenceByContext.wizard = {};
     _personaNoReferenceByContext.script = {};
     _personaNoReferenceByContext.ai = {};
-    _refreshPersonaContext("wizard", "natureza");
-    _refreshPersonaContext("script", "natureza");
+    ["wizard", "script"].forEach((prefix) => {
+        const lastFrameToggle = document.getElementById(`${prefix}-seedance-last-frame`);
+        if (lastFrameToggle) {
+            lastFrameToggle.checked = true;
+        }
+        _setCreatePersonaSectionCollapsed(prefix, true);
+    });
+    _refreshPersonaContext("wizard");
+    _refreshPersonaContext("script");
     _refreshPersonaContext("ai", "natureza");
     if (!preserveScriptImageCreatorState) {
         _personaSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
@@ -18337,7 +18361,7 @@ function adaptScriptStepForVideoType(videoType) {
     _updateScriptRealisticPersonaVisibility();
 }
 
-function _normalizeRealisticPersonaType(value) {
+function _normalizeRealisticPersonaType(value, fallbackType = "natureza") {
     const raw = String(value || "").trim().toLowerCase();
     const mapping = {
         "criança": "crianca",
@@ -18350,7 +18374,23 @@ function _normalizeRealisticPersonaType(value) {
         localizacao: "local",
     };
     const normalized = mapping[raw] || raw;
-    return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : "natureza";
+    return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : fallbackType;
+}
+
+function _getSelectedCreateRealisticPersonaType(context = "script") {
+    const key = String(context || "script").toLowerCase() === "wizard" ? "wizard" : "script";
+    const selector = key === "wizard"
+        ? "#wizard-realistic-persona-tags .style-tag.selected"
+        : "#script-realistic-persona-tags .style-tag.selected";
+    const selected = document.querySelector(selector);
+    return _normalizeRealisticPersonaType(selected ? (selected.dataset.persona || "") : "", "");
+}
+
+function _clearRealisticPersonaPreview(context) {
+    const previewEl = _getRealisticPersonaPreviewElement(_normalizePersonaContext(context));
+    if (previewEl) {
+        previewEl.innerHTML = "";
+    }
 }
 
 function _getRealisticPersonaTypeByContext(context) {
@@ -18605,10 +18645,19 @@ function _getSelectedPersonaProfile(context, personaType) {
 }
 
 function _renderPersonaPreview(context) {
+    context = _normalizePersonaContext(context);
     const el = _getRealisticPersonaPreviewElement(context);
     if (!el) return;
 
-    const type = _getRealisticPersonaTypeByContext(context);
+    const selectedCreatePersonaType = (context === "wizard" || context === "script")
+        ? _getSelectedCreateRealisticPersonaType(context)
+        : "";
+    if (!selectedCreatePersonaType && (context === "wizard" || context === "script")) {
+        el.innerHTML = "";
+        return;
+    }
+
+    const type = selectedCreatePersonaType || _getRealisticPersonaTypeByContext(context);
     const supportsNoReference = _supportsPersonaNoReference(context);
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
@@ -18745,7 +18794,16 @@ function _renderPersonaPreview(context) {
 }
 
 async function _refreshPersonaContext(context, forcedPersonaType = "") {
-    const type = _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
+    context = _normalizePersonaContext(context);
+    const normalizedForcedType = _normalizeRealisticPersonaType(forcedPersonaType || "", "");
+    const selectedCreatePersonaType = !normalizedForcedType && (context === "wizard" || context === "script")
+        ? _getSelectedCreateRealisticPersonaType(context)
+        : "";
+    if (!normalizedForcedType && !selectedCreatePersonaType && (context === "wizard" || context === "script")) {
+        _clearRealisticPersonaPreview(context);
+        return;
+    }
+    const type = normalizedForcedType || selectedCreatePersonaType || _getRealisticPersonaTypeByContext(context);
     try {
         await _loadPersonaProfiles(type, false);
     } catch (error) {
@@ -19954,20 +20012,28 @@ async function deletePersonaFromManager(profileId) {
 }
 
 function getSelectedRealisticPersona() {
-    const sel = document.querySelector("#script-realistic-persona-tags .style-tag.selected")
-        || document.querySelector("#wizard-realistic-persona-tags .style-tag.selected");
-    return sel ? (sel.dataset.persona || "natureza") : "natureza";
+    return _getSelectedCreateRealisticPersonaType("script")
+        || _getSelectedCreateRealisticPersonaType("wizard")
+        || "nenhum";
 }
 
 function setSelectedRealisticPersona(persona) {
-    const normalized = _normalizeRealisticPersonaType(persona || "natureza");
+    const normalized = _normalizeRealisticPersonaType(persona || "", "");
     ["script-realistic-persona-tags", "wizard-realistic-persona-tags", "ai-suggest-persona-tags"].forEach((id) => {
         const container = document.getElementById(id);
         if (!container) return;
         container.querySelectorAll(".style-tag").forEach((tag) => {
-            tag.classList.toggle("selected", tag.dataset.persona === normalized);
+            tag.classList.toggle("selected", !!normalized && tag.dataset.persona === normalized);
         });
     });
+
+    if (!normalized) {
+        _clearRealisticPersonaPreview("script");
+        _clearRealisticPersonaPreview("wizard");
+        _clearRealisticPersonaPreview("ai");
+        _syncAiSuggestCustomImageSection();
+        return;
+    }
 
     _refreshPersonaContext("script", normalized);
     _refreshPersonaContext("wizard", normalized);
@@ -19979,8 +20045,11 @@ function showAiSuggestPanel() {
     const isRealistic = scriptData.videoType === "realista";
     if (isRealistic) {
         const selectedPersona = getSelectedRealisticPersona();
-        setSelectedRealisticPersona(selectedPersona);
-        _refreshPersonaContext("ai", selectedPersona);
+        if (selectedPersona === "nenhum") {
+            setSelectedRealisticPersona("");
+        } else {
+            setSelectedRealisticPersona(selectedPersona);
+        }
         _syncAiSuggestRealisticDurationOptions();
     }
     const hasScriptTevoxiClip = isRealistic
@@ -20037,10 +20106,10 @@ async function generateAiScript() {
         // Generate optimized prompt for the selected engine
         const style = document.getElementById("ai-suggest-style").value;
         const selectedPersonaBtn = document.querySelector("#ai-suggest-persona-tags .style-tag.selected");
-        const interactionPersona = selectedPersonaBtn ? (selectedPersonaBtn.dataset.persona || "natureza") : "natureza";
-        const selectedPersonaType = _normalizeRealisticPersonaType(interactionPersona);
+        const selectedPersonaType = _normalizeRealisticPersonaType(selectedPersonaBtn ? (selectedPersonaBtn.dataset.persona || "") : "", "");
+        const interactionPersona = selectedPersonaType || "nenhum";
         const usePersonalizedReferences = selectedPersonaType === "personalizado";
-        setSelectedRealisticPersona(interactionPersona);
+        setSelectedRealisticPersona(selectedPersonaType);
         const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
         let realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 8;
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
@@ -20053,11 +20122,11 @@ async function generateAiScript() {
                 showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
             }
         }
-        const disablePersonaReference = _isPersonaNoReferenceEnabled("ai", interactionPersona);
+        const disablePersonaReference = !selectedPersonaType || _isPersonaNoReferenceEnabled("ai", selectedPersonaType);
         let selectedPersonaIds = [];
-        if (!disablePersonaReference) {
+        if (!disablePersonaReference && selectedPersonaType) {
             try {
-                selectedPersonaIds = await _ensurePersonaSelections("ai", interactionPersona);
+                selectedPersonaIds = await _ensurePersonaSelections("ai", selectedPersonaType);
             } catch (error) {
                 alert(`Erro ao carregar persona: ${error.message || "Tente novamente."}`);
                 return;
