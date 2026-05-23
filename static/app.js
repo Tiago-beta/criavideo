@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v525 loaded");
+console.log("[CriaVideo] app.js v526 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -414,15 +414,28 @@ function _syncSeedanceLastFrameToggle(prefix) {
     const engine = _getRealisticSelectedEngine(prefix);
     if (!_isSeedanceFamilyEngine(engine)) {
         toggleGroup.hidden = true;
+        _syncCreateReturnFrameToggle(prefix);
         return;
     }
     if (prefix !== "script") {
         toggleGroup.hidden = false;
+        _syncCreateReturnFrameToggle(prefix);
         return;
     }
     const isRealistic = _getSelectedCreateVideoType("script") === "realista";
     const usePhotos = !!document.getElementById("script-use-photos")?.checked;
     toggleGroup.hidden = !(isRealistic && usePhotos);
+}
+
+function _syncCreateReturnFrameToggle(prefix) {
+    const toggleGroup = document.getElementById(`${prefix}-return-frame-group`);
+    const toggleEl = document.getElementById(`${prefix}-return-frame-initial`);
+    if (!toggleGroup || !toggleEl) return;
+    const hasSelectedType = !!_getSelectedCreateVideoType(prefix);
+    toggleGroup.hidden = !hasSelectedType;
+    if (!hasSelectedType) {
+        toggleEl.checked = true;
+    }
 }
 
 function _getSelectedCreatePersonaType(prefix) {
@@ -4196,6 +4209,29 @@ let similarState = {
     unifiedAutoImageKey: "",
     unifiedAutoImageStatus: "idle",
 };
+
+function _createLiveSessionDefaultState() {
+    return {
+        active: false,
+        projectId: 0,
+        prefix: "",
+        mode: "",
+        videoType: "",
+        title: "",
+        engineLabel: "",
+        aspectRatio: "9:16",
+        returnFrameEnabled: true,
+        useLastImageAsFinalFrame: false,
+        sourceItems: [],
+        pollingTimer: null,
+        lastProjectSnapshot: null,
+        openingEditor: false,
+        refreshing: false,
+    };
+}
+
+let createLiveSessionState = _createLiveSessionDefaultState();
+
 let workflowState = {
     initialized: false,
     blankMode: false,
@@ -6226,6 +6262,12 @@ function handleNewProjectModalClose() {
         return;
     }
 
+    if (createLiveSessionState.active) {
+        closeModal("modal-new-project");
+        resetCreateWizard();
+        return;
+    }
+
     const scriptPanel = document.getElementById("create-panel-script");
     if (scriptPanel && !scriptPanel.hidden) {
         scriptBack();
@@ -6464,6 +6506,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
         if (createBtn) createBtn.hidden = !hasSelectedType;
         if (estimateBadge) estimateBadge.hidden = !hasSelectedType;
         _syncCreateActionRow(prefix);
+        _syncCreateReturnFrameToggle(prefix);
 
         if (!hasSelectedType) {
             _setCreditEstimateBadge(`${prefix}-credit-estimate`, "", "ready", true);
@@ -6506,6 +6549,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
     _syncCreateActionRow(prefix);
+    _syncCreateReturnFrameToggle(prefix);
 
     if (estimateBadge) {
         estimateBadge.hidden = !(createBtn && !createBtn.hidden);
@@ -6515,6 +6559,662 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     } else if (prefix === "script") {
         scheduleScriptCreditEstimate();
         _syncScriptAudioFirstSurface();
+    }
+}
+
+const CREATE_LIVE_ACTIVE_STATUSES = new Set([
+    "queued",
+    "pending",
+    "preparing",
+    "processing",
+    "generating",
+    "generating_audio",
+    "generating_scenes",
+    "generating_clips",
+    "rendering",
+    "uploading",
+    "starting",
+]);
+
+function _getCreateLiveAspectRatioCss(aspectRatio) {
+    const normalized = String(aspectRatio || "16:9").trim();
+    if (normalized === "9:16") return "9 / 16";
+    if (normalized === "1:1") return "1 / 1";
+    return "16 / 9";
+}
+
+function _getCreateLiveOrderedScenes(project) {
+    const scenes = Array.isArray(project?.scenes) ? [...project.scenes] : [];
+    return scenes.sort((left, right) => Number(left?.scene_index || 0) - Number(right?.scene_index || 0));
+}
+
+function _getCreateLiveLatestRender(project) {
+    const renders = Array.isArray(project?.renders) ? [...project.renders] : [];
+    renders.sort((left, right) => {
+        const leftTime = Date.parse(String(left?.created_at || "")) || 0;
+        const rightTime = Date.parse(String(right?.created_at || "")) || 0;
+        if (rightTime !== leftTime) return rightTime - leftTime;
+        return Number(right?.id || 0) - Number(left?.id || 0);
+    });
+    return renders.find((render) => String(render?.video_url || "").trim()) || null;
+}
+
+function _getCreateLiveModeLabel(modeValue, videoTypeValue) {
+    const mode = String(modeValue || "").trim().toLowerCase();
+    const videoType = String(videoTypeValue || "").trim().toLowerCase();
+    if (mode === "wizard") return videoType === "realista" ? "Assistente realista" : "Assistente";
+    if (mode === "script") {
+        if (videoType === "realista") return "Realista";
+        if (videoType === "imagens_proprias") return "Enviar imagens";
+        return "Meu roteiro";
+    }
+    return "Criar";
+}
+
+function _stopCreateLiveSessionPolling() {
+    if (createLiveSessionState.pollingTimer) {
+        clearInterval(createLiveSessionState.pollingTimer);
+        createLiveSessionState.pollingTimer = null;
+    }
+}
+
+function _revokeCreateLiveSessionSourceItems() {
+    (createLiveSessionState.sourceItems || []).forEach((item) => {
+        if (item?.revokeUrl && item?.url) {
+            try {
+                URL.revokeObjectURL(item.url);
+            } catch (_) {
+                // no-op
+            }
+        }
+    });
+}
+
+function _clearCreateLiveSessionDom() {
+    const root = document.getElementById("create-live-session");
+    const statusEl = document.getElementById("create-live-session-status");
+    const sourceWrap = document.getElementById("create-live-session-source-wrap");
+    const sourceList = document.getElementById("create-live-session-source-list");
+    const scenesWrap = document.getElementById("create-live-session-scenes-wrap");
+    const scenesList = document.getElementById("create-live-session-scenes-list");
+    const titleEl = document.getElementById("create-live-session-title");
+    const metaEl = document.getElementById("create-live-session-meta");
+    const kickerEl = document.getElementById("create-live-session-kicker");
+    const scenesMetaEl = document.getElementById("create-live-session-scenes-meta");
+    const editorBtn = document.getElementById("create-live-session-editor-btn");
+    if (root) root.hidden = true;
+    if (statusEl) {
+        statusEl.hidden = true;
+        statusEl.replaceChildren();
+        statusEl.className = "similar-status create-live-session-status";
+    }
+    if (sourceWrap) sourceWrap.hidden = true;
+    if (sourceList) sourceList.innerHTML = "";
+    if (scenesWrap) scenesWrap.hidden = true;
+    if (scenesList) scenesList.innerHTML = "";
+    if (titleEl) titleEl.textContent = "A geracao continua neste modal";
+    if (metaEl) metaEl.textContent = "As cenas e os frames retornados aparecem aqui sem fechar o Criar.";
+    if (kickerEl) kickerEl.textContent = "Criar cena a cena";
+    if (scenesMetaEl) scenesMetaEl.textContent = "As cenas vao aparecendo no proprio modal.";
+    if (editorBtn) {
+        editorBtn.hidden = true;
+        editorBtn.disabled = false;
+        editorBtn.textContent = "Finalizar video";
+    }
+}
+
+function _resetCreateLiveSession() {
+    _stopCreateLiveSessionPolling();
+    _revokeCreateLiveSessionSourceItems();
+    createLiveSessionState = _createLiveSessionDefaultState();
+    _clearCreateLiveSessionDom();
+}
+
+function _isCreateLiveProjectActive(project) {
+    const status = String(project?.status || "").trim().toLowerCase();
+    if (!status) return false;
+    if (status === "completed" || status === "failed" || status === "canceled") {
+        return false;
+    }
+    return CREATE_LIVE_ACTIVE_STATUSES.has(status) || Number(project?.progress || 0) < 100;
+}
+
+function _createLiveSessionFileItem(file, kind, fallbackLabel) {
+    if (!file) return null;
+    const safeKind = String(kind || "image").trim() || "image";
+    const objectUrl = URL.createObjectURL(file);
+    return {
+        kind: safeKind,
+        label: String(fallbackLabel || file.name || safeKind).trim() || safeKind,
+        name: String(file.name || fallbackLabel || safeKind).trim() || safeKind,
+        url: objectUrl,
+        revokeUrl: true,
+    };
+}
+
+function _collectCreateLiveSessionSourceItems(prefix) {
+    const items = [];
+
+    if (Array.isArray(scriptPhotos) && scriptPhotos.length) {
+        scriptPhotos.slice(0, 8).forEach((file, index) => {
+            const item = _createLiveSessionFileItem(file, "image", `Imagem ${index + 1}`);
+            if (item) items.push(item);
+        });
+    }
+
+    if (scriptUserVideoFile) {
+        const item = _createLiveSessionFileItem(scriptUserVideoFile, "video", "Video enviado");
+        if (item) items.push(item);
+    }
+
+    const clipSelection = prefix === "wizard" ? _wizardSelectedClip : _scriptSelectedClip;
+    const songSelection = prefix === "wizard" ? _wizardSelectedSong : _scriptSelectedSong;
+    if (songSelection && clipSelection && !items.length) {
+        items.push({
+            kind: "note",
+            label: "Trecho Tevoxi",
+            note: String(songSelection.title || "Musica escolhida").trim() || "Musica escolhida",
+            url: "",
+            revokeUrl: false,
+        });
+    }
+
+    return items;
+}
+
+function _setCreateLiveSessionStatus(message, kind = "running", options = {}) {
+    const statusEl = document.getElementById("create-live-session-status");
+    if (!statusEl) return;
+
+    const text = String(message || "").trim();
+    if (!text) {
+        statusEl.hidden = true;
+        statusEl.replaceChildren();
+        statusEl.className = "similar-status create-live-session-status";
+        return;
+    }
+
+    statusEl.hidden = false;
+    statusEl.className = "similar-status create-live-session-status";
+    statusEl.replaceChildren();
+
+    const copyEl = document.createElement("span");
+    copyEl.className = "similar-status-copy";
+    copyEl.textContent = text;
+    statusEl.appendChild(copyEl);
+
+    if (kind === "error") {
+        statusEl.classList.add("status-error");
+        return;
+    }
+    if (kind === "success") {
+        statusEl.classList.add("status-success");
+        return;
+    }
+
+    statusEl.classList.add("status-running");
+    const progressEl = document.createElement("span");
+    progressEl.className = "similar-status-progress is-determinate";
+    const progressBarEl = document.createElement("span");
+    progressBarEl.className = "similar-status-progress-bar";
+    progressBarEl.style.width = `${Math.max(4, Math.min(100, Number(options.progress || 0) || 4))}%`;
+    progressEl.appendChild(progressBarEl);
+    statusEl.appendChild(progressEl);
+}
+
+function _renderCreateLiveSessionSourceItems() {
+    const wrap = document.getElementById("create-live-session-source-wrap");
+    const list = document.getElementById("create-live-session-source-list");
+    if (!wrap || !list) return;
+
+    const sourceItems = Array.isArray(createLiveSessionState.sourceItems) ? createLiveSessionState.sourceItems : [];
+    if (!sourceItems.length) {
+        wrap.hidden = true;
+        list.innerHTML = "";
+        return;
+    }
+
+    const aspectRatioCss = _getCreateLiveAspectRatioCss(createLiveSessionState.aspectRatio);
+    list.innerHTML = sourceItems.map((item, index) => {
+        const kind = String(item?.kind || "image").trim();
+        const title = workflowEscapeHtml(String(item?.label || item?.name || `Referencia ${index + 1}`));
+        const subtitle = workflowEscapeHtml(String(item?.name || "").trim());
+        const note = workflowEscapeHtml(String(item?.note || "").trim());
+        let mediaHtml = `<div class="create-live-session-media-note">${note || "Referencia carregada para esta criacao."}</div>`;
+        let noteClass = " is-note";
+        if (kind === "image" && item?.url) {
+            mediaHtml = `<img src="${workflowEscapeHtml(item.url)}" alt="${title}">`;
+            noteClass = "";
+        } else if (kind === "video" && item?.url) {
+            mediaHtml = `<video src="${workflowEscapeHtml(item.url)}" controls playsinline preload="metadata"></video>`;
+            noteClass = "";
+        }
+        return `
+            <div class="create-live-session-media-card">
+                <div class="create-live-session-media-card-head">
+                    <strong>${title}</strong>
+                    ${subtitle ? `<span>${subtitle}</span>` : ""}
+                </div>
+                <div class="create-live-session-media-frame${noteClass}" style="--create-session-aspect:${aspectRatioCss};">
+                    ${mediaHtml}
+                </div>
+            </div>
+        `;
+    }).join("");
+    wrap.hidden = false;
+}
+
+function _formatCreateLiveSceneDuration(scene) {
+    const detected = Number(scene?.detected_duration_seconds || 0);
+    if (detected > 0.05) {
+        return `${detected >= 10 ? detected.toFixed(0) : detected.toFixed(1)}s`;
+    }
+    const start = Number(scene?.start_time || 0);
+    const end = Number(scene?.end_time || 0);
+    if (end > start) {
+        const total = end - start;
+        return `${total >= 10 ? total.toFixed(0) : total.toFixed(1)}s`;
+    }
+    return "";
+}
+
+function _buildCreateLiveSessionMediaCard(options = {}) {
+    const kind = String(options.kind || "image").trim();
+    const url = String(options.url || "").trim();
+    const title = workflowEscapeHtml(String(options.title || "Midia").trim() || "Midia");
+    const subtitle = workflowEscapeHtml(String(options.subtitle || "").trim());
+    const emptyCopy = workflowEscapeHtml(String(options.emptyCopy || "Aguardando processamento.").trim() || "Aguardando processamento.");
+    const busyTitle = workflowEscapeHtml(String(options.busyTitle || "Gerando video...").trim() || "Gerando video...");
+    const busySubtitle = workflowEscapeHtml(String(options.busySubtitle || "").trim());
+    const aspectRatioCss = _getCreateLiveAspectRatioCss(options.aspectRatio || createLiveSessionState.aspectRatio);
+
+    let mediaHtml = `<div class="similar-scene-clip-placeholder"><strong>${title}</strong><small>${emptyCopy}</small></div>`;
+    let frameClass = " is-note";
+    if (kind === "image" && url) {
+        mediaHtml = `<img src="${workflowEscapeHtml(url)}" alt="${title}">`;
+        frameClass = "";
+    } else if (kind === "video" && url) {
+        mediaHtml = `<video src="${workflowEscapeHtml(url)}" controls playsinline preload="metadata"></video>`;
+        frameClass = "";
+    }
+
+    const busyHtml = options.busy
+        ? `
+            <div class="similar-scene-clip-busy-overlay">
+                <div class="similar-scene-clip-spinner"></div>
+                <div class="similar-scene-clip-busy-copy">
+                    <strong>${busyTitle}</strong>
+                    ${busySubtitle ? `<span>${busySubtitle}</span>` : ""}
+                </div>
+            </div>
+        `
+        : "";
+
+    return `
+        <div class="create-live-session-media-card">
+            <div class="create-live-session-media-card-head">
+                <strong>${title}</strong>
+                ${subtitle ? `<span>${subtitle}</span>` : ""}
+            </div>
+            <div class="create-live-session-media-frame${frameClass}" style="--create-session-aspect:${aspectRatioCss};">
+                ${mediaHtml}
+                ${busyHtml}
+            </div>
+        </div>
+    `;
+}
+
+function _buildCreateLiveSceneCard(scene, project) {
+    const sceneNumber = Number(scene?.scene_index || 0) + 1;
+    const scenePrompt = String(scene?.prompt || "").trim();
+    const durationLabel = _formatCreateLiveSceneDuration(scene);
+    const cards = [];
+    const projectBusy = _isCreateLiveProjectActive(project);
+    const initialFrameUrl = String(scene?.reference_frame_url || "").trim();
+    const returnedFrameUrl = String(scene?.reference_frame_end_url || "").trim();
+    const imageUrl = String(scene?.image_url || "").trim();
+    const clipUrl = String(scene?.clip_url || "").trim();
+
+    if (imageUrl) {
+        cards.push(_buildCreateLiveSessionMediaCard({
+            kind: "image",
+            url: imageUrl,
+            title: scene?.is_user_uploaded ? "Imagem enviada" : "Base da cena",
+            subtitle: durationLabel || "Imagem usada nesta etapa",
+        }));
+    } else if (initialFrameUrl) {
+        cards.push(_buildCreateLiveSessionMediaCard({
+            kind: "image",
+            url: initialFrameUrl,
+            title: "Quadro inicial",
+            subtitle: "Frame usado para iniciar a cena",
+        }));
+    }
+
+    if (createLiveSessionState.returnFrameEnabled && returnedFrameUrl) {
+        cards.push(_buildCreateLiveSessionMediaCard({
+            kind: "image",
+            url: returnedFrameUrl,
+            title: "Frame retornado",
+            subtitle: "Pronto para abrir a proxima cena",
+        }));
+    }
+
+    cards.push(_buildCreateLiveSessionMediaCard({
+        kind: "video",
+        url: clipUrl,
+        title: clipUrl ? "Video da cena" : "Video em geracao",
+        subtitle: clipUrl ? (durationLabel || "Cena pronta para revisar") : "A IA continua gerando neste modal",
+        busy: !clipUrl && projectBusy,
+        busyTitle: "Gerando cena...",
+        busySubtitle: `${Math.max(4, Math.min(99, Number(project?.progress || 0) || 4))}%`,
+        emptyCopy: projectBusy
+            ? "A cena ainda esta processando e vai aparecer aqui automaticamente."
+            : "Esta cena entrou no render final do projeto.",
+    }));
+
+    const promptCopy = workflowEscapeHtml(scenePrompt.length > 280 ? `${scenePrompt.slice(0, 277)}...` : (scenePrompt || "O prompt salvo desta cena aparece aqui quando disponivel."));
+    return `
+        <article class="similar-scene-card create-live-session-scene-card">
+            <div class="similar-scene-head">
+                <strong>Cena ${sceneNumber}</strong>
+                <span class="similar-scene-time">${workflowEscapeHtml(durationLabel || "Pronta para acompanhar")}</span>
+            </div>
+            <p class="create-live-session-scene-copy"><strong>Prompt</strong>${promptCopy}</p>
+            <div class="create-live-session-scene-grid">
+                ${cards.join("")}
+            </div>
+        </article>
+    `;
+}
+
+function _buildCreateLiveFinalRenderCard(render) {
+    const duration = Number(render?.duration || 0);
+    const durationLabel = duration > 0.05
+        ? `${duration >= 10 ? duration.toFixed(0) : duration.toFixed(1)}s`
+        : "Video completo do projeto";
+    return `
+        <article class="similar-scene-card create-live-session-scene-card create-live-session-final-card">
+            <div class="similar-scene-head">
+                <strong>Video pronto</strong>
+                <span class="similar-scene-time">${workflowEscapeHtml(durationLabel)}</span>
+            </div>
+            <p class="create-live-session-scene-copy"><strong>Render final</strong>O video concluido aparece aqui antes de seguir para o Editor.</p>
+            <div class="create-live-session-scene-grid">
+                ${_buildCreateLiveSessionMediaCard({
+                    kind: "video",
+                    url: String(render?.video_url || "").trim(),
+                    title: "Render final",
+                    subtitle: "Use Finalizar video para abrir no Editor",
+                    emptyCopy: "O render final vai aparecer aqui quando terminar.",
+                })}
+            </div>
+        </article>
+    `;
+}
+
+function _renderCreateLiveSession(project = null) {
+    const root = document.getElementById("create-live-session");
+    const titleEl = document.getElementById("create-live-session-title");
+    const metaEl = document.getElementById("create-live-session-meta");
+    const kickerEl = document.getElementById("create-live-session-kicker");
+    const scenesWrap = document.getElementById("create-live-session-scenes-wrap");
+    const scenesList = document.getElementById("create-live-session-scenes-list");
+    const scenesMetaEl = document.getElementById("create-live-session-scenes-meta");
+    const editorBtn = document.getElementById("create-live-session-editor-btn");
+
+    if (!root) return;
+    if (!createLiveSessionState.active) {
+        root.hidden = true;
+        return;
+    }
+
+    root.hidden = false;
+
+    const snapshot = project || createLiveSessionState.lastProjectSnapshot || null;
+    const modeLabel = _getCreateLiveModeLabel(createLiveSessionState.mode, createLiveSessionState.videoType);
+    const aspectRatio = String((snapshot?.aspect_ratio || createLiveSessionState.aspectRatio || "9:16")).trim() || "9:16";
+    createLiveSessionState.aspectRatio = aspectRatio;
+
+    if (kickerEl) kickerEl.textContent = modeLabel;
+    if (titleEl) {
+        titleEl.textContent = String(snapshot?.title || createLiveSessionState.title || "A geracao continua neste modal").trim() || "A geracao continua neste modal";
+    }
+    if (metaEl) {
+        const metaParts = [aspectRatio, createLiveSessionState.returnFrameEnabled ? "retorno ligado" : "retorno desligado"];
+        if (createLiveSessionState.useLastImageAsFinalFrame) {
+            metaParts.push("ultima imagem como quadro final");
+        }
+        if (createLiveSessionState.engineLabel) {
+            metaParts.push(createLiveSessionState.engineLabel);
+        }
+        metaEl.textContent = `As cenas, clips e frames ficam aqui no modal. ${metaParts.join(" • ")}.`;
+    }
+
+    _renderCreateLiveSessionSourceItems();
+
+    const orderedScenes = _getCreateLiveOrderedScenes(snapshot);
+    const latestRender = _getCreateLiveLatestRender(snapshot);
+    const sceneCards = [];
+    if (latestRender?.video_url) {
+        sceneCards.push(_buildCreateLiveFinalRenderCard(latestRender));
+    }
+    orderedScenes.forEach((scene) => sceneCards.push(_buildCreateLiveSceneCard(scene, snapshot)));
+
+    if (scenesWrap) {
+        scenesWrap.hidden = !sceneCards.length;
+    }
+    if (scenesList) {
+        scenesList.innerHTML = sceneCards.length
+            ? sceneCards.join("")
+            : '<div class="create-live-session-empty">Assim que o projeto responder com cenas ou video, elas aparecem aqui automaticamente.</div>';
+    }
+    if (scenesMetaEl) {
+        const clipCount = orderedScenes.filter((scene) => String(scene?.clip_url || "").trim()).length;
+        scenesMetaEl.textContent = orderedScenes.length
+            ? `${orderedScenes.length} cena(s) registradas • ${clipCount} clip(s) pronto(s)`
+            : "Assim que a primeira cena sair, ela aparece aqui no proprio modal.";
+    }
+
+    if (editorBtn) {
+        const hasEditorEntry = !!latestRender?.video_url || orderedScenes.some((scene) => String(scene?.clip_url || "").trim());
+        editorBtn.hidden = !hasEditorEntry;
+        editorBtn.disabled = createLiveSessionState.openingEditor || _isCreateLiveProjectActive(snapshot);
+        editorBtn.textContent = createLiveSessionState.openingEditor ? "Abrindo editor..." : "Finalizar video";
+    }
+
+    if (!snapshot) {
+        _setCreateLiveSessionStatus("Projeto criado. A geracao continua neste modal.", "running", { progress: 6 });
+        return;
+    }
+
+    const status = String(snapshot.status || "").trim().toLowerCase();
+    const progress = Math.max(4, Math.min(100, Number(snapshot.progress || 0) || 4));
+    if (status === "failed") {
+        _setCreateLiveSessionStatus(String(snapshot.error_message || "Falha ao gerar este video.").trim() || "Falha ao gerar este video.", "error");
+    } else if (status === "completed") {
+        _setCreateLiveSessionStatus("Video pronto. Revise as cenas e clique em Finalizar video para abrir no Editor.", "success");
+    } else {
+        _setCreateLiveSessionStatus(`${createLiveSessionState.engineLabel || "IA"} esta gerando seu video sem fechar o modal.`, "running", { progress });
+    }
+}
+
+function _startCreateLiveSessionPolling() {
+    _stopCreateLiveSessionPolling();
+    if (!createLiveSessionState.active || !(createLiveSessionState.projectId > 0)) return;
+    createLiveSessionState.pollingTimer = setInterval(() => {
+        void _refreshCreateLiveSessionProject({ silent: true });
+    }, 4000);
+}
+
+async function _refreshCreateLiveSessionProject(options = {}) {
+    const projectId = Number(options.projectId || createLiveSessionState.projectId || 0);
+    if (!(projectId > 0) || createLiveSessionState.refreshing) {
+        return createLiveSessionState.lastProjectSnapshot;
+    }
+
+    createLiveSessionState.refreshing = true;
+    try {
+        const previousStatus = String(createLiveSessionState.lastProjectSnapshot?.status || "").trim().toLowerCase();
+        const project = await api(`/video/projects/${projectId}`);
+        createLiveSessionState.lastProjectSnapshot = project;
+        _renderCreateLiveSession(project);
+
+        if (_isCreateLiveProjectActive(project)) {
+            _startCreateLiveSessionPolling();
+        } else {
+            _stopCreateLiveSessionPolling();
+            if (previousStatus !== String(project?.status || "").trim().toLowerCase()) {
+                void loadProjects();
+            }
+        }
+        return project;
+    } catch (error) {
+        if (!options.silent) {
+            _setCreateLiveSessionStatus(error?.message || "Nao foi possivel atualizar o projeto agora.", "error");
+        }
+        return null;
+    } finally {
+        createLiveSessionState.refreshing = false;
+    }
+}
+
+function _resolveCreateLiveAspectRatio(prefix, explicitAspect = "") {
+    const normalizedExplicit = String(explicitAspect || "").trim();
+    if (normalizedExplicit) return normalizedExplicit;
+    if (prefix === "wizard") {
+        if (_getSelectedCreateVideoType("wizard") === "realista") {
+            return document.getElementById("wizard-realistic-aspect")?.value || wizardData.aspect || "9:16";
+        }
+        return document.getElementById("wizard-aspect")?.value || wizardData.aspect || "9:16";
+    }
+    if (_getSelectedCreateVideoType("script") === "realista") {
+        return document.getElementById("script-realistic-aspect")?.value || scriptData.aspect || "9:16";
+    }
+    return document.getElementById("script-aspect")?.value || scriptData.aspect || "9:16";
+}
+
+function _startCreateLiveSession(options = {}) {
+    const projectId = Number(options.projectId || 0);
+    if (!(projectId > 0)) return;
+
+    _resetCreateLiveSession();
+
+    const prefix = String(options.prefix || "script").trim() || "script";
+    createLiveSessionState.active = true;
+    createLiveSessionState.projectId = projectId;
+    createLiveSessionState.prefix = prefix;
+    createLiveSessionState.mode = String(options.mode || prefix).trim() || prefix;
+    createLiveSessionState.videoType = String(options.videoType || _getSelectedCreateVideoType(prefix) || "").trim();
+    createLiveSessionState.title = String(options.title || "").trim();
+    createLiveSessionState.engineLabel = String(options.engineLabel || "IA").trim() || "IA";
+    createLiveSessionState.aspectRatio = _resolveCreateLiveAspectRatio(prefix, options.aspectRatio);
+    createLiveSessionState.returnFrameEnabled = options.returnFrameEnabled !== false;
+    createLiveSessionState.useLastImageAsFinalFrame = !!options.useLastImageAsFinalFrame;
+    createLiveSessionState.sourceItems = _collectCreateLiveSessionSourceItems(prefix);
+
+    const progressEl = document.getElementById("create-progress");
+    if (progressEl) progressEl.hidden = true;
+
+    _renderCreateLiveSession();
+    _startCreateLiveSessionPolling();
+    void _refreshCreateLiveSessionProject({ silent: true });
+    void loadProjects();
+
+    const root = document.getElementById("create-live-session");
+    if (root) {
+        requestAnimationFrame(() => {
+            root.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+    }
+}
+
+function refreshCreateLiveSession() {
+    return _refreshCreateLiveSessionProject();
+}
+
+function _createLiveSessionFileName(url, fallbackName) {
+    try {
+        const parsedUrl = new URL(url, window.location.origin);
+        const fileName = decodeURIComponent((parsedUrl.pathname.split("/").pop() || "").trim());
+        if (fileName) {
+            return fileName;
+        }
+    } catch (_) {
+        // ignore invalid URLs
+    }
+    return fallbackName;
+}
+
+async function _fetchCreateLiveSessionMediaFile(url, fallbackName, mimeTypeFallback) {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+        throw new Error("Nao foi possivel preparar a midia para o Editor.");
+    }
+    const blob = await response.blob();
+    const fileName = _createLiveSessionFileName(url, fallbackName);
+    return new File([blob], fileName, {
+        type: blob.type || mimeTypeFallback || "video/mp4",
+    });
+}
+
+async function _buildCreateLiveSessionEditorEntries(project) {
+    const orderedScenes = _getCreateLiveOrderedScenes(project).filter((scene) => String(scene?.clip_url || "").trim());
+    if (orderedScenes.length) {
+        const entries = [];
+        for (let index = 0; index < orderedScenes.length; index += 1) {
+            const scene = orderedScenes[index];
+            const file = await _fetchCreateLiveSessionMediaFile(
+                scene.clip_url,
+                `scene-${String(index + 1).padStart(2, "0")}.mp4`,
+                "video/mp4"
+            );
+            entries.push({ kind: "video", file });
+        }
+        return entries;
+    }
+
+    const latestRender = _getCreateLiveLatestRender(project);
+    if (latestRender?.video_url) {
+        const file = await _fetchCreateLiveSessionMediaFile(latestRender.video_url, "video-final.mp4", "video/mp4");
+        return [{ kind: "video", file }];
+    }
+
+    throw new Error("Nenhum video gerado ainda para abrir no Editor.");
+}
+
+async function createSessionOpenInEditor() {
+    if (createLiveSessionState.openingEditor) {
+        return;
+    }
+
+    const project = createLiveSessionState.lastProjectSnapshot || await _refreshCreateLiveSessionProject();
+    if (!project) {
+        alert("Nao foi possivel carregar o projeto agora.");
+        return;
+    }
+    if (_isCreateLiveProjectActive(project)) {
+        alert("Aguarde a geracao terminar para enviar tudo ao Editor.");
+        return;
+    }
+
+    createLiveSessionState.openingEditor = true;
+    _renderCreateLiveSession(project);
+
+    try {
+        const entries = await _buildCreateLiveSessionEditorEntries(project);
+        closeModal("modal-new-project");
+        await _editorStartWithOrderedMediaEntries(entries);
+        resetCreateWizard();
+    } catch (error) {
+        openModal("modal-new-project");
+        alert(error?.message || "Nao foi possivel abrir o projeto no Editor.");
+    } finally {
+        createLiveSessionState.openingEditor = false;
+        if (createLiveSessionState.active) {
+            _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot || project);
+        }
     }
 }
 
@@ -14864,12 +15564,25 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
 
         _stopSmoothProgress();
-        closeModal("modal-new-project");
-        resetCreateWizard({ preserveScriptImageCreatorState: imageCreatorLaunch });
-        await loadProjects();
         if (imageCreatorLaunch) {
+            closeModal("modal-new-project");
+            resetCreateWizard({ preserveScriptImageCreatorState: imageCreatorLaunch });
+            await loadProjects();
             openScriptImageCreatorModal();
             _startScriptImageCreatorVideoProjectTracking(imageCreatorSourceUploadId, Number(resp?.id || 0) || 0, engineLabel);
+        } else {
+            _startCreateLiveSession({
+                projectId: Number(resp?.id || 0) || 0,
+                prefix,
+                mode: prefix,
+                videoType: "realista",
+                title: finalTitle || finalPrompt || "Video realista",
+                engineLabel,
+                aspectRatio: aspect,
+                returnFrameEnabled: !!document.getElementById(`${prefix}-return-frame-initial`)?.checked,
+                useLastImageAsFinalFrame: _isSeedanceFamilyEngine(engine)
+                    && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
+            });
         }
         _scriptImageCreatorVideoLaunch = {
             active: false,
@@ -14985,6 +15698,7 @@ function resetCreateWizard(options = {}) {
     _smoothProgressCurrent = CREATE_PROGRESS_BASE;
     setCreateProgress(CREATE_PROGRESS_BASE, "Processando...", "Gerando roteiro com IA...");
     _resetSimilarModeState();
+    _resetCreateLiveSession();
 
     workflowState.images = [];
     workflowState.imageUploadIds = [];
@@ -15038,10 +15752,16 @@ function resetCreateWizard(options = {}) {
     if (wizardTevoxiCb) wizardTevoxiCb.checked = false;
     const wizardTevoxiPanel = document.getElementById("wizard-tevoxi-panel");
     if (wizardTevoxiPanel) wizardTevoxiPanel.hidden = true;
+    const wizardReturnFrameCb = document.getElementById("wizard-return-frame-initial");
+    if (wizardReturnFrameCb) wizardReturnFrameCb.checked = true;
+    const scriptReturnFrameCb = document.getElementById("script-return-frame-initial");
+    if (scriptReturnFrameCb) scriptReturnFrameCb.checked = true;
     _renderScriptTevoxiSongs();
     _renderWizardTevoxiSongs();
     _updateScriptTevoxiSelectionUI();
     _updateWizardTevoxiSelectionUI();
+    _syncCreateReturnFrameToggle("wizard");
+    _syncCreateReturnFrameToggle("script");
 
     // Reset photo upload
     scriptPhotos = [];
@@ -15483,9 +16203,18 @@ async function handleWizardCreate() {
             }),
         });
 
-        closeModal("modal-new-project");
-        pollProject(result.id);
-        loadProjects();
+        const progressEl = document.getElementById("create-progress");
+        if (progressEl) progressEl.hidden = true;
+        _startCreateLiveSession({
+            projectId: Number(result?.id || 0) || 0,
+            prefix: "wizard",
+            mode: "wizard",
+            videoType: wizardData.videoType,
+            title: wizardData.topic,
+            engineLabel: "IA",
+            aspectRatio: wizardData.aspect,
+            returnFrameEnabled: !!document.getElementById("wizard-return-frame-initial")?.checked,
+        });
     } catch (error) {
         const surfacedFailedProject = await revealFailedProjectFromCreateError(error);
         if (!surfacedFailedProject) {
@@ -15957,10 +16686,19 @@ async function handleScriptCreate() {
         stopKaraokeProgressPolling();
         setCreateProgress(100, "Concluído", "Áudio processado com sucesso.");
 
-        closeModal("modal-new-project");
         updateCreditsDisplay();
-        pollProject(result.id);
-        loadProjects();
+        _startCreateLiveSession({
+            projectId: Number(result?.id || 0) || 0,
+            prefix: "script",
+            mode: "script",
+            videoType: scriptData.videoType,
+            title: scriptData.title || "Novo video",
+            engineLabel: scriptData.videoType === "realista"
+                ? getRealisticEngineLabel(_getRealisticSelectedEngine("script"))
+                : "IA",
+            aspectRatio: scriptData.aspect,
+            returnFrameEnabled: !!document.getElementById("script-return-frame-initial")?.checked,
+        });
     } catch (error) {
         const surfacedFailedProject = await revealFailedProjectFromCreateError(error);
         if (surfacedFailedProject) {

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260522-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260523-01">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 525;
+        var REQUIRED_VER = 526;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1544,6 +1544,14 @@
                             <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
 
+                            <div class="form-group realistic-audio-toggle create-session-return-frame-group" id="wizard-return-frame-group" hidden>
+                                <label class="toggle-label">
+                                    <input type="checkbox" id="wizard-return-frame-initial" checked>
+                                    <span>Retornar frame = quadro inicial</span>
+                                </label>
+                                <small class="pause-hint">Mantem o ultimo frame retornado como ponto de partida da proxima cena dentro deste modal.</small>
+                            </div>
+
                         <div class="form-group" id="wizard-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="wizard-realistic-duration">
@@ -1704,6 +1712,14 @@
                                 </label>
                                 <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                             </div>
+
+                                <div class="form-group realistic-audio-toggle create-session-return-frame-group" id="script-return-frame-group" hidden>
+                                    <label class="toggle-label">
+                                        <input type="checkbox" id="script-return-frame-initial" checked>
+                                        <span>Retornar frame = quadro inicial</span>
+                                    </label>
+                                    <small class="pause-hint">Mantem o ultimo frame retornado como ponto de partida da proxima cena dentro deste modal.</small>
+                                </div>
                         </div>
 
                         <!-- Upload de vídeo próprio -->
@@ -2346,6 +2362,44 @@
                         <button class="credit-add-btn" id="script-credit-add-btn" type="button" onclick="showCreditsPurchaseModal()" hidden>Adicionar</button>
                     </div>
                 </div>
+
+                    <div id="create-live-session" class="create-live-session" hidden>
+                        <div class="create-live-session-shell">
+                            <div class="create-live-session-head">
+                                <div>
+                                    <span id="create-live-session-kicker" class="create-live-session-kicker">Criar cena a cena</span>
+                                    <h3 id="create-live-session-title" class="create-live-session-title">A geracao continua neste modal</h3>
+                                    <p id="create-live-session-meta" class="create-live-session-meta">As cenas e os frames retornados aparecem aqui sem fechar o Criar.</p>
+                                </div>
+                                <div class="create-live-session-head-actions">
+                                    <button class="btn btn-secondary btn-sm" id="create-live-session-refresh-btn" type="button" onclick="refreshCreateLiveSession()">Atualizar</button>
+                                    <button class="btn btn-primary btn-sm" id="create-live-session-editor-btn" type="button" onclick="createSessionOpenInEditor()" hidden>Finalizar video</button>
+                                </div>
+                            </div>
+
+                            <div id="create-live-session-status" class="similar-status create-live-session-status" hidden></div>
+
+                            <div id="create-live-session-source-wrap" class="create-live-session-section" hidden>
+                                <div class="create-live-session-section-head">
+                                    <div>
+                                        <strong>Referencias carregadas</strong>
+                                        <span>As imagens e o video enviados ficam grandes aqui enquanto a geracao roda.</span>
+                                    </div>
+                                </div>
+                                <div id="create-live-session-source-list" class="create-live-session-media-grid"></div>
+                            </div>
+
+                            <div id="create-live-session-scenes-wrap" class="create-live-session-section" hidden>
+                                <div class="create-live-session-section-head">
+                                    <div>
+                                        <strong>Cenas geradas aqui</strong>
+                                        <span id="create-live-session-scenes-meta">As cenas vao aparecendo no proprio modal.</span>
+                                    </div>
+                                </div>
+                                <div id="create-live-session-scenes-list" class="similar-scenes-list create-live-session-scenes-list"></div>
+                            </div>
+                        </div>
+                    </div>
 
                 <!-- ═══ PANEL: Semelhante ═══ -->
                 <div id="create-panel-similar" class="create-panel" hidden>
@@ -4420,8 +4474,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260522-05"></script>
-    <script src="/video/static/pwa.js?v=20260522-05"></script>
+    <script src="/video/static/app.js?v=20260523-01"></script>
+    <script src="/video/static/pwa.js?v=20260523-01"></script>
 </body>
 </html>
 
