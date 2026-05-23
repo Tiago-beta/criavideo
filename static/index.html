@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260523-01">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260523-03">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 526;
+        var REQUIRED_VER = 537;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1375,11 +1375,12 @@
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                         Gravar Voz
                                     </button>
-                                    <label class="persona-upload-btn">
+                                    <button class="persona-upload-btn" onclick="openPersonaUploadSourceModal('wizard')" type="button">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                         Enviar Áudio
-                                        <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'wizard')" hidden>
-                                    </label>
+                                    </button>
+                                    <input id="wizard-persona-audio-input" type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'wizard')" hidden>
+                                    <input id="wizard-persona-video-input" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" onchange="handlePersonaVideoUpload(event, 'wizard')" hidden>
                                 </div>
                                 <div id="wizard-recording-area" class="persona-recording-area" hidden>
                                     <div class="recording-pulse"></div>
@@ -1394,7 +1395,7 @@
                                         <button class="btn-icon-sm" onclick="cancelPersonaPreview('wizard')" type="button">&times;</button>
                                     </div>
                                 </div>
-                                <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
+                                <p class="persona-hint">Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz</p>
                             </div>
                             <!-- Vozes IA -->
                             <div class="voice-section">
@@ -1486,23 +1487,33 @@
 
                     <!-- Step 7: Realistic Settings (only for Realista type) -->
                     <div class="wizard-step" data-step="7" hidden>
-                        <div class="form-group">
-                            <label>Persona de interação</label>
-                            <div class="realistic-inspiration-tags" id="wizard-realistic-persona-tags">
-                                <button class="style-tag" type="button" data-persona="homem">Homem</button>
-                                <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
-                                <button class="style-tag" type="button" data-persona="crianca">Criança</button>
-                                <button class="style-tag" type="button" data-persona="familia">Família</button>
-                                <button class="style-tag" type="button" data-persona="natureza">Natureza</button>
-                                <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
-                                <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
-                            </div>
-                            <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
-                            <div id="wizard-realistic-persona-preview" class="realistic-persona-preview"></div>
-                            <div class="realistic-persona-actions">
-                                <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('wizard')" title="Gerenciar personas" aria-label="Gerenciar personas">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                </button>
+                        <div class="realistic-info-banner">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                            <span>A IA vai otimizar seu tema em um prompt cinematográfico profissional para gerar o melhor vídeo possível</span>
+                        </div>
+
+                        <div class="form-group collapsible-section" id="wizard-realistic-persona-group">
+                            <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                <span class="section-title">Persona de interação</span>
+                                <span class="collapsible-arrow">&#9660;</span>
+                            </button>
+                            <div class="collapsible-body" hidden>
+                                <div class="realistic-inspiration-tags" id="wizard-realistic-persona-tags">
+                                    <button class="style-tag" type="button" data-persona="homem">Homem</button>
+                                    <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
+                                    <button class="style-tag" type="button" data-persona="crianca">Criança</button>
+                                    <button class="style-tag" type="button" data-persona="familia">Família</button>
+                                    <button class="style-tag" type="button" data-persona="natureza">Natureza</button>
+                                    <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
+                                    <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
+                                </div>
+                                <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
+                                <div id="wizard-realistic-persona-preview" class="realistic-persona-preview"></div>
+                                <div class="realistic-persona-actions">
+                                    <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('wizard')" title="Gerenciar personas" aria-label="Gerenciar personas">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -1522,8 +1533,12 @@
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
                                 </button>
                                 <button class="engine-option" data-value="lite2" type="button">
-                                    <strong>Lite 2.0 Fast</strong>
+                                    <strong>Mega 1.5 Real</strong>
                                     <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
+                                </button>
+                                <button class="engine-option" data-value="mega15" type="button">
+                                    <strong>Lite 2.0 Fast</strong>
+                                    <small class="engine-option-desc">Versão mais leve do Mega 2.0 Ultra, com áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
@@ -1538,10 +1553,10 @@
 
                         <div class="form-group realistic-audio-toggle" id="wizard-seedance-last-frame-group" hidden>
                             <label class="toggle-label">
-                                <input type="checkbox" id="wizard-seedance-last-frame">
+                                <input type="checkbox" id="wizard-seedance-last-frame" checked>
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
 
                             <div class="form-group realistic-audio-toggle create-session-return-frame-group" id="wizard-return-frame-group" hidden>
@@ -1710,7 +1725,7 @@
                                     <input type="checkbox" id="script-seedance-last-frame">
                                     <span>Ultima imagem = quadro final</span>
                                 </label>
-                                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                                <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                             </div>
 
                                 <div class="form-group realistic-audio-toggle create-session-return-frame-group" id="script-return-frame-group" hidden>
@@ -1799,14 +1814,12 @@
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                                     Gravar Voz
                                                 </button>
-                                                <label class="persona-upload-btn">
+                                                <button class="persona-upload-btn" onclick="openPersonaUploadSourceModal('script-audio-builder')" type="button">
                                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                                     Enviar Áudio
-                                                    <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script-audio-builder')" hidden>
-                                                </label>
-                                            </div>
-                                            <div id="script-audio-builder-recording-area" class="persona-recording-area" hidden>
-                                                <div class="recording-pulse"></div>
+                                                </button>
+                                                <input id="script-audio-builder-persona-audio-input" type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script-audio-builder')" hidden>
+                                                <input id="script-audio-builder-persona-video-input" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" onchange="handlePersonaVideoUpload(event, 'script-audio-builder')" hidden>
                                                 <span id="script-audio-builder-rec-time">0:00</span>
                                                 <button class="btn btn-sm btn-danger" onclick="stopPersonaRecording('script-audio-builder')" type="button">Parar</button>
                                             </div>
@@ -1818,75 +1831,67 @@
                                                     <button class="btn-icon-sm" onclick="cancelPersonaPreview('script-audio-builder')" type="button">&times;</button>
                                                 </div>
                                             </div>
-                                            <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
+                                            <p class="persona-hint">Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz</p>
                                         </div>
 
-                                        <div class="collapsible-section script-audio-builder-voice-collapse">
-                                            <button class="collapsible-toggle script-audio-builder-voice-toggle" type="button" aria-expanded="true" onclick="toggleCollapsible(this)">
-                                                <span class="section-title script-audio-builder-voice-title">Modelos de voz</span>
-                                                <span class="collapsible-arrow">▼</span>
-                                            </button>
-                                            <div class="collapsible-body" id="script-audio-builder-voice-body">
-                                                <div class="voice-section">
-                                                    <span class="voice-section-title">Vozes IA</span>
-                                                    <div class="wizard-grid" id="script-audio-builder-builtin-voices">
-                                                        <div class="voice-card"><button class="wizard-option selected" data-value="onyx" data-voice-type="builtin" type="button">Lucas<small>Masculina Grave</small></button><button class="voice-preview-btn" data-voice="onyx" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Rafael<small>Masculina Suave</small></button><button class="voice-preview-btn" data-voice="echo" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="ash" data-voice-type="builtin" type="button">Pedro<small>Masculina Natural</small></button><button class="voice-preview-btn" data-voice="ash" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="nova" data-voice-type="builtin" type="button">Clara<small>Feminina Clara</small></button><button class="voice-preview-btn" data-voice="nova" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="shimmer" data-voice-type="builtin" type="button">Sofia<small>Feminina Suave</small></button><button class="voice-preview-btn" data-voice="shimmer" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="coral" data-voice-type="builtin" type="button">Beatriz<small>Feminina Natural</small></button><button class="voice-preview-btn" data-voice="coral" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="alloy" data-voice-type="builtin" type="button">Alex<small>Neutra</small></button><button class="voice-preview-btn" data-voice="alloy" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                        <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
-                                                    </div>
-                                                </div>
-
-                                                <div id="script-audio-direction-panel" class="script-audio-direction-panel" hidden>
-                                                    <div class="script-audio-direction-head">
-                                                        <strong>Direção da voz</strong>
-                                                        <small>Ajuste Style, Pace, Accent e detalhes finos para refinar a interpretação desta voz.</small>
-                                                    </div>
-                                                    <div class="script-audio-direction-grid">
-                                                        <div class="form-group">
-                                                            <label for="script-audio-style">Style</label>
-                                                            <select id="script-audio-style" class="input">
-                                                                <option value="natural">Natural</option>
-                                                                <option value="premium">Premium</option>
-                                                                <option value="close">Próxima</option>
-                                                                <option value="energetic">Energética</option>
-                                                                <option value="calm">Calma</option>
-                                                                <option value="dramatic">Dramática</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="form-group">
-                                                            <label for="script-audio-pace">Pace</label>
-                                                            <select id="script-audio-pace" class="input">
-                                                                <option value="natural">Natural</option>
-                                                                <option value="smooth">Suave</option>
-                                                                <option value="fast">Ágil</option>
-                                                                <option value="slow">Mais lenta</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="form-group">
-                                                            <label for="script-audio-accent">Accent</label>
-                                                            <select id="script-audio-accent" class="input">
-                                                                <option value="neutral">PT-BR neutro</option>
-                                                                <option value="paulista">Paulista discreto</option>
-                                                                <option value="carioca">Carioca discreto</option>
-                                                                <option value="nordestino">Nordestino discreto</option>
-                                                                <option value="gaucho">Gaúcho discreto</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="form-group">
-                                                            <label for="script-audio-notes">Detalhes</label>
-                                                            <input id="script-audio-notes" type="text" class="input" maxlength="240" placeholder="Ex.: mais sorridente, mais vendedor, tom de podcast...">
-                                                        </div>
-                                                    </div>
-                                                    <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
-                                                </div>
+                                        <div class="voice-section">
+                                            <span class="voice-section-title">Vozes IA</span>
+                                            <div class="wizard-grid" id="script-audio-builder-builtin-voices">
+                                                <div class="voice-card"><button class="wizard-option" data-value="onyx" data-voice-type="builtin" type="button">Lucas<small>Masculina Grave</small></button><button class="voice-preview-btn" data-voice="onyx" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="echo" data-voice-type="builtin" type="button">Rafael<small>Masculina Suave</small></button><button class="voice-preview-btn" data-voice="echo" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="ash" data-voice-type="builtin" type="button">Pedro<small>Masculina Natural</small></button><button class="voice-preview-btn" data-voice="ash" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="nova" data-voice-type="builtin" type="button">Clara<small>Feminina Clara</small></button><button class="voice-preview-btn" data-voice="nova" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="shimmer" data-voice-type="builtin" type="button">Sofia<small>Feminina Suave</small></button><button class="voice-preview-btn" data-voice="shimmer" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="coral" data-voice-type="builtin" type="button">Beatriz<small>Feminina Natural</small></button><button class="voice-preview-btn" data-voice="coral" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="alloy" data-voice-type="builtin" type="button">Alex<small>Neutra</small></button><button class="voice-preview-btn" data-voice="alloy" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="fable" data-voice-type="builtin" type="button">Mateus<small>Narrativa</small></button><button class="voice-preview-btn" data-voice="fable" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
+                                                <div class="voice-card"><button class="wizard-option" data-value="sage" data-voice-type="builtin" type="button">Luna<small>Calma e Clara</small></button><button class="voice-preview-btn" data-voice="sage" type="button" title="Ouvir demo"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button></div>
                                             </div>
                                         </div>
+                                    </div>
+
+                                    <div id="script-audio-direction-panel" class="script-audio-direction-panel" hidden>
+                                        <div class="script-audio-direction-head">
+                                            <strong>Direção da voz</strong>
+                                            <small>Ajuste Style, Pace, Accent e detalhes finos para refinar a interpretação desta voz.</small>
+                                        </div>
+                                        <div class="script-audio-direction-grid">
+                                            <div class="form-group">
+                                                <label for="script-audio-style">Style</label>
+                                                <select id="script-audio-style" class="input">
+                                                    <option value="natural">Natural</option>
+                                                    <option value="premium">Premium</option>
+                                                    <option value="close">Próxima</option>
+                                                    <option value="energetic">Energética</option>
+                                                    <option value="calm">Calma</option>
+                                                    <option value="dramatic">Dramática</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-pace">Pace</label>
+                                                <select id="script-audio-pace" class="input">
+                                                    <option value="natural">Natural</option>
+                                                    <option value="smooth">Suave</option>
+                                                    <option value="fast">Ágil</option>
+                                                    <option value="slow">Mais lenta</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-accent">Accent</label>
+                                                <select id="script-audio-accent" class="input">
+                                                    <option value="neutral">PT-BR neutro</option>
+                                                    <option value="paulista">Paulista discreto</option>
+                                                    <option value="carioca">Carioca discreto</option>
+                                                    <option value="nordestino">Nordestino discreto</option>
+                                                    <option value="gaucho">Gaúcho discreto</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="script-audio-notes">Detalhes</label>
+                                                <input id="script-audio-notes" type="text" class="input" maxlength="240" placeholder="Ex.: mais sorridente, mais vendedor, tom de podcast...">
+                                            </div>
+                                        </div>
+                                        <div class="script-audio-direction-note">As instruções acima refinam a interpretação sem trocar o texto falado.</div>
                                     </div>
 
                                     <div class="script-video-audio-builder-actions">
@@ -2097,11 +2102,12 @@
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                                         Gravar Voz
                                     </button>
-                                    <label class="persona-upload-btn">
+                                    <button class="persona-upload-btn" onclick="openPersonaUploadSourceModal('script')" type="button">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                         Enviar Áudio
-                                        <input type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script')" hidden>
-                                    </label>
+                                    </button>
+                                    <input id="script-persona-audio-input" type="file" accept="audio/*" onchange="handlePersonaUpload(event, 'script')" hidden>
+                                    <input id="script-persona-video-input" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" onchange="handlePersonaVideoUpload(event, 'script')" hidden>
                                 </div>
                                 <div id="script-recording-area" class="persona-recording-area" hidden>
                                     <div class="recording-pulse"></div>
@@ -2116,7 +2122,7 @@
                                         <button class="btn-icon-sm" onclick="cancelPersonaPreview('script')" type="button">&times;</button>
                                     </div>
                                 </div>
-                                <p class="persona-hint">Grave ou envie 10-30s falando para criar seu perfil de voz</p>
+                                <p class="persona-hint">Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz</p>
                             </div>
                             <!-- Vozes IA -->
                             <div class="voice-section">
@@ -2247,23 +2253,33 @@
 
                     <!-- Step 7: Realistic Settings (only for Realista type) -->
                     <div class="wizard-step" data-step="7" hidden>
-                        <div class="form-group" id="script-realistic-persona-group">
-                            <label>Persona de interação</label>
-                            <div class="realistic-inspiration-tags" id="script-realistic-persona-tags">
-                                <button class="style-tag" type="button" data-persona="homem">Homem</button>
-                                <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
-                                <button class="style-tag" type="button" data-persona="crianca">Criança</button>
-                                <button class="style-tag" type="button" data-persona="familia">Família</button>
-                                <button class="style-tag" type="button" data-persona="natureza">Natureza</button>
-                                <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
-                                <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
-                            </div>
-                            <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
-                            <div id="script-realistic-persona-preview" class="realistic-persona-preview"></div>
-                            <div class="realistic-persona-actions">
-                                <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('script')" title="Gerenciar personas" aria-label="Gerenciar personas">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                </button>
+                        <div class="realistic-info-banner">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                            <span>A IA vai otimizar seu roteiro em um prompt cinematográfico profissional para gerar o melhor vídeo possível</span>
+                        </div>
+
+                        <div class="form-group collapsible-section" id="script-realistic-persona-group">
+                            <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                <span class="section-title">Persona de interação</span>
+                                <span class="collapsible-arrow">&#9660;</span>
+                            </button>
+                            <div class="collapsible-body" hidden>
+                                <div class="realistic-inspiration-tags" id="script-realistic-persona-tags">
+                                    <button class="style-tag" type="button" data-persona="homem">Homem</button>
+                                    <button class="style-tag" type="button" data-persona="mulher">Mulher</button>
+                                    <button class="style-tag" type="button" data-persona="crianca">Criança</button>
+                                    <button class="style-tag" type="button" data-persona="familia">Família</button>
+                                    <button class="style-tag" type="button" data-persona="natureza">Natureza</button>
+                                    <button class="style-tag" type="button" data-persona="desenho">Desenho</button>
+                                    <button class="style-tag" type="button" data-persona="personalizado">Personalizado</button>
+                                </div>
+                                <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
+                                <div id="script-realistic-persona-preview" class="realistic-persona-preview"></div>
+                                <div class="realistic-persona-actions">
+                                    <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('script')" title="Gerenciar personas" aria-label="Gerenciar personas">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -2283,8 +2299,12 @@
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
                                 </button>
                                 <button class="engine-option" data-value="lite2" type="button">
-                                    <strong>Lite 2.0 Fast</strong>
+                                    <strong>Mega 1.5 Real</strong>
                                     <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
+                                </button>
+                                <button class="engine-option" data-value="mega15" type="button">
+                                    <strong>Lite 2.0 Fast</strong>
+                                    <small class="engine-option-desc">Versão mais leve do Mega 2.0 Ultra, com áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
@@ -2297,6 +2317,13 @@
                             </div>
                         </div>
 
+                        <div class="form-group realistic-audio-toggle" id="script-seedance-last-frame-group" hidden>
+                            <label class="toggle-label">
+                                <input type="checkbox" id="script-seedance-last-frame" checked>
+                                <span>Ultima imagem = quadro final</span>
+                            </label>
+                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                        </div>
                         <div class="form-group" id="script-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="script-realistic-duration">
@@ -2555,7 +2582,7 @@
                                         <input id="similar-unified-seedance-last-frame" type="checkbox">
                                         <span>Ultima imagem = quadro final</span>
                                     </label>
-                                    <small class="pause-hint">No Mega 2.0 Ultra, a ultima imagem enviada vira o quadro final quando houver 2+ imagens.</small>
+                                    <small class="pause-hint">No Lite 2.0 Fast e no Mega 2.0 Ultra, a ultima imagem enviada vira o quadro final quando houver 2+ imagens.</small>
                                 </div>
                             </div>
                             <div id="similar-unified-preview-wrap" class="similar-unified-preview" hidden>
@@ -2582,7 +2609,8 @@
                         </div>
 
                         <div id="similar-engine-options" class="engine-options">
-                            <button class="similar-scene-engine-btn similar-generation-engine-btn selected" data-value="lite2" type="button" title="Lite 2.0 Fast" aria-label="Lite 2.0 Fast">Lite 2.0 Fast</button>
+                            <button class="similar-scene-engine-btn similar-generation-engine-btn selected" data-value="lite2" type="button" title="Mega 1.5 Real" aria-label="Mega 1.5 Real">Mega 1.5 Real</button>
+                            <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="mega15" type="button" title="Lite 2.0 Fast" aria-label="Lite 2.0 Fast">Lite 2.0 Fast</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="viduq3" type="button" title="Pro 3.1 Start" aria-label="Pro 3.1 Start">Pro 3.1 Start</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="grok" type="button" title="Cria Speed 2.5 (Grok)" aria-label="Cria Speed 2.5 (Grok)">Cria 2.5</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="wan2" type="button" title="Ultra High 3.0" aria-label="Ultra High 3.0">Ultra 3.0</button>
@@ -2705,13 +2733,14 @@
                                         <option value="wan2" selected>Ultra High 1.0</option>
                                         <option value="viduq3">Pro 3.1 Start</option>
                                         <option value="grok">Cria 3.0 speed</option>
-                                        <option value="lite2">Lite 2.0 Fast</option>
+                                        <option value="lite2">Mega 1.5 Real</option>
+                                        <option value="mega15">Lite 2.0 Fast</option>
                                         <option value="seedance">Mega 2.0 Ultra</option>
                                         <option value="avatar31">Avatar 3.1 Plus</option>
                                     </select>
                                     <div id="workflow-seedance-last-frame-group" hidden>
                                         <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                                        <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                                        <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                                     </div>
                                     <label>Duração</label>
                                     <select id="workflow-duration" class="input workflow-input">
@@ -3536,8 +3565,12 @@
                                     <small class="engine-option-desc">Cria vídeo com velocidade rápida.</small>
                                 </button>
                                 <button class="engine-option" data-value="lite2" type="button">
-                                    <strong>Lite 2.0 Fast</strong>
+                                    <strong>Mega 1.5 Real</strong>
                                     <small class="engine-option-desc">Cria vídeo realista com áudio nativo.</small>
+                                </button>
+                                <button class="engine-option" data-value="mega15" type="button">
+                                    <strong>Lite 2.0 Fast</strong>
+                                    <small class="engine-option-desc">Versão mais leve do Mega 2.0 Ultra, com áudio nativo.</small>
                                 </button>
                                 <button class="engine-option" data-value="seedance" type="button">
                                     <strong>Mega 2.0 Ultra</strong>
@@ -3554,7 +3587,7 @@
                                 <input type="checkbox" id="auto-seedance-last-frame">
                                 <span>Ultima imagem = quadro final</span>
                             </label>
-                            <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                            <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
                         </div>
                         <div class="form-group">
                             <label>Duração do vídeo</label>
@@ -4308,10 +4341,10 @@
                                 <span id="script-image-generator-reference-count" class="photo-upload-hint">0/5</span>
                             </div>
                             <div class="script-image-generator-reference-strip">
-                                <button type="button" class="script-image-generator-reference-add" onclick="triggerScriptImageCreatorReferenceUpload()" aria-label="Adicionar referências">
-                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                                </button>
-                                <div id="script-image-generator-reference-preview" class="photo-preview-grid script-image-generator-reference-preview"></div>
+                                        <div id="script-image-generator-reference-preview" class="script-image-generator-reference-preview"></div>
+                                        <button type="button" class="script-image-generator-reference-add" onclick="triggerScriptImageCreatorReferenceUpload()" aria-label="Adicionar referências">
+                                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                        </button>
                             </div>
                             <input id="script-image-generator-reference-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleScriptImageCreatorReferenceSelect(event)">
                         </div>
@@ -4328,7 +4361,7 @@
                                             <label>Persona de interação</label>
                                         </div>
                                         <div id="script-image-generator-persona-tags" class="realistic-inspiration-tags">
-                                            <button type="button" class="style-tag selected" data-persona="homem">Homem</button>
+                                            <button type="button" class="style-tag" data-persona="homem">Homem</button>
                                             <button type="button" class="style-tag" data-persona="mulher">Mulher</button>
                                             <button type="button" class="style-tag" data-persona="crianca">Criança</button>
                                             <button type="button" class="style-tag" data-persona="familia">Família</button>
@@ -4474,8 +4507,32 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260523-01"></script>
-    <script src="/video/static/pwa.js?v=20260523-01"></script>
+    <div id="persona-upload-source-modal" class="persona-upload-source-modal" hidden onclick="closePersonaUploadSourceModal()">
+        <div class="persona-upload-source-card" role="dialog" aria-modal="true" aria-labelledby="persona-upload-source-title" onclick="event.stopPropagation()">
+            <button class="persona-upload-source-close" onclick="closePersonaUploadSourceModal()" type="button" aria-label="Fechar">&times;</button>
+            <span class="persona-upload-source-kicker">Clonar voz</span>
+            <h3 id="persona-upload-source-title">Como você quer enviar sua amostra?</h3>
+            <p class="persona-upload-source-copy">Escolha se quer enviar um arquivo de áudio pronto ou extrair a faixa de voz de um vídeo antes da clonagem.</p>
+            <div class="persona-upload-source-grid">
+                <button class="persona-upload-source-option" onclick="selectPersonaUploadSource('audio')" type="button">
+                    <span class="persona-upload-source-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    </span>
+                    <strong>Enviar arquivo de áudio</strong>
+                    <small>Use um trecho pronto da sua voz em MP3, WAV, M4A ou similar.</small>
+                </button>
+                <button class="persona-upload-source-option" onclick="selectPersonaUploadSource('video')" type="button">
+                    <span class="persona-upload-source-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="15" height="14" rx="2" ry="2"/><polygon points="17 10 22 7 22 17 17 14 17 10"/></svg>
+                    </span>
+                    <strong>Extrair áudio de um vídeo</strong>
+                    <small>Envie um vídeo e a plataforma extrai a faixa de áudio para criar a voz.</small>
+                </button>
+            </div>
+        </div>
+    </div>
+    <script src="/video/static/app.js?v=20260523-03"></script>
+    <script src="/video/static/pwa.js?v=20260523-03"></script>
 </body>
 </html>
 

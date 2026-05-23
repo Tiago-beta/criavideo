@@ -1,7 +1,13 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app.services.seedance_video import _atlas_assets_not_ready, _prepare_vidu_reference
+from app.services.seedance_video import (
+    SEEDANCE_FAST_I2V_MODEL,
+    _atlas_assets_not_ready,
+    _normalize_seedance_engine_variant,
+    _prepare_vidu_reference,
+    _resolve_seedance_generation_profile,
+)
 
 
 class TestAtlasAssetReadiness(unittest.TestCase):
@@ -35,6 +41,26 @@ class TestPrepareViduReference(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "uploadMedia nao retornou URL publica"):
                 await _prepare_vidu_reference("frame.png", "api-key")
+
+
+class TestSeedanceProfiles(unittest.TestCase):
+    def test_normalizes_swapped_display_aliases(self):
+        self.assertEqual(_normalize_seedance_engine_variant("mega15"), "mega15")
+        self.assertEqual(_normalize_seedance_engine_variant("Lite 2.0 Fast"), "mega15")
+        self.assertEqual(_normalize_seedance_engine_variant("Seedance 2.0 Fast"), "mega15")
+        self.assertEqual(_normalize_seedance_engine_variant("Mega 1.5 Real"), "lite2")
+
+    def test_resolves_mega15_i2v_profile(self):
+        model_id, duration, resolution = _resolve_seedance_generation_profile(
+            engine_variant="mega15",
+            use_i2v=True,
+            duration=18,
+            resolution="1080p",
+        )
+
+        self.assertEqual(model_id, SEEDANCE_FAST_I2V_MODEL)
+        self.assertEqual(duration, 15)
+        self.assertEqual(resolution, "480p")
 
 
 if __name__ == "__main__":

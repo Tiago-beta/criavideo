@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v526 loaded");
+console.log("[CriaVideo] app.js v537 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -204,8 +204,8 @@ const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
 const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
-const SIMILAR_ENGINE_OPTIONS = ["lite2", "viduq3", "grok", "wan2", "seedance"];
-const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "lite2", "viduq3"]);
+const SIMILAR_ENGINE_OPTIONS = ["lite2", "mega15", "viduq3", "grok", "wan2", "seedance"];
+const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "mega15", "lite2", "viduq3"]);
 
 function _isSeedanceFamilyEngine(engineValue) {
     return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
@@ -216,6 +216,7 @@ function _getCreateRealisticDurationOptions(engineValue) {
     if (engine === "wan2") return WAN_REALISTIC_DURATION_OPTIONS;
     if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
     if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "mega15") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     return DEFAULT_REALISTIC_DURATION_OPTIONS;
 }
@@ -225,14 +226,12 @@ function _getAutoRealisticDurationOptions(engineValue) {
     if (engine === "grok") return AUTO_GROK_DURATION_OPTIONS;
     if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
     if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
+    if (engine === "mega15") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     if (engine === "seedance") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
     return WAN_REALISTIC_DURATION_OPTIONS;
 }
 
 function _getSimilarManualDurationOptions(engineValue) {
-    const normalizedEngine = _normalizeSimilarEngine(engineValue);
-    if (normalizedEngine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
-    if (normalizedEngine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
     return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
 }
 
@@ -449,7 +448,13 @@ function _getSelectedCreatePersonaType(prefix) {
 function _clearCreatePersonaPreview(prefix) {
     const preview = document.getElementById(`${prefix}-realistic-persona-preview`);
     if (!preview) return;
-    preview.innerHTML = '<div class="realistic-persona-empty">Opcional: escolha uma persona apenas se quiser guiar a interação da cena.</div>';
+    preview.innerHTML = "";
+}
+
+function _clearScriptImageCreatorPersonaPreview() {
+    const preview = document.getElementById("script-image-generator-persona-preview");
+    if (!preview) return;
+    preview.innerHTML = '<div class="realistic-persona-empty">Opcional: selecione uma persona apenas se quiser guiar a interação da cena.</div>';
 }
 
 function _syncCreatePersonaUi(prefix) {
@@ -459,6 +464,18 @@ function _syncCreatePersonaUi(prefix) {
         return;
     }
     _refreshPersonaContext(prefix, selectedPersona);
+}
+
+function _setCreatePersonaSectionCollapsed(prefix, collapsed = true) {
+    const group = document.getElementById(`${prefix}-realistic-persona-group`);
+    const toggleBtn = group ? group.querySelector(".collapsible-toggle") : null;
+    const body = group ? group.querySelector(".collapsible-body") : null;
+    if (toggleBtn) {
+        toggleBtn.setAttribute("aria-expanded", String(!collapsed));
+    }
+    if (body) {
+        body.hidden = !!collapsed;
+    }
 }
 
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
@@ -1457,8 +1474,8 @@ function initDashboard() {
     }
 
     handleSocialCallbackResult();
-    _refreshPersonaContext("wizard", "natureza");
-    _refreshPersonaContext("script", "natureza");
+    _refreshPersonaContext("wizard");
+    _refreshPersonaContext("script");
     _refreshPersonaContext("ai", "natureza");
     _refreshPersonaContext("auto", "natureza");
 
@@ -3806,18 +3823,26 @@ async function loadProjects() {
         }
         container.innerHTML = visibleData.map((project) => {
             const normalizedStatus = String(project.status || "").trim().toLowerCase();
+            const workflowType = String(project.workflow_type || "").trim().toLowerCase();
+            const isSimilarProject = workflowType === "similar";
             const dateStr = _renderExpiryOrDate(project);
             const statusPt = _statusPt(project.status);
             const isExpired = project.video_expired || false;
             const canWatch = (normalizedStatus === "completed" || normalizedStatus === "published") && !isExpired;
             const isGenerating = _isProjectProcessingStatus(normalizedStatus);
-            const thumbClick = canWatch ? `onclick="watchVideo(${project.id})" style="cursor:pointer"` : "";
+            const thumbClick = canWatch
+                ? `onclick="watchVideo(${project.id})" style="cursor:pointer"`
+                : (isSimilarProject ? `onclick="openSimilarProject(${project.id})" style="cursor:pointer"` : "");
             const cardClasses = `card card--create-project${isGenerating ? " is-generating" : ""}`;
+            const reopenSimilarButton = isSimilarProject
+                ? `<button class="card-btn card-btn-similar" onclick="openSimilarProject(${project.id})" type="button" title="Abrir semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 4 1.5 3L20 8.5 16.5 10 15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m4 20 7-7"/><path d="M9 20H4v-5"/></svg></button>`
+                : "";
             const cardActions = `
+                ${reopenSimilarButton}
                 ${canWatch ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
-                ${(project.status === "pending" || project.status === "failed") ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
+                ${((project.status === "pending" || project.status === "failed") && !isSimilarProject) ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
                 ${canWatch ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
-                ${canWatch ? `<button class="card-btn card-btn-edit" onclick="openProjectEditorFromCreate(${project.id})" type="button" title="Editar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ""}
+                ${(canWatch && !isSimilarProject) ? `<button class="card-btn card-btn-edit" onclick="openProjectEditorFromCreate(${project.id})" type="button" title="Editar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ""}
                 <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
             `;
             const thumb = project.thumbnail_url
@@ -3838,6 +3863,7 @@ async function loadProjects() {
                         </div>
                         ${project.status !== "completed" ? `<span class="badge badge-${badgeClass(project.status)}">${esc(statusPt)}</span>` : ""}
                         ${isGenerating ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${_getProjectDisplayProgress(project) || 12}%"></div></div>` : ""}
+                        ${project.error_message ? `<p class="card-error">${esc(project.error_message)}</p>` : ""}
                     </div>
                 </div>
             `;
@@ -3847,6 +3873,46 @@ async function loadProjects() {
         _startCountdownRefresh();
     } catch (error) {
         container.innerHTML = `<p class="loading">Erro: ${esc(error.message)}</p>`;
+    }
+}
+
+async function openSimilarProject(projectId) {
+    const parsedProjectId = Number(projectId || 0);
+    if (!parsedProjectId) {
+        return;
+    }
+
+    try {
+        const project = await api(`/video/projects/${parsedProjectId}`);
+        const tags = _safeSimilarTags(project?.tags);
+        const workflowType = String(tags.type || project?.workflow_type || "").trim().toLowerCase();
+        if (workflowType !== "similar") {
+            throw new Error("Projeto semelhante não encontrado.");
+        }
+
+        _resetSimilarModeState();
+        similarState.projectId = parsedProjectId;
+        similarState.lastProjectSnapshot = project;
+
+        const titleEl = document.getElementById("similar-title");
+        if (titleEl) {
+            titleEl.value = project.title || "";
+        }
+
+        const aspectEl = document.getElementById("similar-aspect");
+        if (aspectEl) {
+            aspectEl.value = _normalizeSimilarAspectRatio(project.aspect_ratio) || "16:9";
+        }
+
+        const sourceEl = document.getElementById("similar-source-url");
+        if (sourceEl) {
+            sourceEl.value = String(tags.similar_source_url || "").trim();
+        }
+
+        switchCreateMode("similar");
+        await _refreshSimilarProject({ silent: true });
+    } catch (error) {
+        showToast(`Erro ao abrir semelhante: ${error.message}`, "error");
     }
 }
 
@@ -4491,7 +4557,7 @@ function _buildRealisticEstimatePayload(prefix) {
     const hasScriptPhotoReference = prefix === "script"
         ? (!!document.getElementById("script-use-photos")?.checked && scriptPhotos.length > 0)
         : false;
-    const hasReferenceImage = hasScriptPhotoReference || !disablePersonaReference;
+    const hasReferenceImage = hasScriptPhotoReference || (!disablePersonaReference && !!selectedPersona);
 
     const hasSelectedSong = prefix === "wizard"
         ? !!_wizardSelectedSong
@@ -5255,6 +5321,8 @@ async function createSimilar(projectId) {
         "Ultra High 2.2",
         "Lite 2.0 Fast",
         "Lite 2.0",
+        "Mega 1.5 Real",
+        "Seedance 2.0 Fast",
         "Mega 2.0 Ultra",
         "Seedance 2.0",
         "Grok",
@@ -5276,10 +5344,11 @@ async function createSimilar(projectId) {
 
     const normalizeEngine = (value) => {
         const raw = String(value || "").trim().toLowerCase();
-        if (["wan2", "grok", "seedance", "lite2", "viduq3"].includes(raw)) {
+        if (["wan2", "grok", "seedance", "lite2", "mega15", "viduq3"].includes(raw)) {
             return raw;
         }
-        if (raw.includes("lite 2.0") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
+        if (raw.includes("mega 1.5") || raw.includes("seedance v1.5") || raw.includes("seedance-v1.5")) return "lite2";
+        if (raw.includes("lite 2.0") || raw.includes("seedance 2.0 fast") || raw.includes("seedance fast")) return "mega15";
         if (raw.includes("pro 3.1") || raw.includes("vidu")) return "viduq3";
         if (raw.includes("mega 2.0")) return "seedance";
         if (raw.includes("seedance")) return "seedance";
@@ -5378,7 +5447,7 @@ async function createSimilar(projectId) {
         const narrationVoice = String(tagsData.narration_voice || "onyx").trim();
         _applyCreateRealisticVoiceSelection("script", narrationVoice);
 
-        const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "natureza");
+        const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "", "");
         setSelectedRealisticPersona(selectedPersona);
         const disablePersonaReference = !!tagsData.disable_persona_reference
             || String(tagsData.reference_source || "").trim().toLowerCase() === "none";
@@ -5394,15 +5463,19 @@ async function createSimilar(projectId) {
         const multiPersonaCb = document.getElementById("script-realistic-multi-persona");
         if (multiPersonaCb) multiPersonaCb.checked = !disablePersonaReference && personaIds.length > 1;
 
-        _setPersonaNoReferenceEnabled("script", selectedPersona, false);
-        await _refreshPersonaContext("script", selectedPersona);
-        if (disablePersonaReference) {
-            _setPersonaNoReferenceEnabled("script", selectedPersona, true);
-            _setSelectedPersonaProfileIds("script", selectedPersona, []);
-            _renderPersonaPreview("script");
-        } else if (personaIds.length) {
-            _setSelectedPersonaProfileIds("script", selectedPersona, personaIds);
-            _renderPersonaPreview("script");
+        if (selectedPersona) {
+            _setPersonaNoReferenceEnabled("script", selectedPersona, false);
+            await _refreshPersonaContext("script", selectedPersona);
+            if (disablePersonaReference) {
+                _setPersonaNoReferenceEnabled("script", selectedPersona, true);
+                _setSelectedPersonaProfileIds("script", selectedPersona, []);
+                _renderPersonaPreview("script");
+            } else if (personaIds.length) {
+                _setSelectedPersonaProfileIds("script", selectedPersona, personaIds);
+                _renderPersonaPreview("script");
+            }
+        } else {
+            _clearRealisticPersonaPreview("script");
         }
 
         if (usesTevoxiAudio) {
@@ -8425,12 +8498,13 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
 function _normalizeSimilarEngine(rawValue) {
     const value = String(rawValue || "").trim().toLowerCase();
-    if (value === "grok" || value === "wan2" || value === "lite2" || value === "seedance" || value === "viduq3") {
+    if (value === "grok" || value === "wan2" || value === "lite2" || value === "mega15" || value === "seedance" || value === "viduq3") {
         return value;
     }
-    if (value.includes("lite 2.0") || value.includes("seedance v1.5") || value.includes("seedance-v1.5")) {
+    if (value.includes("mega 1.5") || value.includes("seedance v1.5") || value.includes("seedance-v1.5")) {
         return "lite2";
     }
+    if (value.includes("lite 2.0") || value.includes("seedance 2.0 fast") || value.includes("seedance fast")) return "mega15";
     if (value.includes("vidu") || value.includes("pro 3.1") || value === "pro31" || value === "pro3.1") {
         return "viduq3";
     }
@@ -8442,20 +8516,22 @@ function _normalizeSimilarEngine(rawValue) {
 
 function _similarSceneEngineLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1 Start";
+    if (normalized === "viduq3") return "Pro 3.1";
     if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Lite 2.0 Fast";
+    if (normalized === "lite2") return "Mega 1.5";
+    if (normalized === "mega15") return "Lite 2.0";
     if (normalized === "seedance") return "Mega 2.0";
     return "Cria 2.5";
 }
 
 function _similarEngineDisplayLabel(engineValue) {
     const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1 Start";
-    if (normalized === "wan2") return "Ultra High 3.0";
-    if (normalized === "lite2") return "Lite 2.0 Fast";
-    if (normalized === "seedance") return "Mega 2.0 Ultra";
-    return "Cria Speed 2.5 (Grok)";
+    if (normalized === "viduq3") return "Pro 3.1";
+    if (normalized === "wan2") return "Ultra 3.0";
+    if (normalized === "lite2") return "Mega 1.5";
+    if (normalized === "mega15") return "Lite 2.0";
+    if (normalized === "seedance") return "Mega 2.0";
+    return "Cria 2.5";
 }
 
 function _getSimilarSceneSelectedEngine(sceneId) {
@@ -9055,6 +9131,13 @@ function _renderSimilarMergePreview(project, tags = {}) {
     const renderDuration = Number(render?.duration || 0) || 0;
     const isMerging = stage === "merging_scenes" || (pendingStage === "merging_scenes" && status === "rendering");
     const isMergeFailed = stage === "merge_failed" || (status === "failed" && (stage === "merge_failed" || pendingStage === "merging_scenes"));
+    const isMergedReady = stage === "merged";
+
+    if (!isMerging && !isMergeFailed && !isMergedReady) {
+        wrapEl.innerHTML = "";
+        wrapEl.hidden = true;
+        return;
+    }
 
     if (!isMerging && !isMergeFailed && !renderUrl) {
         wrapEl.innerHTML = "";
@@ -9300,7 +9383,7 @@ function _normalizeSimilarSceneDurationMode(rawValue) {
     if (value === "auto") {
         return "auto";
     }
-    if (["5", "10", "12", "15"].includes(value)) {
+    if (["5", "10", "15"].includes(value)) {
         return value;
     }
     return "";
@@ -9780,6 +9863,7 @@ function _renderSimilarScenes(project, options = {}) {
             : _extractSimilarNarrationFromPrompt(promptRaw);
         const narrationValue = esc(narrationRaw);
         const frameBusyLabel = esc(String(draft.frameBusyLabel || (isEditingEndFrame ? "Atualizando o frame final..." : "Trocando a imagem com IA...")));
+        const frameBusyTarget = frameBusy ? activeFrameTarget : "";
         const startFrameAltRaw = `Frame inicial usado na cena ${idx + 1}`;
         const endFrameAltRaw = `Frame final usado na cena ${idx + 1}`;
         const startFrameDownloadName = esc(`frame-cena-${idx + 1}-inicio.jpg`);
@@ -9814,15 +9898,6 @@ function _renderSimilarScenes(project, options = {}) {
             : generatedImageVariants.length
                 ? `Entrada do vídeo e ${generatedImageVariants.length} variacao(oes) IA.`
                 : "Contexto visual da cena.";
-        const referenceFrameQuickActionsMarkup = referenceTextDetected
-            ? `
-                <div class="similar-reference-frame-tools">
-                    <div class="similar-reference-frame-quick-actions">
-                        <button class="similar-frame-tool-btn similar-frame-tool-btn-warning" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>
-                    </div>
-                </div>
-            `
-            : "";
         const sceneClipProgress = isGeneratingSceneClip
             ? Math.max(4, Math.min(99, Math.round(Number(similarState.busyProgressCurrent || project?.progress || similarState.progress || 0) || 4)))
             : 0;
@@ -9845,19 +9920,33 @@ function _renderSimilarScenes(project, options = {}) {
             ? durationSelection.detectedDurationSeconds
             : durationSelection.selectedDurationSeconds;
         const manualDurationOptions = _getSimilarManualDurationOptions(selectedSceneEngine);
-        const durationSelectMarkup = ["auto", ...manualDurationOptions.map((value) => String(value))].map((value) => {
+        const durationButtonsMarkup = ["auto", ...manualDurationOptions.map((value) => String(value))].map((value) => {
             const normalizedValue = _normalizeSimilarSceneDurationMode(value) || "auto";
             const isSelected = durationSelection.selectedMode === normalizedValue;
             const title = normalizedValue === "auto"
                 ? `Usar o tempo detectado desta cena (${durationSelection.detectedDurationSeconds.toFixed(1)}s)`
                 : `Gerar esta cena com ${normalizedValue} segundos`;
             const label = normalizedValue === "auto"
-                ? `Automatico (${durationSelection.detectedDurationSeconds.toFixed(1)}s)`
-                : _formatDurationOptionLabel(normalizedValue);
-            return `<option value="${normalizedValue}" title="${title}"${isSelected ? " selected" : ""}>${label}</option>`;
+                ? "Auto"
+                : `${normalizedValue}s`;
+            return `<button class="duration-option${normalizedValue === "auto" ? " duration-option-auto" : ""}${isSelected ? " selected" : ""}" data-value="${normalizedValue}" type="button" title="${title}" aria-label="${title}">${label}</button>`;
         }).join("");
 
-        const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "", overlayActionsMarkup = "" }) => {
+        const buildFrameBusyOverlayMarkup = (target) => {
+            if (!frameBusy || frameBusyTarget !== target) {
+                return "";
+            }
+            return `
+                <div class="similar-frame-gallery-busy-overlay" role="status" aria-live="polite">
+                    <span class="similar-frame-gallery-busy-chip">
+                        <span class="similar-scene-clip-spinner" aria-hidden="true"></span>
+                        <strong>${frameBusyLabel}</strong>
+                    </span>
+                </div>
+            `;
+        };
+
+        const buildFrameGalleryItem = ({ url, alt, badge, downloadName, active = false, isBase = false, clipBusy = false, clipBusyMarkup = "", frameBusy: isFrameBusy = false, frameBusyMarkup = "", overlayActionsMarkup = "" }) => {
             const safeUrl = esc(String(url || ""));
             const safeAlt = esc(String(alt || ""));
             const safeBadge = esc(String(badge || ""));
@@ -9865,12 +9954,13 @@ function _renderSimilarScenes(project, options = {}) {
             const resolvedOverlayActionsMarkup = overlayActionsMarkup
                 || `<a class="similar-frame-image-action" href="${safeUrl}" download="${safeDownloadName}" title="Baixar ${safeBadge}" aria-label="Baixar ${safeBadge}">${similarActionIcons.download}</a>`;
             return `
-                <article class="similar-frame-gallery-item${active ? " is-active" : ""}${isBase ? " is-base" : ""}${clipBusy ? " is-generating-clip" : ""}">
-                    <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${clipBusy ? " is-generating-clip" : ""}">
+                <article class="similar-frame-gallery-item${active ? " is-active" : ""}${isBase ? " is-base" : ""}${clipBusy ? " is-generating-clip" : ""}${isFrameBusy ? " is-busy" : ""}">
+                    <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${clipBusy ? " is-generating-clip" : ""}${isFrameBusy ? " is-frame-busy" : ""}">
                         <img src="${safeUrl}" alt="${safeAlt}" loading="lazy">
                         <span class="similar-frame-gallery-badge">${safeBadge}</span>
                         ${resolvedOverlayActionsMarkup}
                         ${clipBusyMarkup}
+                        ${frameBusyMarkup}
                     </div>
                 </article>
             `;
@@ -9889,7 +9979,10 @@ function _renderSimilarScenes(project, options = {}) {
                     isBase: true,
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
+                    frameBusy: frameBusyTarget === "start",
+                    frameBusyMarkup: buildFrameBusyOverlayMarkup("start"),
                     overlayActionsMarkup: `
+                        ${referenceTextDetected ? `<button class="similar-frame-inline-remove-btn" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>` : ""}
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(renderedStartFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
                             <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
@@ -9907,6 +10000,8 @@ function _renderSimilarScenes(project, options = {}) {
                     downloadName: endFrameDownloadName,
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
+                    frameBusy: frameBusyTarget === "end",
+                    frameBusyMarkup: buildFrameBusyOverlayMarkup("end"),
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(renderedEndFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
@@ -9951,14 +10046,6 @@ function _renderSimilarScenes(project, options = {}) {
                 </div>
             `
             : "";
-        const frameBusyMarkup = frameBusy
-            ? `
-                <div class="similar-reference-frame-progress" role="status" aria-live="polite">
-                    <span class="similar-reference-frame-progress-label">${frameBusyLabel}</span>
-                    <div class="similar-reference-frame-progress-bar"><span></span></div>
-                </div>
-            `
-            : "";
         const inlineClipMarkup = hasBoundaryFrame && hasClipPreview
             ? `
                 <aside class="similar-scene-clip-column">
@@ -9979,7 +10066,6 @@ function _renderSimilarScenes(project, options = {}) {
                             <strong>Frames usados no vídeo</strong>
                             <span>${framePanelSummary}</span>
                         </div>
-                        ${referenceFrameQuickActionsMarkup}
                     </div>
                     <div class="similar-reference-frame-body${inlineClipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                         <div class="similar-reference-frame-primary-column">
@@ -9987,7 +10073,6 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${inlineClipMarkup}
                     </div>
-                    ${referenceFrameQuickActionsMarkup}
                     <div class="similar-reference-frame-narration-editor${narrationEditorOpen ? " is-open" : ""}" ${narrationEditorOpen ? "" : "hidden"}>
                         <label for="similar-scene-narration-${sceneId}">O que deve ser falado nesta cena?</label>
                         <textarea id="similar-scene-narration-${sceneId}" class="input similar-reference-frame-editor-input" rows="2" maxlength="320" placeholder="Ex.: Estou muito feliz, agora vou renovar minha sala" onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); similarApplySceneNarration(${sceneId}); }">${narrationValue}</textarea>
@@ -10009,9 +10094,8 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${frameUploadsMarkup}
                         <div id="similar-frame-create-action-${sceneId}" class="similar-reference-frame-editor-actions similar-reference-frame-create-actions" ${showFrameCreateAction ? "" : "hidden"}>
-                            <button class="similar-frame-create-btn" type="button" onclick="${framePrimaryAction}" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>${isEditingEndFrame ? "Aplicar" : "Criar"}</span></button>
+                            <button class="similar-frame-create-btn" type="button" onclick="${framePrimaryAction}" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>${isEditingEndFrame ? "Aplicar" : "Criar imagem"}</span></button>
                         </div>
-                        ${frameBusyMarkup}
                     </div>
                 </section>
             `
@@ -10077,9 +10161,9 @@ function _renderSimilarScenes(project, options = {}) {
                 <div class="similar-scene-pickers">
                     <div class="similar-scene-duration-picker" aria-label="Duracao da cena ${idx + 1}">
                         <span class="similar-scene-picker-label">Tempo</span>
-                        <select id="similar-scene-duration-select-${sceneId}" class="input similar-scene-duration-select" onchange="similarSelectSceneDuration(${sceneId}, this.value)" aria-label="Selecionar a duracao da cena ${idx + 1}">
-                            ${durationSelectMarkup}
-                        </select>
+                        <div id="similar-scene-duration-options-${sceneId}" class="duration-options" role="group" aria-label="Selecionar a duracao da cena ${idx + 1}">
+                            ${durationButtonsMarkup}
+                        </div>
                         <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
                         <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
                     </div>
@@ -10100,10 +10184,9 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarSaveScene(${sceneId})" title="Salvar cena" aria-label="Salvar cena">${similarActionIcons.save}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarUploadSceneImage(${sceneId})" title="Enviar imagens" aria-label="Enviar imagens">${similarActionIcons.upload}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
-                    <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Gerar imagem com IA" aria-label="Gerar imagem com IA">${similarActionIcons.image}</button>
+                    <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Criar imagem" aria-label="Criar imagem">${similarActionIcons.image}</button>
                     <div class="similar-scene-video-actions">
-                        <button class="similar-scene-action-btn similar-scene-action-btn-label similar-scene-action-btn-primary similar-scene-action-btn-video-image" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span class="similar-scene-action-btn-copy"><strong>Gerar vídeo</strong><small>Usando a imagem</small></span></button>
-                        <button class="similar-scene-action-btn similar-scene-action-btn-label similar-scene-action-btn-video-text" type="button" onclick="similarRegenerateScene(${sceneId}, 'text')" title="${generateVideoTextTitle}" aria-label="${generateVideoTextTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span class="similar-scene-action-btn-copy"><strong>Gerar vídeo</strong><small>Só com o texto</small></span></button>
+                        <button class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>Gerar vídeo</span></button>
                     </div>
                 </div>
             </article>
@@ -11898,13 +11981,14 @@ function workflowAddNode(kind) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
-                <option value="lite2">Lite 2.0 Fast</option>
+                <option value="lite2">Mega 1.5 Real</option>
+                <option value="mega15">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
             <label>Duração</label>
             <select id="workflow-duration" class="input workflow-input">
@@ -12240,7 +12324,8 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
-        lite2: "Lite 2.0 Fast",
+        lite2: "Mega 1.5 Real",
+        mega15: "Lite 2.0 Fast",
         viduq3: "Pro 3.1 Start",
         seedance: "Mega 2.0 Ultra",
         avatar31: "Avatar 3.1 Plus",
@@ -12338,6 +12423,7 @@ function workflowEngineDurationOptions(engine) {
     if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
     if (engine === "viduq3") return [...VIDU_Q3_REALISTIC_DURATION_OPTIONS];
     if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
+    if (engine === "mega15") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
@@ -12541,13 +12627,14 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
                 <option value="wan2">Ultra High 1.0</option>
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
-                <option value="lite2">Lite 2.0 Fast</option>
+                <option value="lite2">Mega 1.5 Real</option>
+                <option value="mega15">Lite 2.0 Fast</option>
                 <option value="seedance">Mega 2.0 Ultra</option>
                 <option value="avatar31">Avatar 3.1 Plus</option>
             </select>
             <div id="workflow-seedance-last-frame-group" hidden>
                 <label class="workflow-switch"><input id="workflow-seedance-last-frame" type="checkbox"> Ultima imagem = quadro final</label>
-                <small class="pause-hint">No Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
+                <small class="pause-hint">No Mega 1.5 Real, no Lite 2.0 Fast, no Pro 3.1 Start e no Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
             </div>
         `;
         if (durationLabel) durationLabel.insertAdjacentHTML("beforebegin", html);
@@ -15048,20 +15135,6 @@ async function similarRemoveAllFrameText() {
     }
 }
 
-async function similarGenerateFrameVariant(sceneId) {
-    await _requestSimilarFrameVariant(sceneId);
-}
-
-async function similarRemoveFrameText(sceneId) {
-    const scene = _getSimilarProjectScene(sceneId);
-    await _requestSimilarFrameVariant(sceneId, {
-        instructionOverride: _buildSimilarFrameTextRemovalInstruction(scene),
-        busyLabel: "Removendo escrita do frame base...",
-        promoteReferenceFrame: true,
-        successMessage: "Escrita removida do frame base.",
-    });
-}
-
 async function similarRegenerateScene(sceneId, generationMode = "image") {
     const projectId = Number(similarState.projectId || 0);
     if (!projectId) {
@@ -15924,11 +15997,7 @@ function resetCreateWizard(options = {}) {
         defAiPersona.classList.add("selected");
     }
     if (!preserveScriptImageCreatorState) {
-        const defImageCreatorPersona = document.querySelector('#script-image-generator-persona-tags [data-persona="homem"]');
-        if (defImageCreatorPersona) {
-            document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
-            defImageCreatorPersona.classList.add("selected");
-        }
+        document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
     }
 
     [
@@ -15950,8 +16019,14 @@ function resetCreateWizard(options = {}) {
     _personaNoReferenceByContext.wizard = {};
     _personaNoReferenceByContext.script = {};
     _personaNoReferenceByContext.ai = {};
-    _clearCreatePersonaPreview("wizard");
-    _clearCreatePersonaPreview("script");
+    ["wizard", "script"].forEach((prefix) => {
+        const lastFrameToggle = document.getElementById(`${prefix}-seedance-last-frame`);
+        if (lastFrameToggle) {
+            lastFrameToggle.checked = true;
+        }
+        _setCreatePersonaSectionCollapsed(prefix, true);
+        _clearCreatePersonaPreview(prefix);
+    });
     _refreshPersonaContext("ai", "natureza");
     if (!preserveScriptImageCreatorState) {
         _personaSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
@@ -15961,7 +16036,6 @@ function resetCreateWizard(options = {}) {
         _personaNoReferenceByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
         _personaNoReferenceByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
         _resetScriptImageCreatorPersonaContexts();
-        _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, "homem");
         _refreshPersonaContext(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
     }
 
@@ -16900,17 +16974,19 @@ function _normalizePersonaContext(context) {
 
 function _getScriptImageCreatorSelectedReferenceProfiles() {
     const selectedProfiles = [];
-    const personaType = _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT);
-    const personaIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, personaType)
-        ? []
-        : _getSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, personaType);
-    const personaProfiles = _getPersonaProfiles(personaType);
-    personaIds.forEach((profileId) => {
-        const profile = personaProfiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === profileId);
-        if (profile) {
-            selectedProfiles.push(profile);
-        }
-    });
+    const personaType = _getSelectedScriptImageCreatorPersonaType();
+    if (personaType) {
+        const personaIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, personaType)
+            ? []
+            : _getSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, personaType);
+        const personaProfiles = _getPersonaProfiles(personaType);
+        personaIds.forEach((profileId) => {
+            const profile = personaProfiles.find((item) => (parseInt(item?.id || "0", 10) || 0) === profileId);
+            if (profile) {
+                selectedProfiles.push(profile);
+            }
+        });
+    }
 
     const locationIds = _isPersonaNoReferenceEnabled(IMAGE_CREATOR_LOCATION_CONTEXT, "local")
         ? []
@@ -16934,26 +17010,39 @@ function _hasScriptImageCreatorAnyReference() {
     return (_scriptImageCreatorState.referenceFiles.length + _getScriptImageCreatorSelectedReferenceCount()) > 0;
 }
 
-function _ensureScriptImageCreatorPersonaTagSelection() {
+function _getSelectedScriptImageCreatorPersonaType() {
     const container = document.getElementById("script-image-generator-persona-tags");
-    if (!container || container.querySelector(".style-tag.selected")) {
-        return;
+    const selected = container?.querySelector(".style-tag.selected");
+    if (!selected?.dataset?.persona) {
+        return "";
     }
-    container.querySelector('[data-persona="homem"]')?.classList.add("selected");
+    return _normalizeRealisticPersonaType(selected.dataset.persona || "");
+}
+
+function _clearScriptImageCreatorPersonaTagSelection() {
+    document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((tag) => tag.classList.remove("selected"));
 }
 
 function _resetScriptImageCreatorPersonaContexts() {
-    _ensureScriptImageCreatorPersonaTagSelection();
-    const selectedPersonaType = _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT);
-    _setSelectedPersonaProfileIds(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType, []);
-    _setPersonaNoReferenceEnabled(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType, true);
+    _clearScriptImageCreatorPersonaTagSelection();
+    _personaSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+    _personaSelectionByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+    _personaMultiSelectionByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+    _personaMultiSelectionByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+    _personaNoReferenceByContext[IMAGE_CREATOR_PERSONA_CONTEXT] = {};
+    _personaNoReferenceByContext[IMAGE_CREATOR_LOCATION_CONTEXT] = {};
+    _clearScriptImageCreatorPersonaPreview();
     _setSelectedPersonaProfileIds(IMAGE_CREATOR_LOCATION_CONTEXT, "local", []);
     _setPersonaNoReferenceEnabled(IMAGE_CREATOR_LOCATION_CONTEXT, "local", true);
 }
 
 async function _refreshScriptImageCreatorReferenceContexts() {
-    _ensureScriptImageCreatorPersonaTagSelection();
-    await _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, _getRealisticPersonaTypeByContext(IMAGE_CREATOR_PERSONA_CONTEXT));
+    const selectedPersonaType = _getSelectedScriptImageCreatorPersonaType();
+    if (selectedPersonaType) {
+        await _refreshPersonaContext(IMAGE_CREATOR_PERSONA_CONTEXT, selectedPersonaType);
+    } else {
+        _clearScriptImageCreatorPersonaPreview();
+    }
     await _refreshPersonaContext(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
 }
 
@@ -17596,6 +17685,7 @@ function resetScriptImageCreatorModalState() {
 
 function openScriptImageCreatorModal() {
     _scriptImageCreatorLaunchSource = "script";
+    setScriptImageCreatorContextCollapsed(true);
     const scriptPrompt = String(document.getElementById("script-text")?.value || "").trim();
     _ensureScriptImageCreatorPromptCapacity(1);
     if (!String(_scriptImageCreatorState.promptValues[0] || "").trim() && scriptPrompt) {
@@ -17613,6 +17703,7 @@ function openScriptImageCreatorModal() {
 
 function openScriptImageCreatorFromCreateMode() {
     _scriptImageCreatorLaunchSource = "create-mode";
+    setScriptImageCreatorContextCollapsed(true);
     syncScriptImageCreatorControls();
     renderScriptImageCreatorReferencePreview();
     renderScriptImageCreatorResults();
@@ -20360,7 +20451,7 @@ function adaptScriptStepForVideoType(videoType) {
     _syncCreatePersonaUi("script");
 }
 
-function _normalizeRealisticPersonaType(value) {
+function _normalizeRealisticPersonaType(value, fallbackType = "natureza") {
     const raw = String(value || "").trim().toLowerCase();
     const mapping = {
         "criança": "crianca",
@@ -20373,7 +20464,23 @@ function _normalizeRealisticPersonaType(value) {
         localizacao: "local",
     };
     const normalized = mapping[raw] || raw;
-    return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : "natureza";
+    return REALISTIC_PERSONA_TYPES.includes(normalized) ? normalized : fallbackType;
+}
+
+function _getSelectedCreateRealisticPersonaType(context = "script") {
+    return _getSelectedCreatePersonaType(context);
+}
+
+function _clearRealisticPersonaPreview(context) {
+    const normalizedContext = _normalizePersonaContext(context);
+    if (normalizedContext === "wizard" || normalizedContext === "script") {
+        _clearCreatePersonaPreview(normalizedContext);
+        return;
+    }
+    const previewEl = _getRealisticPersonaPreviewElement(normalizedContext);
+    if (previewEl) {
+        previewEl.innerHTML = "";
+    }
 }
 
 function _getRealisticPersonaTypeByContext(context) {
@@ -20628,10 +20735,25 @@ function _getSelectedPersonaProfile(context, personaType) {
 }
 
 function _renderPersonaPreview(context) {
+    context = _normalizePersonaContext(context);
     const el = _getRealisticPersonaPreviewElement(context);
     if (!el) return;
 
-    const type = _getRealisticPersonaTypeByContext(context);
+    if (context === "wizard" || context === "script") {
+        const selectedPersona = _getSelectedCreatePersonaType(context);
+        if (!selectedPersona) {
+            _clearCreatePersonaPreview(context);
+            return;
+        }
+    }
+
+    const type = context === IMAGE_CREATOR_PERSONA_CONTEXT
+        ? _getSelectedScriptImageCreatorPersonaType()
+        : _getRealisticPersonaTypeByContext(context);
+    if (context === IMAGE_CREATOR_PERSONA_CONTEXT && !type) {
+        _clearScriptImageCreatorPersonaPreview();
+        return;
+    }
     const supportsNoReference = _supportsPersonaNoReference(context);
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
@@ -20798,7 +20920,24 @@ function _renderPersonaPreview(context) {
 }
 
 async function _refreshPersonaContext(context, forcedPersonaType = "") {
-    const type = _normalizeRealisticPersonaType(forcedPersonaType || _getRealisticPersonaTypeByContext(context));
+    context = _normalizePersonaContext(context);
+    const type = context === IMAGE_CREATOR_PERSONA_CONTEXT
+        ? (forcedPersonaType ? _normalizeRealisticPersonaType(forcedPersonaType) : _getSelectedScriptImageCreatorPersonaType())
+        : forcedPersonaType
+            ? _normalizeRealisticPersonaType(forcedPersonaType)
+            : (context === "wizard" || context === "script")
+                ? _getSelectedCreatePersonaType(context)
+                : _getRealisticPersonaTypeByContext(context);
+    if ((context === "wizard" || context === "script") && !type) {
+        _clearCreatePersonaPreview(context);
+        return;
+    }
+    if (context === IMAGE_CREATOR_PERSONA_CONTEXT && !type) {
+        _clearScriptImageCreatorPersonaPreview();
+        renderScriptImageCreatorReferencePreview();
+        scheduleScriptImageCreatorEstimate(0);
+        return;
+    }
     try {
         await _loadPersonaProfiles(type, false);
     } catch (error) {
@@ -22097,20 +22236,28 @@ async function deletePersonaFromManager(profileId) {
 }
 
 function getSelectedRealisticPersona() {
-    const sel = document.querySelector("#script-realistic-persona-tags .style-tag.selected")
-        || document.querySelector("#wizard-realistic-persona-tags .style-tag.selected");
-    return sel ? (sel.dataset.persona || "natureza") : "natureza";
+    return _getSelectedCreateRealisticPersonaType("script")
+        || _getSelectedCreateRealisticPersonaType("wizard")
+    || "none";
 }
 
 function setSelectedRealisticPersona(persona) {
-    const normalized = _normalizeRealisticPersonaType(persona || "natureza");
+    const normalized = _normalizeRealisticPersonaType(persona || "", "");
     ["script-realistic-persona-tags", "wizard-realistic-persona-tags", "ai-suggest-persona-tags"].forEach((id) => {
         const container = document.getElementById(id);
         if (!container) return;
         container.querySelectorAll(".style-tag").forEach((tag) => {
-            tag.classList.toggle("selected", tag.dataset.persona === normalized);
+            tag.classList.toggle("selected", !!normalized && tag.dataset.persona === normalized);
         });
     });
+
+    if (!normalized) {
+        _clearRealisticPersonaPreview("script");
+        _clearRealisticPersonaPreview("wizard");
+        _clearRealisticPersonaPreview("ai");
+        _syncAiSuggestCustomImageSection();
+        return;
+    }
 
     _refreshPersonaContext("script", normalized);
     _refreshPersonaContext("wizard", normalized);
@@ -22122,8 +22269,11 @@ function showAiSuggestPanel() {
     const isRealistic = scriptData.videoType === "realista";
     if (isRealistic) {
         const selectedPersona = getSelectedRealisticPersona();
-        setSelectedRealisticPersona(selectedPersona);
-        _refreshPersonaContext("ai", selectedPersona);
+        if (selectedPersona === "none") {
+            setSelectedRealisticPersona("");
+        } else {
+            setSelectedRealisticPersona(selectedPersona);
+        }
         _syncAiSuggestRealisticDurationOptions();
     }
     const hasScriptTevoxiClip = isRealistic
@@ -22180,10 +22330,10 @@ async function generateAiScript() {
         // Generate optimized prompt for the selected engine
         const style = document.getElementById("ai-suggest-style").value;
         const selectedPersonaBtn = document.querySelector("#ai-suggest-persona-tags .style-tag.selected");
-        const interactionPersona = selectedPersonaBtn ? (selectedPersonaBtn.dataset.persona || "natureza") : "natureza";
-        const selectedPersonaType = _normalizeRealisticPersonaType(interactionPersona);
+        const selectedPersonaType = _normalizeRealisticPersonaType(selectedPersonaBtn ? (selectedPersonaBtn.dataset.persona || "") : "", "");
+        const interactionPersona = selectedPersonaType || "none";
         const usePersonalizedReferences = selectedPersonaType === "personalizado";
-        setSelectedRealisticPersona(interactionPersona);
+        setSelectedRealisticPersona(selectedPersonaType);
         const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
         let realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 8;
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
@@ -22196,11 +22346,11 @@ async function generateAiScript() {
                 showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
             }
         }
-        const disablePersonaReference = _isPersonaNoReferenceEnabled("ai", interactionPersona);
+        const disablePersonaReference = !selectedPersonaType || _isPersonaNoReferenceEnabled("ai", selectedPersonaType);
         let selectedPersonaIds = [];
-        if (!disablePersonaReference) {
+        if (!disablePersonaReference && selectedPersonaType) {
             try {
-                selectedPersonaIds = await _ensurePersonaSelections("ai", interactionPersona);
+                selectedPersonaIds = await _ensurePersonaSelections("ai", selectedPersonaType);
             } catch (error) {
                 alert(`Erro ao carregar persona: ${error.message || "Tente novamente."}`);
                 return;
@@ -28982,6 +29132,8 @@ window.deleteProject = deleteProject;
 window.watchVideo = watchVideo;
 window.openPublishForProject = openPublishForProject;
 window.openProjectEditorFromCreate = openProjectEditorFromCreate;
+window.openSimilarProject = openSimilarProject;
+window.openProjectEditorFromCreate = openProjectEditorFromCreate;
 window.createSimilar = createSimilar;
 window.similarSaveScene = similarSaveScene;
 window.similarUploadSceneImage = similarUploadSceneImage;
@@ -29170,6 +29322,7 @@ let personaMediaRecorder = null;
 let personaRecordedChunks = [];
 let personaRecordingTimer = null;
 let personaSampleBlobs = {}; // keyed by prefix: 'wizard' or 'script'
+const PERSONA_SAMPLE_HINT_TEXT = "Grave, envie áudio ou extraia 10-30s de um vídeo para criar seu perfil de voz";
 
 function renderAllCreatePersonaLists() {
     ["wizard", "script", "script-audio-builder"].forEach((prefix) => renderPersonaList(prefix));
@@ -29276,28 +29429,126 @@ function stopPersonaRecording(prefix) {
     if (area) area.hidden = true;
 }
 
-async function handlePersonaUpload(event, prefix) {
-    const file = event.target.files[0];
-    if (!file) return;
+function _setPersonaHintText(prefix, text = PERSONA_SAMPLE_HINT_TEXT) {
     const hint = document.querySelector(`#${prefix}-persona-panel .persona-hint`);
-    if (hint) hint.textContent = "Processando áudio...";
-    const result = await trimAudioTo30s(file);
-    if (result.tooLarge) {
-        alert("Áudio muito grande. Grave pelo microfone ou envie um arquivo menor (max 10MB).");
-        if (hint) hint.textContent = "Grave ou envie 10-30s falando para criar seu perfil de voz";
-        event.target.value = '';
+    if (hint) {
+        hint.textContent = text;
+    }
+    return hint;
+}
+
+function openPersonaUploadSourceModal(prefix) {
+    const modal = document.getElementById("persona-upload-source-modal");
+    if (!modal) return;
+    modal.dataset.prefix = prefix;
+    modal.hidden = false;
+}
+
+function closePersonaUploadSourceModal() {
+    const modal = document.getElementById("persona-upload-source-modal");
+    if (!modal) return;
+    modal.hidden = true;
+    modal.dataset.prefix = "";
+}
+
+function selectPersonaUploadSource(sourceKind) {
+    const modal = document.getElementById("persona-upload-source-modal");
+    const prefix = String(modal?.dataset.prefix || "").trim();
+    if (!prefix) {
+        closePersonaUploadSourceModal();
         return;
     }
+
+    closePersonaUploadSourceModal();
+    const inputId = sourceKind === "video"
+        ? `${prefix}-persona-video-input`
+        : `${prefix}-persona-audio-input`;
+    const input = document.getElementById(inputId);
+    if (input) {
+        input.click();
+    }
+}
+
+function _buildPersonaAutoName(fileName = "") {
+    const normalized = String(fileName || "")
+        .split(/[\\/]/)
+        .pop()
+        ?.replace(/\.[^.]+$/, "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return normalized || "Minha voz";
+}
+
+async function _applyPersonaSampleFile(file, prefix, sourceKind = "audio") {
+    if (!file) return false;
+
+    const hint = _setPersonaHintText(
+        prefix,
+        sourceKind === "video" ? "Extraindo e preparando o áudio do vídeo..." : "Processando áudio..."
+    );
+    const result = await trimAudioTo30s(file);
+    if (result.tooLarge) {
+        alert(
+            sourceKind === "video"
+                ? "O áudio extraído ficou muito grande. Use um vídeo mais curto ou escolha um trecho menor (max 10MB)."
+                : "Áudio muito grande. Grave pelo microfone ou envie um arquivo menor (max 10MB)."
+        );
+        _setPersonaHintText(prefix);
+        return false;
+    }
+
     personaSampleBlobs[prefix] = result.blob;
     showPersonaPreview(prefix, result.blob);
     if (result.wasTrimmed && hint) {
         const min = Math.floor(result.duration / 60);
         const sec = String(Math.floor(result.duration % 60)).padStart(2, '0');
-        hint.textContent = `Audio cortado para 30s (original: ${min}:${sec})`;
+        hint.textContent = `${sourceKind === "video" ? "Áudio do vídeo" : "Áudio"} cortado para 30s (original: ${min}:${sec})`;
     } else if (hint) {
-        hint.textContent = "Grave ou envie 10-30s falando para criar seu perfil de voz";
+        hint.textContent = sourceKind === "video"
+            ? "Áudio extraído do vídeo. Revise o preview e salve o perfil."
+            : PERSONA_SAMPLE_HINT_TEXT;
     }
-    event.target.value = '';
+
+    return true;
+}
+
+async function handlePersonaUpload(event, prefix) {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+        await _applyPersonaSampleFile(file, prefix, "audio");
+    } finally {
+        event.target.value = '';
+    }
+}
+
+async function handlePersonaVideoUpload(event, prefix) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    _setPersonaHintText(prefix, "Extraindo áudio do vídeo...");
+    try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const payload = await apiForm("/video/editor/upload-video-audio", formData, { method: "POST" });
+        const extractedFile = await _downloadExtractedScriptAudioFile(payload, file.name);
+        const applied = await _applyPersonaSampleFile(extractedFile, prefix, "video");
+        if (applied) {
+            const nameInput = document.getElementById(`${prefix}-persona-name`);
+            if (nameInput) {
+                nameInput.value = _buildPersonaAutoName(file.name);
+            }
+            _setPersonaHintText(prefix, "Clonando voz no Fish Audio...");
+            await savePersonaVoice(prefix);
+        }
+    } catch (error) {
+        _setPersonaHintText(prefix);
+        alert(`Erro ao extrair áudio do vídeo: ${error.message}`);
+    } finally {
+        event.target.value = '';
+    }
 }
 
 async function trimAudioTo30s(blob) {
@@ -29378,7 +29629,7 @@ async function savePersonaVoice(prefix) {
     if (!name) { alert("Digite um nome para o perfil."); return; }
 
     const blob = personaSampleBlobs[prefix];
-    if (!blob) { alert("Grave ou envie um áudio primeiro."); return; }
+    if (!blob) { alert("Grave, envie um áudio ou extraia de um vídeo primeiro."); return; }
 
     try {
         // Create profile with default base voice (alloy)
@@ -29412,6 +29663,7 @@ async function savePersonaVoice(prefix) {
 
         personaSampleBlobs[prefix] = null;
         cancelPersonaPreview(prefix);
+        _setPersonaHintText(prefix);
         await loadVoiceProfiles();
 
         // Select the new profile
@@ -29422,6 +29674,7 @@ async function savePersonaVoice(prefix) {
             }, 200);
         }
     } catch (error) {
+        _setPersonaHintText(prefix);
         alert(`Erro ao salvar: ${error.message}`);
     }
 }

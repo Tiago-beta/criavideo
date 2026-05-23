@@ -279,9 +279,9 @@ def _normalize_lite2_duration_seconds(value: int) -> int:
     return max(5, min(int(value or 5), 12))
 
 
-_REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "viduq3", "avatar31"}
-_SIMILAR_ENGINES = {"grok", "wan2", "minimax", "seedance", "lite2", "viduq3"}
-_SEEDANCE_FAMILY_ENGINES = {"seedance", "lite2", "viduq3"}
+_REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "mega15", "lite2", "viduq3", "avatar31"}
+_SIMILAR_ENGINES = {"grok", "wan2", "minimax", "seedance", "mega15", "lite2", "viduq3"}
+_SEEDANCE_FAMILY_ENGINES = {"seedance", "mega15", "lite2", "viduq3"}
 
 
 def _build_interaction_persona_instruction(interaction_persona: str) -> str:
@@ -6246,7 +6246,7 @@ async def generate_realistic_prompt_endpoint(
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     elif engine == "lite2":
         duration = _normalize_lite2_duration_seconds(int(req.duration or 5))
-    elif engine == "seedance":
+    elif engine in {"seedance", "mega15"}:
         duration = max(1, min(int(req.duration or 10), 15))
     elif engine == "avatar31":
         duration = max(1, min(int(req.duration or 10), 180))
@@ -6427,7 +6427,7 @@ class GenerateRealisticRequest(BaseModel):
     cover_custom_prompt: str = ""
     cover_source: str = ""
     tevoxi_has_official_cover_reference: bool = False
-    engine: str = "wan2"  # "seedance", "lite2", "viduq3", "minimax", "wan2", "grok" or "avatar31"
+    engine: str = "wan2"  # "seedance", "mega15", "lite2", "viduq3", "minimax", "wan2", "grok" or "avatar31"
     audio_url: str = ""       # External audio URL (e.g. from Tevoxi)
     lyrics: str = ""          # Lyrics/transcription for the audio clip
     clip_start: float = 0     # Start time in seconds for audio clip
@@ -6470,7 +6470,7 @@ async def generate_realistic_endpoint(
         duration = _normalize_wan_duration_seconds(int(req.duration or 5))
     elif engine == "lite2":
         duration = _normalize_lite2_duration_seconds(int(req.duration or 5))
-    elif engine == "seedance":
+    elif engine in {"seedance", "mega15"}:
         duration = max(1, min(int(req.duration or 10), 15))
     elif engine == "avatar31":
         duration = max(1, min(int(req.duration or 10), 180))
@@ -6737,7 +6737,7 @@ async def generate_realistic_endpoint(
     else:
         await deduct_credits(db, user["id"], credits_needed)
 
-    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "lite2": "Lite 2.0 Fast", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+    engine_labels = {"minimax": "MiniMax Hailuo", "wan2": "Wan 2.6", "seedance": "Seedance 2.0", "mega15": "Lite 2.0 Fast", "lite2": "Mega 1.5 Real", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
     engine_label = engine_labels.get(engine, "Wan 2.6")
 
     # Use custom title if provided. Avatar can be promptless, so keep a deterministic fallback.

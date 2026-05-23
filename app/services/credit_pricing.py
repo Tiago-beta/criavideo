@@ -226,6 +226,7 @@ REALISTIC_BASE_CREDITS_8S = {
     "wan2": 100,
     "grok": 90,
     "lite2": 24,
+    "mega15": 112,
     "seedance": 170,
     "viduq3": 50,
     "avatar31": 85,
@@ -236,6 +237,7 @@ REALISTIC_ENGINE_USD_PER_SEC = {
     "wan2": 0.060,
     "grok": 0.050,
     "lite2": 0.018,
+    "mega15": 0.076,
     "seedance": 0.085,
     "viduq3": 0.042,
     "avatar31": 0.048,
@@ -376,12 +378,19 @@ VIDEO_COMPARISON_MODELS = [
     },
     {
         "key": "lite2-video",
-        "label": "Lite 2.0 Fast",
+        "label": "Mega 1.5 Real",
         "kind": "video",
         "engine": "lite2",
         "featured": True,
-        },
-        {
+    },
+    {
+        "key": "mega15-video",
+        "label": "Lite 2.0 Fast",
+        "kind": "video",
+        "engine": "mega15",
+        "featured": True,
+    },
+    {
         "key": "viduq3-video",
         "label": "Pro 3.1 Start",
         "kind": "video",
