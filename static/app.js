@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v538 loaded");
+console.log("[CriaVideo] app.js v539 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -7481,21 +7481,7 @@ function _renderCreateLiveSession(project = null) {
         _setCreateLiveSessionStatus(`Cena ${failedScene.sceneNumber} falhou.`, "error");
         return;
     }
-    if (activeScene) {
-        _setCreateLiveSessionStatus(`Gerando Cena ${activeScene.sceneNumber}.`, "running", {
-            progress: Math.max(4, Math.min(99, Number(activeScene.progress || 0) || 4)),
-        });
-        return;
-    }
-    if (lastScene?.extractingFrame) {
-        _setCreateLiveSessionStatus(`Lendo o quadro final da Cena ${lastScene.sceneNumber}.`, "running", { progress: 92 });
-        return;
-    }
-    if (hasEditorEntry) {
-        _setCreateLiveSessionStatus("Cena pronta.", "success");
-        return;
-    }
-    _setCreateLiveSessionStatus("Preparando Cena 1.", "running", { progress: 6 });
+    _setCreateLiveSessionStatus("");
 }
 
 function _startCreateLiveSessionPolling() {
@@ -7562,6 +7548,31 @@ function _resolveCreateLiveAspectRatio(prefix, explicitAspect = "") {
     return document.getElementById("script-aspect")?.value || scriptData.aspect || "9:16";
 }
 
+function _restoreCreateLiveOriginPanel(prefix) {
+    const normalizedPrefix = prefix === "wizard" ? "wizard" : "script";
+    const panelId = `create-panel-${normalizedPrefix}`;
+    const panel = document.getElementById(panelId);
+    const progressEl = document.getElementById("create-progress");
+
+    createMode = normalizedPrefix;
+    document.getElementById("create-mode-selection").hidden = true;
+    document.querySelectorAll(".create-panel").forEach((panelEl) => {
+        panelEl.hidden = panelEl.id !== panelId;
+    });
+    if (panel) {
+        panel.hidden = false;
+    }
+    if (progressEl) {
+        progressEl.hidden = true;
+    }
+
+    if (normalizedPrefix === "wizard") {
+        updateFlowUI(panelId, wizardStep, getWizardFlow(), "wizard");
+    } else {
+        updateFlowUI(panelId, scriptStep, getScriptFlow(), "script");
+    }
+}
+
 function _startCreateLiveSession(options = {}) {
     const projectId = Number(options.projectId || 0);
     if (!(projectId > 0)) return;
@@ -7602,18 +7613,12 @@ function _startCreateLiveSession(options = {}) {
 
     const progressEl = document.getElementById("create-progress");
     if (progressEl) progressEl.hidden = true;
+    _restoreCreateLiveOriginPanel(prefix);
 
     _renderCreateLiveSession();
     _startCreateLiveSessionPolling();
     void _refreshCreateLiveSessionProject({ silent: true });
     void loadProjects();
-
-    const root = document.getElementById("create-live-session");
-    if (root) {
-        requestAnimationFrame(() => {
-            root.scrollIntoView({ behavior: "smooth", block: "start" });
-        });
-    }
 }
 
 function refreshCreateLiveSession() {
@@ -15880,7 +15885,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         return;
     }
 
-    // Show progress, hide create buttons
+    // Show progress while the request is starting.
     const progressEl = document.getElementById("create-progress");
     if (progressEl) progressEl.hidden = false;
     const wizCreateBtn = document.getElementById("wizard-create-btn");
@@ -16094,6 +16099,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             active: false,
             sourceUploadId: "",
         };
+        _restoreCreateLiveOriginPanel(prefix);
         let msg = e.message || "Erro ao gerar vídeo realista.";
         if (msg.includes("flagged as sensitive") || msg.includes("E005")) {
             msg = "O conteudo do prompt foi considerado sensivel pelo modelo de IA. Tente reformular seu texto evitando temas violentos, sexuais ou controversos.";
