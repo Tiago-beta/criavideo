@@ -5463,6 +5463,11 @@ th {
     line-height: 1.45;
 }
 
+.create-live-session-clip-loading-base {
+    width: 100%;
+    height: 100%;
+}
+
 .create-live-session-empty {
     padding: 20px;
     border: 1px dashed rgba(255, 255, 255, 0.12);
@@ -5485,6 +5490,17 @@ th {
 
 .create-live-session-next-editor {
     margin-top: 0;
+}
+
+.create-live-session-next-prompt-input {
+    min-height: 260px;
+    padding-bottom: 18px;
+}
+
+.create-live-session-next-meta {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
 }
 
 .create-live-session-next-error {

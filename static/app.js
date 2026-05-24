@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v539 loaded");
+console.log("[CriaVideo] app.js v540 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6914,9 +6914,22 @@ function _getCreateLiveSceneStatusLabel(sceneItem) {
     return "Processando";
 }
 
+function _getCreateLiveFrameDownloadName(sceneNumber, badge, fallbackPrefix = "frame") {
+    const normalizedSceneNumber = Math.max(1, Number(sceneNumber || 0) || 1);
+    const normalizedBadge = String(badge || "frame")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "frame";
+    const prefix = String(fallbackPrefix || "frame").trim() || "frame";
+    return `${prefix}-cena-${normalizedSceneNumber}-${normalizedBadge}.png`;
+}
+
 function _buildCreateLiveFrameGalleryItem(options = {}) {
     const previewAspectClass = options.previewAspectClass || _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
     const badge = workflowEscapeHtml(String(options.badge || "Frame").trim() || "Frame");
+    const badgeRaw = String(options.badge || "Frame").trim() || "Frame";
     const url = String(options.url || "").trim();
     const alt = workflowEscapeHtml(String(options.alt || badge).trim() || badge);
     const placeholderTitle = workflowEscapeHtml(String(options.placeholderTitle || badge).trim() || badge);
@@ -6924,6 +6937,7 @@ function _buildCreateLiveFrameGalleryItem(options = {}) {
     const busy = !!options.busy;
     const busyTitle = workflowEscapeHtml(String(options.busyTitle || "Processando").trim() || "Processando");
     const busySubtitle = workflowEscapeHtml(String(options.busySubtitle || "").trim());
+    const downloadName = workflowEscapeHtml(String(options.downloadName || "frame.png").trim() || "frame.png");
     const contentMarkup = url
         ? `<img src="${workflowEscapeHtml(url)}" alt="${alt}" loading="lazy">`
         : `
@@ -6943,12 +6957,16 @@ function _buildCreateLiveFrameGalleryItem(options = {}) {
             </div>
         `
         : "";
+    const actionMarkup = url
+        ? `<a class="similar-frame-image-action" href="${workflowEscapeHtml(url)}" download="${downloadName}" title="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}" aria-label="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}">${SIMILAR_ACTION_ICONS.download}</a>`
+        : "";
 
     return `
         <article class="similar-frame-gallery-item${busy ? " is-busy" : ""}">
             <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${busy ? " is-generating-clip" : ""}">
                 ${contentMarkup}
                 <span class="similar-frame-gallery-badge">${badge}</span>
+                ${actionMarkup}
                 ${busyMarkup}
             </div>
         </article>
@@ -6966,7 +6984,9 @@ function _buildCreateLiveClipColumn(options = {}) {
     const busySubtitle = workflowEscapeHtml(String(options.busySubtitle || "").trim());
     const clipMarkup = videoUrl
         ? `<video src="${workflowEscapeHtml(videoUrl)}" ${posterUrl ? `poster="${workflowEscapeHtml(posterUrl)}"` : ""} controls preload="metadata" playsinline></video>`
-        : `
+        : busy
+            ? '<div class="create-live-session-clip-loading-base" aria-hidden="true"></div>'
+            : `
             <div class="similar-scene-clip-placeholder" role="status" aria-live="polite">
                 <span class="similar-scene-clip-spinner" aria-hidden="true"></span>
                 <strong>${placeholderTitle}</strong>
@@ -7144,6 +7164,9 @@ function _renderCreateLiveSessionSourceItems() {
                 badge: index === 0 ? "Entrada" : `Base ${index + 1}`,
                 url: String(item.url || "").trim(),
                 alt: label,
+                downloadName: index === 0
+                    ? "referencia-entrada.png"
+                    : `referencia-base-${index + 1}.png`,
             }));
             return;
         }
@@ -7192,6 +7215,7 @@ function _buildCreateLiveSceneCard(sceneItem) {
             badge: "Entrada",
             url: inputFrameUrl,
             alt: `Cena ${sceneNumber} entrada`,
+            downloadName: _getCreateLiveFrameDownloadName(sceneNumber, "entrada"),
         }));
     }
 
@@ -7201,6 +7225,7 @@ function _buildCreateLiveSceneCard(sceneItem) {
             badge: "Saída",
             url: outputFrameUrl,
             alt: `Cena ${sceneNumber} saída`,
+            downloadName: _getCreateLiveFrameDownloadName(sceneNumber, "saida"),
             busy: !!sceneItem?.extractingFrame,
             busyTitle: "Lendo frame",
             busySubtitle: "Próxima cena",
@@ -7281,6 +7306,7 @@ function _buildCreateLiveNextSceneCard() {
             badge: "Entrada",
             url: String(previousScene?.returnedFrameUrl || "").trim(),
             alt: `Cena ${sceneNumber} entrada`,
+            downloadName: _getCreateLiveFrameDownloadName(sceneNumber, "entrada"),
             busy: !!previousScene?.extractingFrame,
             busyTitle: "Aguardando",
             busySubtitle: `Cena ${sceneNumber}`,
@@ -7288,7 +7314,9 @@ function _buildCreateLiveNextSceneCard() {
             placeholderCopy: waitingCopy,
         }),
     ];
-    const promptValue = workflowEscapeHtml(String(createLiveSessionState.nextScenePrompt || "").trim());
+    const promptRaw = String(createLiveSessionState.nextScenePrompt || "");
+    const promptValue = workflowEscapeHtml(promptRaw);
+    const promptLength = promptRaw.length;
     const nextSceneDisabled = !hasContinuationFrame || createLiveSessionState.nextSceneBusy;
 
     return `
@@ -7305,7 +7333,10 @@ function _buildCreateLiveNextSceneCard() {
                 afterMarkup: `
                     <div class="similar-reference-frame-editor create-live-session-next-editor">
                         <label for="create-live-session-next-prompt">Prompt</label>
-                        <textarea id="create-live-session-next-prompt" class="input similar-reference-frame-editor-input" rows="3" maxlength="1400" placeholder="Descreva a próxima cena." oninput="createLiveSessionSetNextPrompt(this.value)" ${nextSceneDisabled ? "disabled" : ""}>${promptValue}</textarea>
+                        <textarea id="create-live-session-next-prompt" class="wizard-textarea create-live-session-next-prompt-input" rows="10" maxlength="20000" placeholder="Descreva a próxima cena." oninput="createLiveSessionSetNextPrompt(this.value)" ${nextSceneDisabled ? "disabled" : ""}>${promptValue}</textarea>
+                        <div class="create-live-session-next-meta">
+                            <span class="char-count"><span id="create-live-session-next-char-count">${promptLength}</span> / 20.000</span>
+                        </div>
                         ${createLiveSessionState.nextSceneError
                             ? `<p class="create-live-session-next-error">${workflowEscapeHtml(createLiveSessionState.nextSceneError)}</p>`
                             : ""}
@@ -7321,6 +7352,10 @@ function _buildCreateLiveNextSceneCard() {
 
 function createLiveSessionSetNextPrompt(value) {
     createLiveSessionState.nextScenePrompt = String(value || "");
+    const countEl = document.getElementById("create-live-session-next-char-count");
+    if (countEl) {
+        countEl.textContent = String(createLiveSessionState.nextScenePrompt.length);
+    }
     if (createLiveSessionState.nextSceneError) {
         createLiveSessionState.nextSceneError = "";
     }
