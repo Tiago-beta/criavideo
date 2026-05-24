@@ -6420,6 +6420,7 @@ class GenerateRealisticRequest(BaseModel):
     image_upload_id: str = ""
     image_upload_ids: list[str] = Field(default_factory=list)
     audio_upload_id: str = ""
+    audio_upload_role: str = ""
     use_last_image_as_final_frame: bool = False
     cover_context: str = ""
     cover_visual_mode: str = ""
@@ -6533,6 +6534,12 @@ async def generate_realistic_endpoint(
         resolved_audio_upload_path = str(resolved_audio)
 
     resolved_audio_source = resolved_audio_upload_path or (req.audio_url or "").strip()
+    audio_upload_role = str(req.audio_upload_role or "").strip().lower()
+    uploaded_audio_is_narration = bool(
+        resolved_audio_upload_path
+        and audio_upload_role == "narration"
+        and engine != "avatar31"
+    )
     if engine == "avatar31":
         if not resolved_audio_source:
             raise HTTPException(status_code=400, detail="Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.")
@@ -6625,7 +6632,11 @@ async def generate_realistic_endpoint(
         selected_persona_profile_ids = [int(profile.id) for profile in resolved_personas]
         selected_persona_profile_id = selected_persona_profile_ids[0] if selected_persona_profile_ids else 0
 
-    auto_dialogue_requested = bool(req.add_narration) and not bool(str(req.narration_text or "").strip())
+    auto_dialogue_requested = (
+        bool(req.add_narration)
+        and not bool(str(req.narration_text or "").strip())
+        and not uploaded_audio_is_narration
+    )
     if auto_dialogue_requested and not dialogue_enabled:
         dialogue_enabled = True
 
@@ -6697,8 +6708,8 @@ async def generate_realistic_endpoint(
     if not preserve_prompt_exactly:
         prompt = apply_cover_guidance(prompt, cover_decision)
     narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
-    effective_add_narration = bool(req.add_narration and narration_text and not dialogue_enabled)
-    effective_add_music = bool(req.add_music or resolved_audio_source)
+    effective_add_narration = bool((uploaded_audio_is_narration or (req.add_narration and narration_text)) and not dialogue_enabled)
+    effective_add_music = bool(req.add_music or (resolved_audio_source and not uploaded_audio_is_narration))
     provider_generate_audio = bool(req.generate_audio)
     seedance_native_audio_only = False
     if engine in _SEEDANCE_FAMILY_ENGINES:
@@ -6725,7 +6736,7 @@ async def generate_realistic_endpoint(
         add_music=effective_add_music,
         add_narration=effective_add_narration,
         enable_subtitles=False,
-        use_external_audio=bool(resolved_audio_source),
+        use_external_audio=bool(resolved_audio_source and not uploaded_audio_is_narration),
     )
     credits_needed = int(estimate.get("credits_needed", 0) or 0)
     if await is_levita_credit_bypass_user(db, user=user):
@@ -6750,6 +6761,8 @@ async def generate_realistic_endpoint(
     speech_mode = "none"
     if dialogue_enabled:
         speech_mode = "dialogue_auto"
+    elif uploaded_audio_is_narration:
+        speech_mode = "narration_uploaded"
     elif req.add_narration and bool(narration_text):
         speech_mode = "narration_manual"
 
@@ -6772,6 +6785,7 @@ async def generate_realistic_endpoint(
         "speech_mode": speech_mode,
         "speech_auto_requested": auto_dialogue_requested,
         "narration_voice": narration_voice,
+        "audio_upload_role": audio_upload_role if resolved_audio_upload_path else "",
         "prompt_optimized": bool(req.prompt_optimized),
         "realistic_style": (req.realistic_style or "").strip(),
         "optimizer_style_hint": optimizer_style_hint,
@@ -6800,7 +6814,10 @@ async def generate_realistic_endpoint(
         tags_data["clip_start"] = req.clip_start
         tags_data["clip_duration"] = req.clip_duration
     if resolved_audio_upload_path:
-        tags_data["audio_upload_path"] = resolved_audio_upload_path
+        if uploaded_audio_is_narration:
+            tags_data["narration_upload_path"] = resolved_audio_upload_path
+        else:
+            tags_data["audio_upload_path"] = resolved_audio_upload_path
     if external_lyrics:
         tags_data["lyrics"] = external_lyrics
 

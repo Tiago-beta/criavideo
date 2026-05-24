@@ -1447,37 +1447,41 @@ async def _combine_realistic_audio(
 
     inputs = ["-i", video_path]
     filter_parts = []
+    mix_inputs = []
     audio_index = 1
+    has_narr = bool(narration_path and os.path.exists(narration_path))
+    has_music = bool(music_path and os.path.exists(music_path))
+    video_has_audio = await _video_has_audio_stream(video_path) if has_narr else False
 
-    if narration_path and os.path.exists(narration_path):
+    if has_narr:
         inputs.extend(["-i", narration_path])
-        filter_parts.append(f"[{audio_index}:a]aresample=44100,volume=1.0[narr]")
+        narration_volume = "0.8" if video_has_audio else "1.0"
+        filter_parts.append(f"[{audio_index}:a]aresample=44100,volume={narration_volume}[narr]")
+        mix_inputs.append("[narr]")
         audio_index += 1
 
-    if music_path and os.path.exists(music_path):
+    if video_has_audio:
+        filter_parts.append("[0:a]aresample=44100,volume=0.2[videoorig]")
+        mix_inputs.append("[videoorig]")
+
+    if has_music:
         inputs.extend(["-stream_loop", "-1", "-i", music_path])
-        # Music volume: lower if narration is present
-        music_vol = "0.15" if narration_path and os.path.exists(narration_path) else "0.5"
+        music_vol = "0.12" if has_narr and video_has_audio else ("0.15" if has_narr else "0.5")
         fade_start = max(0, video_duration - 3)
         filter_parts.append(
             f"[{audio_index}:a]aresample=44100,volume={music_vol},"
             f"afade=t=out:st={fade_start}:d=3[music]"
         )
+        mix_inputs.append("[music]")
         audio_index += 1
 
     if not filter_parts:
         return  # Nothing to combine
 
-    # Build the amix filter
-    has_narr = narration_path and os.path.exists(narration_path)
-    has_music = music_path and os.path.exists(music_path)
-
-    if has_narr and has_music:
-        filter_complex = ";".join(filter_parts) + ";[narr][music]amix=inputs=2:duration=first:normalize=0[aout]"
-    elif has_narr:
-        filter_complex = filter_parts[0].replace("[narr]", "[aout]")
+    if len(mix_inputs) > 1:
+        filter_complex = ";".join(filter_parts) + f";{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=first:normalize=0[aout]"
     else:
-        filter_complex = filter_parts[0].replace("[music]", "[aout]")
+        filter_complex = ";".join(filter_parts).replace(mix_inputs[0], "[aout]")
 
     cmd = [
         "ffmpeg", "-y",
@@ -2841,8 +2845,11 @@ async def run_realistic_video_pipeline(project_id: int):
                             logger.warning(f"Dialogue generation failed, falling back to regular narration/music: {e}")
                             dialogue_enabled = False
 
-                # Generate narration via TTS
-                if not dialogue_enabled and add_narration and narration_text:
+                uploaded_narration_path = str(tags.get("narration_upload_path") or "").strip()
+                if not dialogue_enabled and uploaded_narration_path and os.path.exists(uploaded_narration_path):
+                    narration_path = uploaded_narration_path
+                    logger.info("Using uploaded narration for realistic video %s: %s", project_id, narration_path)
+                elif not dialogue_enabled and add_narration and narration_text:
                     project.progress = 82
                     await db.commit()
                     logger.info(f"Generating narration for realistic video {project_id}: voice={narration_voice}")

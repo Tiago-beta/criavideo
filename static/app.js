@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v540 loaded");
+console.log("[CriaVideo] app.js v541 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -206,9 +206,51 @@ const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index)
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 const SIMILAR_ENGINE_OPTIONS = ["lite2", "mega15", "viduq3", "grok", "wan2", "seedance"];
 const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "mega15", "lite2", "viduq3"]);
+const REALISTIC_ENGINE_CREDITS_PER_SECOND = Object.freeze({
+    lite2: 3,
+    viduq3: 7,
+    grok: 8,
+    avatar31: 8,
+    wan2: 9,
+    mega15: 12,
+    seedance: 15,
+});
 
 function _isSeedanceFamilyEngine(engineValue) {
     return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
+}
+
+function _getRealisticEngineCreditsPerSecond(engineValue) {
+    const normalized = String(engineValue || "").trim().toLowerCase();
+    return REALISTIC_ENGINE_CREDITS_PER_SECOND[normalized] || 0;
+}
+
+function _syncRealisticEngineOptionCards(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const options = Array.from(container.querySelectorAll(".engine-option[data-value]"));
+    options
+        .sort((left, right) => {
+            const leftRate = _getRealisticEngineCreditsPerSecond(left.dataset.value);
+            const rightRate = _getRealisticEngineCreditsPerSecond(right.dataset.value);
+            if (leftRate !== rightRate) return leftRate - rightRate;
+
+            const leftLabel = String(left.querySelector("strong")?.textContent || "").trim();
+            const rightLabel = String(right.querySelector("strong")?.textContent || "").trim();
+            return leftLabel.localeCompare(rightLabel, "pt-BR");
+        })
+        .forEach((option) => {
+            const rate = _getRealisticEngineCreditsPerSecond(option.dataset.value);
+            let footer = option.querySelector(".engine-option-footer");
+            if (!footer) {
+                footer = document.createElement("span");
+                footer.className = "engine-option-footer";
+                option.appendChild(footer);
+            }
+            footer.innerHTML = rate > 0 ? `<span class="engine-option-rate">${rate}/s</span>` : "";
+            container.appendChild(option);
+        });
 }
 
 function _getCreateRealisticDurationOptions(engineValue) {
@@ -4547,7 +4589,15 @@ function _buildRealisticEstimatePayload(prefix) {
 
     const narrationChecked = !!document.getElementById(`${prefix}-realistic-narration`)?.checked;
     const narrationText = (document.getElementById(`${prefix}-realistic-narration-text`)?.value || "").trim();
-    const addNarration = narrationChecked && !!narrationText;
+    const scriptNarrationFromBuilder = prefix === "script"
+        && scriptData.videoType === "realista"
+        && narrationChecked;
+    const scriptNarrationSource = scriptNarrationFromBuilder
+        ? _getScriptAudioSourceState(true)
+        : { hasAudio: false };
+    const addNarration = scriptNarrationFromBuilder
+        ? !!scriptNarrationSource.hasAudio
+        : narrationChecked && !!narrationText;
 
     const enableSubtitles = prefix === "auto"
         ? !!document.getElementById("auto-realistic-subtitles")?.checked
@@ -5434,8 +5484,10 @@ async function createSimilar(projectId) {
         const narrationEnabled = (
             speechMode === "dialogue_auto"
             || speechMode === "narration_manual"
+            || speechMode === "narration_uploaded"
             || !!tagsData.dialogue_enabled
             || !!tagsData.add_narration
+            || String(tagsData.audio_upload_role || "").trim().toLowerCase() === "narration"
         );
         const narrationCb = document.getElementById("script-realistic-narration");
         if (narrationCb) narrationCb.checked = narrationEnabled;
@@ -5451,6 +5503,7 @@ async function createSimilar(projectId) {
 
         const narrationVoice = String(tagsData.narration_voice || "onyx").trim();
         _applyCreateRealisticVoiceSelection("script", narrationVoice);
+    _syncScriptRealisticNarrationBuilderPlacement();
 
         const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "", "");
         setSelectedRealisticPersona(selectedPersona);
@@ -6235,6 +6288,7 @@ function initCreateWizard() {
             if (prefix === "wizard") {
                 scheduleWizardCreditEstimate();
             } else if (prefix === "script") {
+                _syncScriptRealisticNarrationBuilderPlacement({ openWhenEnabled: cb.checked });
                 scheduleScriptCreditEstimate();
             }
         });
@@ -15865,7 +15919,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const createAudioSource = prefix === "script"
         ? _getScriptAudioSourceState(true)
         : { kind: "none", hasAudio: false, uploadId: "", durationSeconds: 0 };
-    const hasAttachedAudio = prefix === "script" && !!createAudioSource.hasAudio;
 
     const durBtn = document.querySelector(`#${durationSelectorId} .duration-option.selected`);
     let duration = durBtn ? parseInt(durBtn.dataset.value, 10) : 8;
@@ -15876,6 +15929,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     let engine = engineBtn ? engineBtn.dataset.value : selectedEngineForPromptCheck;
+    const narrationEl = document.getElementById(`${prefix}-realistic-narration`);
+    const narrationChecked = narrationEl ? narrationEl.checked : false;
+    const wantsScriptUploadedNarration = prefix === "script"
+        && scriptData.videoType === "realista"
+        && narrationChecked;
+    const hasAttachedAudio = prefix === "script"
+        && (engine === "avatar31" ? !!createAudioSource.hasAudio : wantsScriptUploadedNarration && !!createAudioSource.hasAudio);
     const avatarAutomaticDuration = engine === "avatar31"
         ? await _resolveAvatarAutomaticDurationForCreate(prefix)
         : 0;
@@ -15896,18 +15956,27 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         }
     }
     const engineLabel = getRealisticEngineLabel(engine);
+    const narrationTextEl = document.getElementById(`${prefix}-realistic-narration-text`);
+    const narrationText = wantsScriptUploadedNarration
+        ? ""
+        : (narrationChecked ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "");
+    const voiceSelection = wantsScriptUploadedNarration
+        ? _resolveVoiceSelectionFromSelector("script-audio-builder")
+        : _resolveCreateRealisticVoiceSelection(prefix);
+    const addNarration = narrationChecked;
+    const narrationVoice = voiceSelection.voice;
+
+    if (wantsScriptUploadedNarration && !createAudioSource.hasAudio) {
+        _setScriptAudioBuilderStatus("Gere a narração antes de criar o vídeo para manter tudo unido no resultado final.", "info");
+        toggleScriptAudioBuilder(true);
+        showToast("Gere a narração antes de criar o vídeo.", "info");
+        return;
+    }
+
     const selectedPersona = _getSelectedCreatePersonaType(prefix);
     const interactionPersona = selectedPersona || "none";
     let personaProfileId = 0;
     let personaProfileIds = [];
-
-    // Narration fields
-    const narrationEl = document.getElementById(`${prefix}-realistic-narration`);
-    const addNarration = narrationEl ? narrationEl.checked : false;
-    const narrationTextEl = document.getElementById(`${prefix}-realistic-narration-text`);
-    const narrationText = addNarration ? (narrationTextEl ? narrationTextEl.value.trim() : "") : "";
-    const voiceSelection = _resolveCreateRealisticVoiceSelection(prefix);
-    const narrationVoice = voiceSelection.voice;
 
     const realisticEstimatePayload = _buildRealisticEstimatePayload(prefix);
     if (engine === "avatar31" && avatarAutomaticDuration > 0) {
@@ -15949,7 +16018,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 .filter(Boolean)
                 .slice(0, 4);
 
-        const dialogueEnabled = !!(addNarration && !narrationText);
+        const dialogueEnabled = !!(addNarration && !narrationText && !wantsScriptUploadedNarration);
         const dialogueCharacters = selectedPersonaProfiles
             .map((profile) => String(profile?.name || "").trim())
             .filter((name) => !!name)
@@ -15965,7 +16034,9 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
 
         const speechMode = dialogueEnabled
             ? "dialogue_auto"
-            : (addNarration && narrationText ? "narration_manual" : "none");
+            : wantsScriptUploadedNarration
+                ? "narration_uploaded"
+                : (addNarration && narrationText ? "narration_manual" : "none");
 
         if (!wantsReferenceImage && !disablePersonaReference && !personaProfileIds.length) {
             throw new Error("Crie uma ou mais personas de interação primeiro para gerar o vídeo realista.");
@@ -15975,6 +16046,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         let imageUploadId = "";
         let imageUploadIds = [];
         let audioUploadId = "";
+        const audioUploadRole = wantsScriptUploadedNarration && engine !== "avatar31" ? "narration" : "";
         const shouldUploadReferenceImage = scriptPhotos.length > 0 && (prefix !== "script" || wantsReferenceImage);
         const referencePhotosToUpload = engine === "avatar31"
             ? scriptPhotos.slice(-1)
@@ -16029,6 +16101,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             ? "Preparando avatar com foto e áudio..."
             : speechMode === "dialogue_auto"
                 ? "Otimizando prompt e preparando falas automaticas por personagem..."
+                : speechMode === "narration_uploaded"
+                    ? "Preparando a narração gerada antes de criar o vídeo..."
                 : speechMode === "narration_manual"
                     ? "Otimizando prompt e preparando narracao do texto informado..."
                     : "Otimizando prompt com IA...";
@@ -16054,6 +16128,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             image_upload_id: imageUploadId,
             image_upload_ids: imageUploadIds,
             audio_upload_id: audioUploadId,
+            audio_upload_role: audioUploadRole,
             engine: engine,
             use_last_image_as_final_frame: _isSeedanceFamilyEngine(engine)
                 && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
@@ -19483,11 +19558,16 @@ function _updateScriptGeneratedAudioSummary() {
     const nameEl = document.getElementById("script-generated-audio-name");
     const playerEl = document.getElementById("script-generated-audio-player");
     const usingVideo = !!document.getElementById("script-use-video")?.checked;
+    const usingRealisticNarration = _isScriptRealisticNarrationBuilderActive();
     const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
 
     if (summaryEl) summaryEl.hidden = !hasGeneratedAudio;
     if (titleEl) {
-        titleEl.textContent = usingVideo ? "Áudio pronto para este vídeo" : "Áudio pronto para este projeto";
+        titleEl.textContent = usingRealisticNarration
+            ? "Narração pronta para este vídeo"
+            : usingVideo
+                ? "Áudio pronto para este vídeo"
+                : "Áudio pronto para este projeto";
     }
     if (nameEl) {
         if (!hasGeneratedAudio) {
@@ -19520,6 +19600,55 @@ function _updateScriptGeneratedAudioSummary() {
     }
 }
 
+function _isScriptRealisticNarrationBuilderActive() {
+    return scriptData.videoType === "realista" && !!document.getElementById("script-realistic-narration")?.checked;
+}
+
+function _ensureScriptRealisticNarrationDockAnchor() {
+    let anchor = document.getElementById("script-video-audio-dock-anchor");
+    const summary = document.getElementById("script-generated-audio-summary");
+    const builder = document.getElementById("script-video-audio-builder");
+    const originalParent = summary?.parentElement || builder?.parentElement;
+    if (!anchor && originalParent) {
+        anchor = document.createElement("div");
+        anchor.id = "script-video-audio-dock-anchor";
+        anchor.hidden = true;
+        originalParent.insertBefore(anchor, summary || builder || null);
+    }
+    return anchor;
+}
+
+function _syncScriptRealisticNarrationBuilderPlacement({ openWhenEnabled = false } = {}) {
+    const slot = document.getElementById("script-realistic-narration-builder-slot");
+    const summary = document.getElementById("script-generated-audio-summary");
+    const builder = document.getElementById("script-video-audio-builder");
+    const anchor = _ensureScriptRealisticNarrationDockAnchor();
+    if (!slot || !summary || !builder || !anchor) return;
+
+    if (_isScriptRealisticNarrationBuilderActive()) {
+        slot.hidden = false;
+        if (summary.parentElement !== slot) slot.appendChild(summary);
+        if (builder.parentElement !== slot) slot.appendChild(builder);
+        if (openWhenEnabled || !scriptGeneratedAudioUploadId) {
+            builder.hidden = false;
+        }
+    } else {
+        const originalParent = anchor.parentElement;
+        if (originalParent) {
+            if (summary.parentElement !== originalParent) {
+                originalParent.insertBefore(summary, anchor.nextSibling);
+            }
+            if (builder.parentElement !== originalParent) {
+                originalParent.insertBefore(builder, summary.nextSibling);
+            }
+        }
+        slot.hidden = true;
+    }
+
+    _updateScriptGeneratedAudioSummary();
+    updateScriptVideoAreaVisibility();
+}
+
 function updateScriptVideoAreaVisibility() {
     const section = document.getElementById("script-video-upload-section");
     const header = document.getElementById("script-video-tools-header");
@@ -19542,16 +19671,19 @@ function updateScriptVideoAreaVisibility() {
     const videoEnabled = !!document.getElementById("script-use-video")?.checked;
     const userAudioEnabled = !!document.getElementById("script-use-user-audio")?.checked;
     const audioFirstMode = _isCreateAudioFirstMode();
+    const realisticNarrationBuilderActive = _isScriptRealisticNarrationBuilderActive();
     const hasVideo = !!scriptUserVideoFile;
     const hasManualAudio = !!scriptUserAudioFile;
     const builderOpen = !!builder && !builder.hidden;
     const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
+    const hasVisibleGeneratedAudio = hasGeneratedAudio && !(scriptData.videoType === "realista" && !realisticNarrationBuilderActive);
+    const builderVisibleInSection = !realisticNarrationBuilderActive && (builderOpen || hasVisibleGeneratedAudio);
     const shouldShowSection = audioFirstMode
         ? (builderOpen || hasGeneratedAudio)
-        : (videoEnabled || builderOpen || hasGeneratedAudio);
+        : (videoEnabled || builderVisibleInSection);
     const shouldShow = audioFirstMode
         ? (builderOpen || hasGeneratedAudio)
-        : (hasVideo || builderOpen || hasGeneratedAudio);
+        : (hasVideo || builderVisibleInSection);
 
     if (section) section.hidden = !shouldShowSection;
     if (header) header.hidden = audioFirstMode || !videoEnabled;
@@ -19573,12 +19705,20 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.disabled = scriptUserAudioVideoExtracting;
     }
     const builderCopy = document.getElementById("script-audio-builder-copy");
-    if (builderCopy) builderCopy.hidden = audioFirstMode || !hasVideo;
-    if (builderHeading && hasVideo) {
-        builderHeading.textContent = "Criar áudio para este vídeo";
+    if (builderCopy) builderCopy.hidden = realisticNarrationBuilderActive ? false : audioFirstMode || !hasVideo;
+    if (builderHeading) {
+        builderHeading.textContent = realisticNarrationBuilderActive
+            ? "Criar narração para este vídeo"
+            : hasVideo
+                ? "Criar áudio para este vídeo"
+                : "Criar áudio com voz IA";
     }
-    if (builderSubheading && hasVideo) {
-        builderSubheading.textContent = "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
+    if (builderSubheading) {
+        builderSubheading.textContent = realisticNarrationBuilderActive
+            ? "Grave para transcrever, cole ou escreva a narração e gere o áudio antes de criar o vídeo final."
+            : hasVideo
+                ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
+                : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
 
     _syncScriptAudioFirstSurface();
@@ -19874,6 +20014,9 @@ function clearScriptGeneratedAudio(preserveBuilderText = true) {
 
     _updateScriptGeneratedAudioSummary();
     updateScriptVideoAreaVisibility();
+    if (_isScriptRealisticNarrationBuilderActive()) {
+        toggleScriptAudioBuilder(true);
+    }
     if (_isCreateAudioFirstMode()) {
         updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
     }
@@ -20827,6 +20970,9 @@ async function _prepareAiSuggestCustomImageUploadIds() {
 document.addEventListener("DOMContentLoaded", () => {
     applyCreateAiVoicePresets();
     initVoicePreview();
+    _syncRealisticEngineOptionCards("wizard-realistic-engine");
+    _syncRealisticEngineOptionCards("script-realistic-engine");
+    _syncScriptRealisticNarrationBuilderPlacement();
 
     const dz = document.getElementById("script-photo-dropzone");
     if (dz) {
@@ -20918,6 +21064,7 @@ function adaptScriptStepForVideoType(videoType) {
     _updateScriptRealisticPersonaVisibility();
     _syncSeedanceLastFrameToggle("script");
     _syncCreatePersonaUi("script");
+    _syncScriptRealisticNarrationBuilderPlacement();
 }
 
 function _normalizeRealisticPersonaType(value, fallbackType = "natureza") {
