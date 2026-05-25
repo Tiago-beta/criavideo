@@ -1083,6 +1083,43 @@ async def _resolve_tts_voice_selection(
     return voice, voice_type, tts_instructions
 
 
+async def _generate_temp_preview_audio(
+    text: str,
+    voice: str,
+    voice_type: str,
+    tts_instructions: str,
+    pause_level: str,
+    tone: str,
+    output_filename: str,
+) -> str:
+    normalized_voice_type = str(voice_type or "builtin").strip().lower() or "builtin"
+    is_suno_narration = normalized_voice_type == "suno" or str(voice or "").startswith("suno_narrator_")
+
+    if is_suno_narration:
+        from app.services.suno_narration import generate_suno_narration
+
+        return await generate_suno_narration(
+            text=text,
+            voice_preset=str(voice or "").strip(),
+            project_id=0,
+            tone=tone,
+            output_filename=output_filename,
+        )
+
+    from app.services.script_audio import generate_tts_audio
+
+    return await generate_tts_audio(
+        text,
+        voice=voice,
+        project_id=0,
+        tts_instructions=tts_instructions,
+        voice_type=normalized_voice_type,
+        pause_level=pause_level,
+        tone=tone,
+        output_filename=output_filename,
+    )
+
+
 @router.post("/transcribe-temp-audio")
 async def transcribe_temp_audio(
     file: UploadFile = File(...),
@@ -1140,7 +1177,6 @@ async def generate_temp_audio(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.script_audio import generate_tts_audio
     from app.services.video_composer import _get_duration as get_media_duration
 
     text = str(req.text or "").strip()
@@ -1168,10 +1204,9 @@ async def generate_temp_audio(
     generated_name = f"temp-create-{user['id']}-{temp_token}-{safe_filename}"
 
     try:
-        generated_path = await generate_tts_audio(
+        generated_path = await _generate_temp_preview_audio(
             text,
             voice=voice,
-            project_id=0,
             tts_instructions=tts_instructions,
             voice_type=voice_type,
             pause_level=str(req.pause_level or "normal").strip() or "normal",

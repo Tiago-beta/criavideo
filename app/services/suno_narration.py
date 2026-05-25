@@ -133,6 +133,7 @@ async def generate_suno_narration(
     voice_preset: str,
     project_id: int,
     tone: str = "",
+    output_filename: str = "suno_narration.mp3",
 ) -> str:
     """Generate spoken narration with background music using Suno API.
     
@@ -157,6 +158,12 @@ async def generate_suno_narration(
     if not preset:
         logger.warning(f"Unknown Suno voice preset: {voice_preset}")
         raise RuntimeError(f"Preset de voz Suno invalido: {voice_preset}")
+
+    raw_filename = os.path.basename(str(output_filename or "suno_narration.mp3").strip() or "suno_narration.mp3")
+    safe_filename = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_filename).strip("-._") or "suno_narration"
+    if not safe_filename.lower().endswith(".mp3"):
+        safe_filename = f"{safe_filename}.mp3"
+    output_stem = Path(safe_filename).stem or "suno_narration"
     
     # Output directory
     audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
@@ -167,7 +174,7 @@ async def generate_suno_narration(
     
     if len(segments) == 1:
         # Single generation
-        output_path = str(audio_dir / "suno_narration.mp3")
+        output_path = str(audio_dir / safe_filename)
         result = await _generate_single_narration(
             text=segments[0],
             preset=preset,
@@ -181,7 +188,7 @@ async def generate_suno_narration(
         segment_paths = []
         
         for i, segment_text in enumerate(segments):
-            seg_path = str(audio_dir / f"suno_narration_seg{i:02d}.mp3")
+            seg_path = str(audio_dir / f"{output_stem}_seg{i:02d}.mp3")
             result = await _generate_single_narration(
                 text=segment_text,
                 preset=preset,
@@ -191,7 +198,7 @@ async def generate_suno_narration(
             segment_paths.append(result)
         
         # Concatenate segments with FFmpeg
-        output_path = str(audio_dir / "suno_narration.mp3")
+        output_path = str(audio_dir / safe_filename)
         success = await _concatenate_segments(segment_paths, output_path)
         if not success:
             # Fallback: return first segment
