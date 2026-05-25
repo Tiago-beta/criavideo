@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v544 loaded");
+console.log("[CriaVideo] app.js v545 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -19791,12 +19791,13 @@ function updateScriptVideoAreaVisibility() {
     const userAudioEnabled = !!document.getElementById("script-use-user-audio")?.checked;
     const audioFirstMode = _isCreateAudioFirstMode();
     const realisticNarrationBuilderActive = _isScriptRealisticNarrationBuilderActive();
+    const realisticNarrationVisible = scriptData.videoType !== "realista" || userAudioEnabled;
     const hasVideo = !!scriptUserVideoFile;
     const hasManualAudio = !!scriptUserAudioFile;
     const builderOpen = !!builder && !builder.hidden;
     const hasGeneratedAudio = !!scriptGeneratedAudioUploadId;
-    const hasVisibleGeneratedAudio = hasGeneratedAudio && !(scriptData.videoType === "realista" && !realisticNarrationBuilderActive);
-    const builderVisibleInSection = !realisticNarrationBuilderActive && (builderOpen || hasVisibleGeneratedAudio);
+    const hasVisibleGeneratedAudio = hasGeneratedAudio && realisticNarrationVisible;
+    const builderVisibleInSection = realisticNarrationVisible && !realisticNarrationBuilderActive && (builderOpen || hasVisibleGeneratedAudio);
     const shouldShowSection = audioFirstMode
         ? (builderOpen || hasGeneratedAudio)
         : (videoEnabled || builderVisibleInSection);
