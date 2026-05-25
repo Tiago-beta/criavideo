@@ -2728,8 +2728,19 @@ async def run_realistic_video_pipeline(project_id: int):
             provider_has_audio = await _video_has_audio_stream(output_path)
             provider_generate_audio = bool(tags.get("provider_generate_audio", False))
             explicit_audio_source = str(tags.get("audio_upload_path") or tags.get("audio_url") or "").strip()
+            uploaded_narration_path = str(tags.get("narration_upload_path") or "").strip()
             provider_missing_audio = engine in {"seedance", "mega15", "lite2", "viduq3", "avatar31"} and provider_generate_audio and not provider_has_audio
             seedance_missing_audio = seedance_family_engine and provider_missing_audio
+            if add_music and uploaded_narration_path and not explicit_audio_source and not dialogue_enabled:
+                logger.info(
+                    "Skipping background music for realistic project %s because uploaded narration should remain the only overlay audio.",
+                    project_id,
+                )
+                add_music = False
+                tags["add_music"] = False
+                project.tags = tags
+                project.no_background_music = True
+                await db.commit()
             if engine == "wan2" and add_music and not explicit_audio_source and not add_narration and not dialogue_enabled:
                 logger.info(
                     "Preserving Atlas native audio for Ultra High 1.0 project %s without extra music overlay.",
@@ -2855,7 +2866,6 @@ async def run_realistic_video_pipeline(project_id: int):
                             logger.warning(f"Dialogue generation failed, falling back to regular narration/music: {e}")
                             dialogue_enabled = False
 
-                uploaded_narration_path = str(tags.get("narration_upload_path") or "").strip()
                 if not dialogue_enabled and uploaded_narration_path and os.path.exists(uploaded_narration_path):
                     narration_path = uploaded_narration_path
                     logger.info("Using uploaded narration for realistic video %s: %s", project_id, narration_path)

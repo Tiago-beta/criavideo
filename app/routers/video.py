@@ -6865,7 +6865,10 @@ async def generate_realistic_endpoint(
         prompt = apply_cover_guidance(prompt, cover_decision)
     narration_text = (req.narration_text or "").strip() if req.add_narration and not dialogue_enabled else ""
     effective_add_narration = bool((uploaded_audio_is_narration or (req.add_narration and narration_text)) and not dialogue_enabled)
-    effective_add_music = bool(req.add_music or (resolved_audio_source and not uploaded_audio_is_narration))
+    effective_add_music = bool(
+        (req.add_music and not uploaded_audio_is_narration)
+        or (resolved_audio_source and not uploaded_audio_is_narration)
+    )
     provider_generate_audio = bool(req.generate_audio)
     seedance_native_audio_only = False
     if engine in _SEEDANCE_FAMILY_ENGINES:
