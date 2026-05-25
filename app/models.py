@@ -225,6 +225,29 @@ class ImageBank(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class UserMusicTrack(Base):
+    __tablename__ = "user_music_tracks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    provider = Column(String(50), nullable=False, default="tevoxi", index=True)
+    source = Column(String(50), nullable=False, default="inline", index=True)
+    job_id = Column(String(255), default="", index=True)
+    title = Column(String(500), nullable=False, default="Sem titulo")
+    lyrics_text = Column(Text, default="")
+    duration = Column(Float, default=0)
+    language = Column(String(20), default="pt-BR")
+    mode = Column(String(30), default="assistant")
+    mood = Column(String(100), default="")
+    vocalist = Column(String(100), default="")
+    audio_url = Column(Text, default="")
+    audio_path = Column(Text, default="")
+    genres = Column(JSON, default=list)
+    generation_payload = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SocialAccount(Base):
     __tablename__ = "social_accounts"
 

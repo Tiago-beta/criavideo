@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import httpx
 import openai
@@ -162,6 +163,159 @@ def _build_tevoxi_request_headers(api_token: str, endpoint: str) -> dict:
     return headers
 
 
+def _normalize_music_duration(duration: int | float | None) -> int:
+    try:
+        resolved = int(round(float(duration or 120)))
+    except (TypeError, ValueError):
+        resolved = 120
+    return min(max(resolved, 30), 240)
+
+
+def _normalize_music_genres(raw_value: Any, fallback: str = "pop") -> list[str]:
+    if isinstance(raw_value, str):
+        parts = [part.strip() for part in raw_value.split(",")]
+    elif isinstance(raw_value, (list, tuple, set)):
+        parts = [str(part or "").strip() for part in raw_value]
+    else:
+        parts = []
+
+    genres: list[str] = []
+    for part in parts:
+        if part and part not in genres:
+            genres.append(part)
+    if not genres:
+        genres.append(str(fallback or "pop").strip() or "pop")
+    return genres
+
+
+async def _build_tevoxi_music_payload(
+    theme: str,
+    duration: int,
+    language: str,
+    manual_settings: dict | None = None,
+) -> tuple[dict[str, Any], str]:
+    theme_text = str(theme or "").strip()
+
+    if manual_settings:
+        requested_mode = str(manual_settings.get("music_mode", "generate") or "generate").strip().lower()
+        if requested_mode in ("assistant", "generate"):
+            music_mode = "generate"
+        elif requested_mode in ("lyrics", "song", "with_lyrics"):
+            music_mode = "lyrics"
+        elif requested_mode in ("instrumental", "bgm"):
+            music_mode = "instrumental"
+        else:
+            music_mode = "generate"
+
+        genres = _normalize_music_genres(
+            manual_settings.get("music_genres")
+            or manual_settings.get("genres")
+            or manual_settings.get("music_genre"),
+            fallback="pop",
+        )
+        vocalist = str(manual_settings.get("music_vocalist", "female") or "female").strip().lower()
+        if music_mode == "instrumental":
+            vocalist = ""
+
+        payload = {
+            "prompt": theme_text,
+            "mode": music_mode,
+            "genres": genres,
+            "vocalist": vocalist,
+            "language": str(manual_settings.get("music_language", language) or language).strip() or language,
+            "mood": str(manual_settings.get("music_mood", "") or "").strip(),
+            "duration": _normalize_music_duration(manual_settings.get("music_duration") or duration),
+        }
+        custom_lyrics = str(manual_settings.get("music_lyrics", "") or "").strip()
+        if music_mode == "lyrics" and custom_lyrics:
+            payload["customLyrics"] = custom_lyrics
+
+        title_suggestion = str(
+            manual_settings.get("music_title")
+            or manual_settings.get("title")
+            or theme_text
+            or "Musica sem titulo"
+        ).strip() or "Musica sem titulo"
+        return payload, title_suggestion
+
+    params = await expand_theme_to_music_prompt(theme_text)
+    payload = {
+        "prompt": params["prompt"],
+        "mode": params["mode"],
+        "genres": _normalize_music_genres(params.get("genres"), fallback="pop"),
+        "vocalist": params["vocalist"],
+        "language": language,
+        "mood": params["mood"],
+        "duration": _normalize_music_duration(duration),
+    }
+    title_suggestion = str(params.get("title_suggestion", theme_text) or theme_text or "Musica sem titulo").strip() or "Musica sem titulo"
+    return payload, title_suggestion
+
+
+async def request_music_from_theme(
+    theme: str,
+    duration: int = 120,
+    language: str = "pt-BR",
+    manual_settings: dict | None = None,
+    user_id: int | None = None,
+) -> dict:
+    """Generate music via Tevoxi API and return the completed job metadata without downloading audio."""
+    api_url = settings.tevoxi_api_url.rstrip("/")
+    api_token = await _resolve_tevoxi_token_for_user(user_id=user_id)
+    headers = _build_tevoxi_request_headers(api_token, "/api/create-music")
+    payload, title_suggestion = await _build_tevoxi_music_payload(
+        theme=theme,
+        duration=duration,
+        language=language,
+        manual_settings=manual_settings,
+    )
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{api_url}/api/create-music", json=payload, headers=headers)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Tevoxi generation failed: {resp.status_code} {resp.text[:200]}")
+
+        data = resp.json()
+        job_id = data.get("id")
+        if not job_id:
+            raise RuntimeError(f"Tevoxi did not return job ID: {data}")
+
+        logger.info("Tevoxi music generation started: job_id=%s", job_id)
+
+        for _ in range(60):
+            await asyncio.sleep(5)
+            status_resp = await client.get(
+                f"{api_url}/api/create-music/status/{job_id}",
+                headers=headers,
+            )
+            if status_resp.status_code != 200:
+                continue
+
+            status_data = status_resp.json()
+            status = status_data.get("status", "")
+
+            if status == "completed":
+                return {
+                    "title": status_data.get("title") or title_suggestion or theme,
+                    "lyrics": status_data.get("lyrics", ""),
+                    "duration": status_data.get("duration", payload.get("duration", duration)),
+                    "job_id": str(job_id),
+                    "audio_url": status_data.get("audio_url") or f"{api_url}/api/create-music/audio/{job_id}",
+                    "genres": list(payload.get("genres") or []),
+                    "mood": str(payload.get("mood") or ""),
+                    "vocalist": str(payload.get("vocalist") or ""),
+                    "mode": str(payload.get("mode") or "generate"),
+                    "language": str(payload.get("language") or language),
+                    "payload": payload,
+                }
+
+            if status == "failed":
+                error = status_data.get("message", "Unknown error")
+                raise RuntimeError(f"Tevoxi generation failed: {error}")
+
+        raise RuntimeError("Tevoxi generation timed out after 5 minutes")
+
+
 async def generate_music_from_theme(
     theme: str,
     project_id: int,
@@ -177,102 +331,42 @@ async def generate_music_from_theme(
     api_url = settings.tevoxi_api_url.rstrip("/")
     api_token = await _resolve_tevoxi_token_for_user(user_id=user_id)
     headers = _build_tevoxi_request_headers(api_token, "/api/create-music")
-
-    if manual_settings:
-        # Use manual music settings from the user
-        music_mode = manual_settings.get("music_mode", "generate")
-        vocalist = manual_settings.get("music_vocalist", "female")
-        if music_mode == "instrumental":
-            vocalist = ""
-            music_mode = "instrumental"
-
-        payload = {
-            "prompt": theme,
-            "mode": music_mode,
-            "genres": [manual_settings.get("music_genre", "pop")],
-            "vocalist": vocalist,
-            "language": manual_settings.get("music_language", language),
-            "mood": manual_settings.get("music_mood", ""),
-            "duration": manual_settings.get("music_duration") or min(max(duration, 30), 240),
-        }
-        title_suggestion = theme
-        custom_lyrics = manual_settings.get("music_lyrics", "")
-        if music_mode == "lyrics" and custom_lyrics:
-            payload["customLyrics"] = custom_lyrics
-    else:
-        # Auto mode: use AI to expand theme into music parameters
-        params = await expand_theme_to_music_prompt(theme)
-        payload = {
-            "prompt": params["prompt"],
-            "mode": params["mode"],
-            "genres": params["genres"],
-            "vocalist": params["vocalist"],
-            "language": language,
-            "mood": params["mood"],
-            "duration": min(max(duration, 30), 240),
-        }
-        title_suggestion = params.get("title_suggestion", theme)
+    music_result = await request_music_from_theme(
+        theme=theme,
+        duration=duration,
+        language=language,
+        manual_settings=manual_settings,
+        user_id=user_id,
+    )
+    job_id = str(music_result.get("job_id") or "").strip()
+    if not job_id:
+        raise RuntimeError("Tevoxi did not return job ID.")
 
     async with httpx.AsyncClient(timeout=30) as client:
-        # 1. Start generation
-        resp = await client.post(f"{api_url}/api/create-music", json=payload, headers=headers)
-        if resp.status_code != 200:
-            raise RuntimeError(f"Tevoxi generation failed: {resp.status_code} {resp.text[:200]}")
+        logger.info("Tevoxi music generation completed: job_id=%s for project %d", job_id, project_id)
 
-        data = resp.json()
-        job_id = data.get("id")
-        if not job_id:
-            raise RuntimeError(f"Tevoxi did not return job ID: {data}")
+        audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_path = audio_dir / "tevoxi_music.mp3"
 
-        logger.info("Tevoxi music generation started: job_id=%s for project %d", job_id, project_id)
+        audio_resp = await client.get(
+            f"{api_url}/api/create-music/audio/{job_id}",
+            headers=headers,
+        )
+        if audio_resp.status_code != 200:
+            raise RuntimeError(f"Failed to download Tevoxi audio: {audio_resp.status_code}")
 
-        # 2. Poll for completion (max 5 min)
-        for _ in range(60):
-            await asyncio.sleep(5)
-            status_resp = await client.get(
-                f"{api_url}/api/create-music/status/{job_id}",
-                headers=headers,
-            )
-            if status_resp.status_code != 200:
-                continue
+        with open(audio_path, "wb") as f:
+            f.write(audio_resp.content)
 
-            status_data = status_resp.json()
-            status = status_data.get("status", "")
+        logger.info("Tevoxi music downloaded: %s (%d bytes)", audio_path, len(audio_resp.content))
 
-            if status == "completed":
-                title = title_suggestion or status_data.get("title", theme)
-                lyrics = status_data.get("lyrics", "")
-                music_duration = status_data.get("duration", duration)
-                audio_url = status_data.get("audio_url") or f"{api_url}/api/create-music/audio/{job_id}"
-
-                # 3. Download audio
-                audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
-                audio_dir.mkdir(parents=True, exist_ok=True)
-                audio_path = audio_dir / "tevoxi_music.mp3"
-
-                audio_resp = await client.get(
-                    f"{api_url}/api/create-music/audio/{job_id}",
-                    headers=headers,
-                )
-                if audio_resp.status_code != 200:
-                    raise RuntimeError(f"Failed to download Tevoxi audio: {audio_resp.status_code}")
-
-                with open(audio_path, "wb") as f:
-                    f.write(audio_resp.content)
-
-                logger.info("Tevoxi music downloaded: %s (%d bytes)", audio_path, len(audio_resp.content))
-
-                return {
-                    "audio_path": str(audio_path),
-                    "title": title,
-                    "lyrics": lyrics,
-                    "duration": music_duration,
-                    "job_id": str(job_id),
-                    "audio_url": str(audio_url),
-                }
-
-            elif status == "failed":
-                error = status_data.get("message", "Unknown error")
-                raise RuntimeError(f"Tevoxi generation failed: {error}")
-
-        raise RuntimeError("Tevoxi generation timed out after 5 minutes")
+        return {
+            "audio_path": str(audio_path),
+            "title": str(music_result.get("title") or theme),
+            "lyrics": str(music_result.get("lyrics") or ""),
+            "duration": music_result.get("duration", duration),
+            "job_id": job_id,
+            "audio_url": str(music_result.get("audio_url") or f"{api_url}/api/create-music/audio/{job_id}"),
+            "genres": list(music_result.get("genres") or []),
+        }

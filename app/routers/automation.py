@@ -4,12 +4,13 @@ Automation Router — CRUD for auto-schedules (automated video creation + publis
 import logging
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, String
+from sqlalchemy import select, func, cast, String, text
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 import httpx
@@ -17,15 +18,22 @@ import httpx
 from app.auth import get_current_user
 from app.config import get_settings
 from app.database import get_db
-from app.models import AppUser, AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount
+from app.models import AppUser, AutoChannelPilot, AutoSchedule, AutoScheduleTheme, Platform, SocialAccount, UserMusicTrack
 from app.services.persona_image import normalize_persona_type
 from app.services.credit_pricing import estimate_auto_theme_credits
 from app.services.pilot_prompt import build_pilot_prompt_preview
 from app.services.pilot_schedule import PILOT_TOTAL_SHORTS_PER_CYCLE
+from app.services.tevoxi_music import (
+    _build_tevoxi_request_headers,
+    _resolve_tevoxi_service_token,
+    request_music_from_theme,
+)
+from app.routers.credits import deduct_credits, get_credit_balance, is_levita_credit_bypass_user
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/api/automation", tags=["automation"])
+TEVOXI_INLINE_SONG_CREDITS = 13
 
 
 def _tevoxi_base_url() -> str:
@@ -225,6 +233,19 @@ class PilotPromptPreviewRequest(BaseModel):
     pilot_persona_candidates: Optional[list[dict]] = None
 
 
+class GenerateTevoxiInlineSongRequest(BaseModel):
+    mode: str = "assistant"
+    theme: str = ""
+    title: str = ""
+    lyrics: str = ""
+    genre: str = ""
+    genres: list[str] = Field(default_factory=list)
+    mood: str = ""
+    vocalist: str = "female"
+    duration: int = 120
+    language: str = "pt-BR"
+
+
 # ── Helpers ──
 
 def _normalize_pilot_persona_candidates(
@@ -331,7 +352,6 @@ def _extract_saved_pilot_persona_candidates(summary: dict, *settings_sources: di
             )
             if candidates:
                 return candidates
-
     summary_experiment = summary.get("pilot_persona_experiment")
     if isinstance(summary_experiment, dict):
         candidates = _normalize_pilot_persona_candidates(
@@ -351,6 +371,87 @@ def _extract_saved_pilot_persona_candidates(summary: dict, *settings_sources: di
         ]
     )
     return fallback_candidate
+
+
+def _normalize_tevoxi_audio_url(audio_url: str, job_id: str = "") -> str:
+    resolved = str(audio_url or "").strip()
+    if resolved.startswith("/"):
+        return f"{_tevoxi_base_url()}{resolved}"
+    if resolved:
+        return resolved
+    safe_job_id = str(job_id or "").strip()
+    if safe_job_id:
+        return f"{_tevoxi_base_url()}/api/create-music/audio/{safe_job_id}"
+    return ""
+
+
+def _serialize_local_tevoxi_song(song: UserMusicTrack) -> dict:
+    return {
+        "id": int(song.id),
+        "job_id": str(song.job_id or f"local-{song.id}"),
+        "title": str(song.title or "Sem titulo"),
+        "duration": float(song.duration or 0),
+        "audio_url": f"/api/automation/tevoxi-songs/local/{song.id}/audio",
+        "lyrics": str(song.lyrics_text or ""),
+        "genres": list(song.genres or []),
+        "created_at": song.created_at.isoformat() if song.created_at else "",
+        "provider": str(song.provider or "tevoxi"),
+        "source": str(song.source or "inline"),
+        "is_local": True,
+        "mode": str(song.mode or "assistant"),
+        "mood": str(song.mood or ""),
+        "vocalist": str(song.vocalist or ""),
+    }
+
+
+def _serialize_remote_tevoxi_song(song: dict) -> dict:
+    return {
+        "job_id": str(song.get("job_id", "")),
+        "title": str(song.get("title", "Sem título")),
+        "duration": float(song.get("duration", 0) or 0),
+        "audio_url": _normalize_tevoxi_audio_url(song.get("audio_url", ""), song.get("job_id", "")),
+        "lyrics": str(song.get("lyrics", "")),
+        "genres": list(song.get("genres", []) or []),
+        "created_at": str(song.get("created_at", "")),
+        "provider": "tevoxi",
+        "source": "linked_account",
+        "is_local": False,
+    }
+
+
+async def _list_local_tevoxi_songs(user_id: int, db: AsyncSession) -> list[dict]:
+    result = await db.execute(
+        select(UserMusicTrack)
+        .where(UserMusicTrack.user_id == int(user_id))
+        .where(UserMusicTrack.provider == "tevoxi")
+        .order_by(UserMusicTrack.created_at.desc(), UserMusicTrack.id.desc())
+    )
+    return [_serialize_local_tevoxi_song(song) for song in result.scalars().all()]
+
+
+async def _fetch_remote_tevoxi_songs(token: str) -> list[dict]:
+    api_url = _tevoxi_base_url()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(f"{api_url}/api/feed/my-created-music", headers=headers)
+        if resp.status_code in (401, 403, 404):
+            raise HTTPException(
+                status_code=409,
+                detail=_tevoxi_error_detail(
+                    "tevoxi_account_required",
+                    "Conta Tevoxi não conectada para este usuário.",
+                ),
+            )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Erro ao buscar músicas do Tevoxi.")
+        data = resp.json()
+        songs = data.get("songs", data) if isinstance(data, dict) else data
+        return [
+            _serialize_remote_tevoxi_song(song)
+            for song in (songs if isinstance(songs, list) else [])
+            if song.get("job_id")
+        ]
 
 
 def _parse_schedule_date_value(raw_value: str) -> Optional[date]:
@@ -603,43 +704,159 @@ async def list_tevoxi_songs(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Fetch user's songs from Tevoxi/Levita."""
-    token, _tevoxi_email = await _resolve_tevoxi_token_for_user(user, db)
-
-    api_url = _tevoxi_base_url()
-    headers = {"Authorization": f"Bearer {token}"}
+    """Fetch local inline songs first and merge linked-account songs when available."""
+    local_songs = await _list_local_tevoxi_songs(int(user.get("id") or 0), db)
+    remote_songs: list[dict] = []
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(f"{api_url}/api/feed/my-created-music", headers=headers)
-            if resp.status_code in (401, 403, 404):
-                raise HTTPException(
-                    status_code=409,
-                    detail=_tevoxi_error_detail(
-                        "tevoxi_account_required",
-                        "Conta Tevoxi não conectada para este usuário.",
-                    ),
-                )
+        token, _tevoxi_email = await _resolve_tevoxi_token_for_user(user, db)
+        remote_songs = await _fetch_remote_tevoxi_songs(token)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        if exc.status_code != 409 or str(detail.get("code") or "") != "tevoxi_account_required":
+            raise
+    except httpx.HTTPError as exc:
+        logger.warning("Failed to fetch Tevoxi songs: %s", exc)
+        if not local_songs:
+            raise HTTPException(status_code=502, detail="Erro de conexão com Tevoxi.")
+
+    seen_job_ids = {str(song.get("job_id") or "").strip() for song in local_songs if str(song.get("job_id") or "").strip()}
+    merged_remote = []
+    for song in remote_songs:
+        job_id = str(song.get("job_id") or "").strip()
+        if job_id and job_id in seen_job_ids:
+            continue
+        merged_remote.append(song)
+
+    return local_songs + merged_remote
+
+
+@router.post("/tevoxi-songs/generate")
+async def generate_inline_tevoxi_song(
+    req: GenerateTevoxiInlineSongRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = int(user.get("id") or 0)
+    normalized_mode = str(req.mode or "assistant").strip().lower()
+    if normalized_mode not in ("assistant", "lyrics", "instrumental"):
+        raise HTTPException(status_code=400, detail="Modo de música inválido.")
+
+    theme_text = str(req.theme or req.title or "").strip()
+    lyrics_text = str(req.lyrics or "").strip()
+    title_text = str(req.title or theme_text or "").strip()
+    genre_values = [genre.strip() for genre in (req.genres or []) if str(genre or "").strip()]
+    if not genre_values and str(req.genre or "").strip():
+        genre_values.append(str(req.genre).strip())
+
+    if normalized_mode == "lyrics":
+        if not lyrics_text:
+            raise HTTPException(status_code=400, detail="Envie a letra para usar o modo Minha Letra.")
+        if not theme_text:
+            theme_text = title_text or lyrics_text.splitlines()[0][:120] or "Nova musica"
+    elif not theme_text:
+        raise HTTPException(status_code=400, detail="Informe o tema da música.")
+
+    manual_settings = {
+        "music_mode": "lyrics" if normalized_mode == "lyrics" else ("instrumental" if normalized_mode == "instrumental" else "generate"),
+        "music_title": title_text or theme_text,
+        "music_genres": genre_values,
+        "music_vocalist": str(req.vocalist or "female").strip().lower() or "female",
+        "music_language": str(req.language or "pt-BR").strip() or "pt-BR",
+        "music_mood": str(req.mood or "").strip(),
+        "music_duration": int(req.duration or 120),
+        "music_lyrics": lyrics_text,
+    }
+
+    credits_charged = 0
+    if not await is_levita_credit_bypass_user(db, user=user):
+        await deduct_credits(db, user_id, TEVOXI_INLINE_SONG_CREDITS)
+        credits_charged = TEVOXI_INLINE_SONG_CREDITS
+
+    try:
+        music_result = await request_music_from_theme(
+            theme=theme_text,
+            duration=int(req.duration or 120),
+            language=manual_settings["music_language"],
+            manual_settings=manual_settings,
+            user_id=user_id,
+        )
+    except RuntimeError as exc:
+        if credits_charged > 0:
+            await db.execute(
+                text("UPDATE auth_users SET credits = credits + :amount WHERE id = :uid"),
+                {"amount": credits_charged, "uid": user_id},
+            )
+            await db.commit()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    track = UserMusicTrack(
+        user_id=user_id,
+        provider="tevoxi",
+        source="inline",
+        job_id=str(music_result.get("job_id") or "").strip(),
+        title=str(title_text or music_result.get("title") or theme_text or "Sem titulo").strip() or "Sem titulo",
+        lyrics_text=str(music_result.get("lyrics") or lyrics_text or ""),
+        duration=float(music_result.get("duration") or req.duration or 0),
+        language=str(music_result.get("language") or manual_settings["music_language"]),
+        mode=normalized_mode,
+        mood=str(music_result.get("mood") or manual_settings["music_mood"]),
+        vocalist=str(music_result.get("vocalist") or manual_settings["music_vocalist"]),
+        audio_url=_normalize_tevoxi_audio_url(music_result.get("audio_url") or "", music_result.get("job_id") or ""),
+        genres=list(music_result.get("genres") or genre_values),
+        generation_payload={
+            "request": req.model_dump(),
+            "tevoxi_payload": music_result.get("payload") or {},
+        },
+    )
+    db.add(track)
+    await db.commit()
+    await db.refresh(track)
+    serialized = _serialize_local_tevoxi_song(track)
+    serialized["credits_charged"] = credits_charged
+    serialized["remaining_credits"] = await get_credit_balance(db, user_id)
+    return serialized
+
+
+@router.get("/tevoxi-songs/local/{track_id}/audio")
+async def proxy_local_tevoxi_song_audio(
+    track_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    track = await db.get(UserMusicTrack, int(track_id or 0))
+    if not track or track.user_id != int(user.get("id") or 0) or str(track.provider or "") != "tevoxi":
+        raise HTTPException(status_code=404, detail="Música não encontrada.")
+
+    audio_path = Path(str(track.audio_path or "").strip()) if str(track.audio_path or "").strip() else None
+    if audio_path and audio_path.exists() and audio_path.is_file():
+        return FileResponse(
+            audio_path,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+        )
+
+    audio_url = _normalize_tevoxi_audio_url(track.audio_url or "", track.job_id or "")
+    if not audio_url:
+        raise HTTPException(status_code=404, detail="Áudio não encontrado.")
+
+    headers = _build_tevoxi_request_headers(_resolve_tevoxi_service_token(), "/api/create-music/audio")
+
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(audio_url, headers=headers or None)
             if resp.status_code != 200:
-                raise HTTPException(status_code=502, detail="Erro ao buscar músicas do Tevoxi.")
-            data = resp.json()
-            songs = data.get("songs", data) if isinstance(data, dict) else data
-            # Return simplified list
-            return [
-                {
-                    "job_id": s.get("job_id", ""),
-                    "title": s.get("title", "Sem título"),
-                    "duration": s.get("duration", 0),
-                    "audio_url": f"{api_url}{s['audio_url']}" if s.get("audio_url", "").startswith("/") else s.get("audio_url", ""),
-                    "lyrics": s.get("lyrics", ""),
-                    "genres": s.get("genres", []),
-                    "created_at": s.get("created_at", ""),
-                }
-                for s in (songs if isinstance(songs, list) else [])
-                if s.get("job_id")
-            ]
-    except httpx.HTTPError as e:
-        logger.warning("Failed to fetch Tevoxi songs: %s", e)
+                logger.warning("Tevoxi local audio proxy failed for track %s with status %s", track_id, resp.status_code)
+                raise HTTPException(status_code=502, detail="Erro ao buscar áudio do Tevoxi.")
+
+            media_type = resp.headers.get("content-type", "audio/mpeg")
+            return StreamingResponse(
+                iter([resp.content]),
+                media_type=media_type,
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("Tevoxi local audio proxy connection error for track %s: %s", track_id, exc)
         raise HTTPException(status_code=502, detail="Erro de conexão com Tevoxi.")
 
 

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v553 loaded");
+console.log("[CriaVideo] app.js v554 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -13,6 +13,7 @@ const API = resolveCriaVideoApiBase();
 const APP_TOKEN_KEY = "criavideo_token";
 const LEVITA_TOKEN_KEY = "levita_token";
 const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";
+const TEVOXI_INLINE_SONG_CREDITS = 13;
 const ADMIN_PANEL_EMAIL = "tgsantos66@hotmail.com";
 
 let token = localStorage.getItem(APP_TOKEN_KEY) || "";
@@ -5301,6 +5302,10 @@ let _scriptTevoxiPreviewObjectUrl = "";
 let _scriptTevoxiPreviewSourceKey = "";
 let _scriptTevoxiPreviewSignature = "";
 let _scriptTevoxiModeActive = false;
+let _scriptTevoxiComposerState = {
+    mode: "assistant",
+    creating: false,
+};
 // Step flow arrays for each video type
 const WIZARD_FLOW_NORMAL = [2, 1, 3, 4, 5, 6]; // type, topic, tone, voice, style, details
 const WIZARD_FLOW_REALISTIC = [2, 1, 7]; // type, topic, realistic settings
@@ -27844,12 +27849,208 @@ function _tevoxiEmptyStateHtml(message = "Nenhuma musica encontrada no Tevoxi.")
     `;
 }
 
+function _scriptTevoxiEmptyStateHtml() {
+    return `
+        <div class="tevoxi-empty-state">
+            <p class="loading">Nenhuma música criada ainda.</p>
+            <button class="btn btn-secondary btn-sm tevoxi-empty-cta-btn" type="button" onclick="openScriptTevoxiComposer()">Criar primeira música</button>
+        </div>
+    `;
+}
+
+function _resetScriptTevoxiComposerForm() {
+    _scriptTevoxiComposerState.mode = "assistant";
+    _scriptTevoxiComposerState.creating = false;
+
+    const titleInput = document.getElementById("script-tevoxi-title-input");
+    const themeInput = document.getElementById("script-tevoxi-theme-input");
+    const lyricsInput = document.getElementById("script-tevoxi-lyrics-input");
+    const genreInput = document.getElementById("script-tevoxi-genre-input");
+    const moodInput = document.getElementById("script-tevoxi-mood-input");
+    const vocalistInput = document.getElementById("script-tevoxi-vocalist-input");
+    const durationInput = document.getElementById("script-tevoxi-duration-input");
+    const statusEl = document.getElementById("script-tevoxi-composer-status");
+
+    if (titleInput) titleInput.value = "";
+    if (themeInput) themeInput.value = "";
+    if (lyricsInput) lyricsInput.value = "";
+    if (genreInput) genreInput.value = "";
+    if (moodInput) moodInput.value = "";
+    if (vocalistInput) vocalistInput.value = "female";
+    if (durationInput) durationInput.value = "120";
+    if (statusEl) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+    }
+}
+
+function _renderScriptTevoxiComposer() {
+    const isLyrics = _scriptTevoxiComposerState.mode === "lyrics";
+    const creating = !!_scriptTevoxiComposerState.creating;
+    const assistantTab = document.getElementById("script-tevoxi-tab-assistant");
+    const lyricsTab = document.getElementById("script-tevoxi-tab-lyrics");
+    const hintEl = document.getElementById("script-tevoxi-composer-hint");
+    const themeLabel = document.getElementById("script-tevoxi-theme-label");
+    const themeInput = document.getElementById("script-tevoxi-theme-input");
+    const lyricsGroup = document.getElementById("script-tevoxi-lyrics-group");
+    const balanceEl = document.getElementById("script-tevoxi-composer-balance");
+    const submitBtn = document.getElementById("script-tevoxi-compose-submit");
+    const closeBtn = document.querySelector("#modal-script-tevoxi-composer .modal-close");
+
+    if (assistantTab) assistantTab.classList.toggle("active", !isLyrics);
+    if (lyricsTab) lyricsTab.classList.toggle("active", isLyrics);
+    if (hintEl) {
+        hintEl.textContent = isLyrics
+            ? "Cole sua letra e ajuste estilo, clima e voz. A música gerada entra direto na sua biblioteca."
+            : "Descreva o tema, o clima e a voz desejada. O CriaVideo gera a música e já coloca na sua biblioteca.";
+    }
+    if (themeLabel) {
+        themeLabel.textContent = isLyrics ? "Tema ou título base" : "Tema";
+    }
+    if (themeInput) {
+        themeInput.placeholder = isLyrics
+            ? "Ex: Canção sobre superação e fé"
+            : "Ex: Pop romântico sobre recomeço e esperança";
+        themeInput.disabled = creating;
+    }
+    if (lyricsGroup) lyricsGroup.hidden = !isLyrics;
+    if (balanceEl) {
+        balanceEl.textContent = `Saldo atual: ${_formatCreditsInt(_userCredits || 0)} créditos`;
+    }
+    if (submitBtn) {
+        submitBtn.disabled = creating;
+        submitBtn.textContent = creating ? "Gerando..." : "Gerar música";
+    }
+    if (closeBtn) closeBtn.disabled = creating;
+
+    [
+        "script-tevoxi-title-input",
+        "script-tevoxi-lyrics-input",
+        "script-tevoxi-genre-input",
+        "script-tevoxi-mood-input",
+        "script-tevoxi-vocalist-input",
+        "script-tevoxi-duration-input",
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = creating;
+    });
+}
+
+function openScriptTevoxiComposer() {
+    _resetScriptTevoxiComposerForm();
+    _renderScriptTevoxiComposer();
+    openModal("modal-script-tevoxi-composer");
+}
+
+function closeScriptTevoxiComposer() {
+    if (_scriptTevoxiComposerState.creating) return;
+    closeModal("modal-script-tevoxi-composer");
+}
+
+function setScriptTevoxiComposerMode(mode) {
+    if (_scriptTevoxiComposerState.creating) return;
+    _scriptTevoxiComposerState.mode = String(mode || "assistant").trim().toLowerCase() === "lyrics" ? "lyrics" : "assistant";
+    _renderScriptTevoxiComposer();
+}
+
+function _buildScriptTevoxiComposerPayload() {
+    const mode = _scriptTevoxiComposerState.mode === "lyrics" ? "lyrics" : "assistant";
+    const title = String(document.getElementById("script-tevoxi-title-input")?.value || "").trim();
+    const theme = String(document.getElementById("script-tevoxi-theme-input")?.value || "").trim();
+    const lyrics = String(document.getElementById("script-tevoxi-lyrics-input")?.value || "").trim();
+    const genre = String(document.getElementById("script-tevoxi-genre-input")?.value || "").trim();
+    const mood = String(document.getElementById("script-tevoxi-mood-input")?.value || "").trim();
+    const vocalist = String(document.getElementById("script-tevoxi-vocalist-input")?.value || "female").trim() || "female";
+    const duration = parseInt(document.getElementById("script-tevoxi-duration-input")?.value || "120", 10) || 120;
+
+    if (mode === "lyrics" && !lyrics) {
+        throw new Error("Cole a letra para usar o modo Minha Letra.");
+    }
+    if (mode !== "lyrics" && !theme) {
+        throw new Error("Informe o tema da música.");
+    }
+
+    return {
+        mode,
+        title,
+        theme,
+        lyrics,
+        genre,
+        mood,
+        vocalist,
+        duration,
+        language: "pt-BR",
+    };
+}
+
+async function submitScriptTevoxiComposer() {
+    if (_scriptTevoxiComposerState.creating) return;
+
+    const statusEl = document.getElementById("script-tevoxi-composer-status");
+    try {
+        const payload = _buildScriptTevoxiComposerPayload();
+        if ((_userCredits || 0) < TEVOXI_INLINE_SONG_CREDITS) {
+            if (statusEl) {
+                statusEl.hidden = false;
+                statusEl.textContent = `Saldo insuficiente para gerar agora. Custo: ${TEVOXI_INLINE_SONG_CREDITS} créditos.`;
+            }
+            showCreditsPurchaseModal();
+            return;
+        }
+
+        _scriptTevoxiComposerState.creating = true;
+        if (statusEl) {
+            statusEl.hidden = false;
+            statusEl.textContent = "Gerando música... isso pode levar alguns instantes.";
+        }
+        _renderScriptTevoxiComposer();
+
+        const song = await api("/automation/tevoxi-songs/generate", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+
+        if (Number.isFinite(Number(song?.remaining_credits))) {
+            _userCredits = Number(song.remaining_credits);
+            _renderGlobalBalance();
+        }
+        await updateCreditsDisplay();
+
+        _scriptTevoxiSongs = [song, ..._scriptTevoxiSongs.filter((item) => String(item?.job_id || "") !== String(song?.job_id || ""))];
+        _renderScriptTevoxiSongs();
+        closeModal("modal-script-tevoxi-composer");
+        showToast("Música criada e adicionada à biblioteca.", "success");
+
+        const tevoxiCb = document.getElementById("script-realistic-tevoxi");
+        const panel = document.getElementById("script-tevoxi-panel");
+        if (tevoxiCb) tevoxiCb.checked = true;
+        if (panel) panel.hidden = false;
+
+        const createdIndex = _scriptTevoxiSongs.findIndex((item) => String(item?.job_id || "") === String(song?.job_id || ""));
+        if (createdIndex >= 0) {
+            selectScriptTevoxiSong(createdIndex);
+        }
+    } catch (error) {
+        if (error?.status === 402) {
+            showCreditsPurchaseModal();
+        }
+        if (statusEl) {
+            statusEl.hidden = false;
+            statusEl.textContent = error?.message || "Não foi possível gerar a música agora.";
+        }
+        showToast(error?.message || "Erro ao gerar música", "error");
+    } finally {
+        _scriptTevoxiComposerState.creating = false;
+        _renderScriptTevoxiComposer();
+    }
+}
+
 async function toggleScriptTevoxiSongs() {
     const tevoxiCb = document.getElementById("script-realistic-tevoxi");
     const checked = !!tevoxiCb?.checked;
     const panel = document.getElementById("script-tevoxi-panel");
 
-    if (checked) {
+    if (checked && scriptData.videoType !== "realista") {
         const allowed = await _ensureTevoxiAccountOrPrompt("script");
         if (!allowed) {
             _disableScriptTevoxiMode();
@@ -28331,7 +28532,7 @@ function _renderScriptTevoxiSongs() {
     const list = document.getElementById("script-song-list");
     if (!list) return;
     if (!_scriptTevoxiSongs.length) {
-        list.innerHTML = _tevoxiEmptyStateHtml("Nenhuma musica encontrada no Tevoxi.");
+        list.innerHTML = _scriptTevoxiEmptyStateHtml();
         return;
     }
     list.innerHTML = _scriptTevoxiSongs.map((s, i) => {
@@ -28340,7 +28541,8 @@ function _renderScriptTevoxiSongs() {
             .map(g => String(g || "").trim())
             .filter(Boolean)
             .join(", ");
-        const meta = [genres, dur].filter(Boolean).join(" · ");
+        const origin = s.is_local ? "Criada aqui" : "Tevoxi";
+        const meta = [origin, genres, dur].filter(Boolean).join(" · ");
         const selected = _scriptSelectedSong && _scriptSelectedSong.job_id === s.job_id;
         return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectScriptTevoxiSong(${i})">
             <div class="song-info">
