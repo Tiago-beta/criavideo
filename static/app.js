@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v555 loaded");
+console.log("[CriaVideo] app.js v556 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -256,7 +256,7 @@ function _syncRealisticEngineOptionCards(containerId) {
 
 function _getCreateRealisticDurationOptions(engineValue) {
     const engine = String(engineValue || "").trim().toLowerCase();
-    if (engine === "wan2") return WAN_REALISTIC_DURATION_OPTIONS;
+    if (["wan2", "avatar25"].includes(engine)) return WAN_REALISTIC_DURATION_OPTIONS;
     if (engine === "viduq3") return VIDU_Q3_REALISTIC_DURATION_OPTIONS;
     if (engine === "lite2") return LITE2_REALISTIC_DURATION_OPTIONS;
     if (engine === "mega15") return SEEDANCE_REALISTIC_DURATION_OPTIONS;
@@ -4585,7 +4585,7 @@ function _buildRealisticEstimatePayload(prefix) {
     let durationSeconds = (selectedEngine === "avatar31" && (prefix === "wizard" || prefix === "script"))
         ? _getAvatarAutomaticDurationSeconds(prefix)
         : _getSelectedDurationSeconds(`${prefix}-realistic-duration`, 5);
-    if (engine === "wan2") {
+    if (["wan2", "avatar25"].includes(engine)) {
         durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
     }
 
@@ -4839,7 +4839,7 @@ function _setScriptTextValue(value) {
 function _buildWorkflowEstimatePayload() {
     const engine = document.getElementById("workflow-engine")?.value || "grok";
     let durationSeconds = parseInt(document.getElementById("workflow-duration")?.value || "15", 10) || 15;
-    if (engine === "wan2") {
+    if (["wan2", "avatar25"].includes(engine)) {
         durationSeconds = _normalizeWanDurationMultiple(durationSeconds);
     }
 
@@ -12576,6 +12576,7 @@ function workflowAddNode(kind) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="avatar25">Avatar 2.5 Pro</option>
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="lite2">Mega 1.5 Real</option>
@@ -12921,6 +12922,7 @@ function getRealisticEngineLabel(engine) {
     const labels = {
         grok: "Cria 3.0 speed",
         wan2: "Ultra High 1.0",
+        avatar25: "Avatar 2.5 Pro",
         lite2: "Mega 1.5 Real",
         mega15: "Lite 2.0 Fast",
         viduq3: "Pro 3.1 Start",
@@ -13022,7 +13024,7 @@ function workflowEngineDurationOptions(engine) {
     if (engine === "lite2") return [...LITE2_REALISTIC_DURATION_OPTIONS];
     if (engine === "mega15") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
     if (engine === "seedance") return [...SEEDANCE_REALISTIC_DURATION_OPTIONS];
-    if (engine === "wan2") return [...WAN_REALISTIC_DURATION_OPTIONS];
+    if (["wan2", "avatar25"].includes(engine)) return [...WAN_REALISTIC_DURATION_OPTIONS];
     return [...DEFAULT_REALISTIC_DURATION_OPTIONS];
 }
 
@@ -13222,6 +13224,7 @@ function workflowMigrateWorkflowNodes(defaultNodes = null) {
             <label>Motor de IA</label>
             <select id="workflow-engine" class="input workflow-input">
                 <option value="wan2">Ultra High 1.0</option>
+                <option value="avatar25">Avatar 2.5 Pro</option>
                 <option value="viduq3">Pro 3.1 Start</option>
                 <option value="grok" selected>Cria 3.0 speed</option>
                 <option value="lite2">Mega 1.5 Real</option>
@@ -16030,13 +16033,13 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     if (avatarAutomaticDuration > 0) {
         duration = avatarAutomaticDuration;
     }
-    if (engine === "wan2") {
+    if (["wan2", "avatar25"].includes(engine)) {
         const normalizedDuration = _normalizeWanDurationMultiple(duration);
         if (normalizedDuration !== duration) {
             duration = normalizedDuration;
             _syncCreateRealisticDurationOptions(prefix, duration);
             _syncAiSuggestRealisticDurationOptions(duration);
-            showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
+            showToast(`${getRealisticEngineLabel(engine)} usa duracao em multiplos de 8 segundos.`);
         }
     }
     const engineLabel = getRealisticEngineLabel(engine);
@@ -23314,12 +23317,12 @@ async function generateAiScript() {
         let realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 8;
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
         let engine = engineBtn ? engineBtn.dataset.value : "grok";
-        if (engine === "wan2") {
+        if (["wan2", "avatar25"].includes(engine)) {
             const normalized = _normalizeWanDurationMultiple(realisticDuration);
             if (normalized !== realisticDuration) {
                 realisticDuration = normalized;
                 _syncAiSuggestRealisticDurationOptions(realisticDuration);
-                showToast("Ultra High 1.0 usa duracao em multiplos de 8 segundos.");
+                showToast(`${getRealisticEngineLabel(engine)} usa duracao em multiplos de 8 segundos.`);
             }
         }
         const disablePersonaReference = !selectedPersonaType || _isPersonaNoReferenceEnabled("ai", selectedPersonaType);
