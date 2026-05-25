@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v548 loaded");
+console.log("[CriaVideo] app.js v549 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6627,7 +6627,7 @@ function _syncScriptAudioFirstSelection(selectedType = "") {
     }
 
     const normalizedType = String(selectedType || "").trim();
-    const shouldUsePhotos = normalizedType === "imagens_proprias";
+    const shouldUsePhotos = !!normalizedType && normalizedType !== "realista";
     const photoToggle = document.getElementById("script-use-photos");
     if (photoToggle && photoToggle.checked !== shouldUsePhotos) {
         photoToggle.checked = shouldUsePhotos;
@@ -6828,7 +6828,7 @@ function _getCreateLiveModeLabel(modeValue, videoTypeValue) {
     if (mode === "wizard") return videoType === "realista" ? "Assistente realista" : "Assistente";
     if (mode === "script") {
         if (videoType === "realista") return "Realista";
-        if (videoType === "imagens_proprias") return "Enviar imagens";
+        if (videoType === "imagens_ia" || videoType === "imagens_proprias") return "Imagens";
         return "Meu roteiro";
     }
     return "Criar";
@@ -37031,12 +37031,12 @@ function _editorOpenCreateFlowWithImages(files) {
     const scriptTypeGrid = document.getElementById("script-video-type-grid");
     if (scriptTypeGrid) {
         scriptTypeGrid.querySelectorAll(".video-type-card").forEach((card) => card.classList.remove("selected"));
-        const ownImagesCard = scriptTypeGrid.querySelector('.video-type-card[data-type="imagens_proprias"]');
-        if (ownImagesCard) {
-            ownImagesCard.classList.add("selected");
+        const imagesCard = scriptTypeGrid.querySelector('.video-type-card[data-type="imagens_ia"]');
+        if (imagesCard) {
+            imagesCard.classList.add("selected");
         }
     }
-    scriptData.videoType = "imagens_proprias";
+    scriptData.videoType = "imagens_ia";
 
     addPhotos(imageFiles);
     showToast(`${imageFiles.length} imagem(ns) carregada(s). Continue para criar o vídeo.`, "success");

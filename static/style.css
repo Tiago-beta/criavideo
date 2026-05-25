@@ -10357,37 +10357,38 @@ th,
 }
 
 #wizard-video-type-grid,
+#script-video-type-grid,
 #modal-new-automation .auto-video-type-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    max-width: 680px;
+    max-width: 760px;
     margin-left: auto;
     margin-right: auto;
 }
 
 #create-panel-wizard .video-type-grid,
 #create-panel-script .video-type-grid {
-    gap: 10px;
+    gap: 14px;
 }
 
 #create-panel-wizard .video-type-card,
 #create-panel-script .video-type-card {
-    justify-content: flex-start;
-    gap: 6px;
-    padding: 12px 8px 10px;
-    min-height: 112px;
+    justify-content: center;
+    gap: 10px;
+    padding: 18px 14px 16px;
+    min-height: 140px;
 }
 
 #create-panel-wizard .video-type-card strong,
 #create-panel-script .video-type-card strong {
     display: block;
-    font-size: 0.82rem;
-    line-height: 1.15;
+    font-size: 0.94rem;
+    line-height: 1.2;
 }
 
 #create-panel-wizard .credit-badge,
 #create-panel-script .credit-badge {
-    margin-top: 0;
-    padding: 3px 7px;
+    margin-top: 2px;
+    padding: 4px 10px;
     font-size: 0.6rem;
 }
 
@@ -14283,6 +14284,10 @@ th,
     background: rgba(255, 167, 38, 0.15);
     color: #ffa726;
 }
+.credit-flexible {
+    background: rgba(74, 144, 226, 0.18);
+    color: #82c4ff;
+}
 .credit-high {
     background: rgba(239, 83, 80, 0.15);
     color: #ef5350;
@@ -14293,42 +14298,39 @@ th,
         grid-template-columns: 1fr;
         gap: 10px;
     }
-    #wizard-video-type-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        max-width: none;
-    }
+    #wizard-video-type-grid,
     #script-video-type-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         max-width: none;
     }
     #create-panel-wizard .video-type-card,
     #create-panel-script .video-type-card {
         flex-direction: column;
         text-align: center;
-        padding: 10px 6px 9px;
+        padding: 12px 8px 10px;
         gap: 6px;
-        min-height: 96px;
+        min-height: 108px;
     }
     #create-panel-wizard .video-type-icon,
     #create-panel-script .video-type-icon {
-        width: 32px;
-        height: 32px;
+        width: 36px;
+        height: 36px;
         flex-shrink: 0;
     }
     #create-panel-wizard .video-type-icon svg,
     #create-panel-script .video-type-icon svg {
-        width: 16px;
-        height: 16px;
+        width: 18px;
+        height: 18px;
     }
     #create-panel-wizard .video-type-card strong,
     #create-panel-script .video-type-card strong {
         display: block;
-        font-size: 0.72rem;
+        font-size: 0.76rem;
     }
     #create-panel-wizard .credit-badge,
     #create-panel-script .credit-badge {
-        font-size: 0.56rem;
-        padding: 2px 6px;
+        font-size: 0.58rem;
+        padding: 2px 7px;
     }
     .create-panel-action-row {
         gap: 10px;

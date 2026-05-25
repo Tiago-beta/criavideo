@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260525-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260525-05">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 548;
+        var REQUIRED_VER = 549;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1330,10 +1330,10 @@
                         <div class="video-type-grid" id="wizard-video-type-grid">
                             <div class="video-type-card" data-type="imagens_ia" tabindex="0">
                                 <div class="video-type-icon">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                 </div>
-                                <strong>Imagens IA</strong>
-                                <span class="credit-badge credit-moderate">Moderado</span>
+                                <strong>Imagens</strong>
+                                <span class="credit-badge credit-flexible">Flexível</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
@@ -2021,19 +2021,12 @@
                     <div class="wizard-step" data-step="2" hidden>
                         <h3 class="wizard-question">Escolha o modo</h3>
                         <div class="video-type-grid" id="script-video-type-grid">
-                            <div class="video-type-card" data-type="imagens_proprias" tabindex="0">
+                            <div class="video-type-card" data-type="imagens_ia" tabindex="0">
                                 <div class="video-type-icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                 </div>
-                                <strong>Imagens Próprias</strong>
-                                <span class="credit-badge credit-regular">Regular</span>
-                            </div>
-                            <div class="video-type-card" data-type="imagens_ia" tabindex="0">
-                                <div class="video-type-icon">
-                                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                </div>
-                                <strong>Imagens IA</strong>
-                                <span class="credit-badge credit-moderate">Moderado</span>
+                                <strong>Imagens</strong>
+                                <span class="credit-badge credit-flexible">Flexível</span>
                             </div>
                             <div class="video-type-card" data-type="realista" tabindex="0">
                                 <div class="video-type-icon">
@@ -4472,8 +4465,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260525-04"></script>
-    <script src="/video/static/pwa.js?v=20260525-04"></script>
+    <script src="/video/static/app.js?v=20260525-05"></script>
+    <script src="/video/static/pwa.js?v=20260525-05"></script>
 </body>
 </html>
 
