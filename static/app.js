@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v546 loaded");
+console.log("[CriaVideo] app.js v547 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -7297,11 +7297,12 @@ function _renderCreateLiveSessionSourceItems() {
     wrap.hidden = true;
 }
 
-function _buildCreateLiveSceneCard(sceneItem) {
+function _buildCreateLiveSceneCard(sceneItem, options = {}) {
     const sceneNumber = Number(sceneItem?.sceneNumber || 0) || 1;
     const previewAspectClass = _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
     const durationLabel = _formatCreateLiveSceneDuration(sceneItem);
     const statusLabel = _getCreateLiveSceneStatusLabel(sceneItem);
+    const hideTitle = !!options.hideTitle;
     const inputFrameUrl = String(sceneItem?.sourceFrameUrl || "").trim() || (sceneNumber === 1 ? _getCreateLivePreferredSourcePreviewUrl() : "");
     const outputFrameUrl = String(sceneItem?.returnedFrameUrl || "").trim();
     const frameItems = [];
@@ -7359,13 +7360,18 @@ function _buildCreateLiveSceneCard(sceneItem) {
     const headMeta = durationLabel
         ? `<span class="similar-scene-time">${workflowEscapeHtml(durationLabel)}</span>`
         : "";
-
-    return `
-        <article class="similar-scene-card create-live-session-scene-card${isActive ? " is-active" : ""}">
+    const headMarkup = hideTitle
+        ? ""
+        : `
             <div class="similar-scene-head">
                 <strong>Cena ${sceneNumber}</strong>
                 ${headMeta}
             </div>
+        `;
+
+    return `
+        <article class="similar-scene-card create-live-session-scene-card${isActive ? " is-active" : ""}">
+            ${headMarkup}
             ${_buildCreateLiveReferencePanel({
                 frameItems,
                 clipMarkup,
@@ -7416,10 +7422,9 @@ function _buildCreateLiveNextSceneCard() {
                 <span class="similar-scene-time">${createLiveSessionState.nextSceneBusy ? "Gerando" : (hasContinuationFrame ? "Pronta" : "Aguardando")}</span>
             </div>
             ${_buildCreateLiveReferencePanel({
-                title: `Cena ${sceneNumber}`,
-                subtitle: hasContinuationFrame ? "Escreva a próxima cena." : "A base da próxima cena aparece aqui.",
                 frameItems,
                 forceSingle: true,
+                hideHead: true,
                 afterMarkup: `
                     <div class="similar-reference-frame-editor create-live-session-next-editor">
                         <label for="create-live-session-next-prompt">Prompt</label>
@@ -7558,6 +7563,7 @@ function _renderCreateLiveSession(project = null) {
     const activeScene = [...sceneProjects].reverse().find((sceneItem) => _isCreateLiveSceneItemActive(sceneItem)) || null;
     const failedScene = [...sceneProjects].reverse().find((sceneItem) => String(sceneItem?.status || "").trim().toLowerCase() === "failed") || null;
     const lastScene = _getCreateLiveLastSceneProject();
+    const featuredSceneNumber = Number(activeScene?.sceneNumber || lastScene?.sceneNumber || 0) || 0;
     const hasEditorEntry = sceneProjects.some((sceneItem) => String(sceneItem?.videoUrl || "").trim());
     const shouldShowNextScene = !!(createLiveSessionState.returnFrameEnabled && createLiveSessionState.continuationConfig);
     const modeLabel = _getCreateLiveModeLabel(createLiveSessionState.mode, createLiveSessionState.videoType);
@@ -7579,7 +7585,9 @@ function _renderCreateLiveSession(project = null) {
     }
     if (scenesList) {
         scenesList.innerHTML = sceneProjects.length
-            ? sceneProjects.map((sceneItem) => _buildCreateLiveSceneCard(sceneItem)).join("")
+            ? sceneProjects.map((sceneItem) => _buildCreateLiveSceneCard(sceneItem, {
+                hideTitle: (Number(sceneItem?.sceneNumber || 0) || 0) === featuredSceneNumber,
+            })).join("")
             : '<div class="create-live-session-empty">A Cena 1 aparece aqui automaticamente.</div>';
     }
     if (scenesMetaEl) {
