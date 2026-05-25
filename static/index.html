@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260524-03">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260524-04">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 542;
+        var REQUIRED_VER = 543;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2973,32 +2973,6 @@
         </div>
     </div>
 
-    <div id="modal-copy-choice" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Como deseja copiar este vídeo?</h3>
-                <button class="modal-close" onclick="closeModal('modal-copy-choice')" type="button">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p id="copy-choice-source" class="muted">Vídeo selecionado</p>
-                <p class="copy-choice-subtitle">Escolha uma opção:</p>
-                <div class="copy-choice-grid">
-                    <button class="copy-choice-card" onclick="chooseCopyScript()" type="button">
-                        <strong>COPIAR ROTEIRO</strong>
-                        <span>Abre novo projeto com o texto do roteiro para você ajustar e gerar novamente.</span>
-                    </button>
-                    <button class="copy-choice-card" onclick="chooseCopyFormat()" type="button">
-                        <strong>NOVO FORMATO</strong>
-                        <span>Cria cópia exata do vídeo atual mudando apenas o formato final.</span>
-                    </button>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('modal-copy-choice')" type="button">Cancelar</button>
-            </div>
-        </div>
-    </div>
-
     <div id="modal-copy-format" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -4498,8 +4472,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260524-03"></script>
-    <script src="/video/static/pwa.js?v=20260524-03"></script>
+    <script src="/video/static/app.js?v=20260524-04"></script>
+    <script src="/video/static/pwa.js?v=20260524-04"></script>
 </body>
 </html>
 

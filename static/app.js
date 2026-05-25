@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v542 loaded");
+console.log("[CriaVideo] app.js v543 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -3882,7 +3882,7 @@ async function loadProjects() {
                 ${reopenSimilarButton}
                 ${canWatch ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
                 ${((project.status === "pending" || project.status === "failed") && !isSimilarProject) ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
-                ${canWatch ? `<button class="card-btn card-btn-similar" onclick="openCopyChoiceModal(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
+                ${canWatch ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
                 ${(canWatch && !isSimilarProject) ? `<button class="card-btn card-btn-edit" onclick="openProjectEditorFromCreate(${project.id})" type="button" title="Editar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ""}
                 <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
             `;
@@ -5340,10 +5340,82 @@ function _stopSmoothProgress() {
     }
 }
 
+function _buildScriptSourceImageFileName(imageUrl, index = 0) {
+    const fallbackName = `referencia-${index + 1}.png`;
+    try {
+        const parsed = new URL(String(imageUrl || ""), window.location.origin);
+        const baseName = decodeURIComponent((parsed.pathname.split("/").pop() || "").trim());
+        if (baseName) return baseName;
+    } catch {}
+
+    const rawBaseName = String(imageUrl || "").split("?")[0].split("/").pop() || "";
+    return rawBaseName.trim() || fallbackName;
+}
+
+async function _downloadScriptSourceImageFile(imageUrl, index = 0) {
+    const response = await fetch(String(imageUrl || "").trim(), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store",
+    });
+
+    if (response.status === 401) {
+        clearSession();
+        showAuth("Sua sessao expirou. Entre novamente.");
+        throw new Error("Unauthorized");
+    }
+    if (!response.ok) {
+        throw new Error("Nao foi possivel carregar a imagem usada no projeto original.");
+    }
+
+    const blob = await response.blob();
+    return new File([blob], _buildScriptSourceImageFileName(imageUrl, index), {
+        type: String(blob.type || "").trim() || "image/png",
+        lastModified: Date.now(),
+    });
+}
+
+async function _restoreScriptSourceImages(projectDetail) {
+    const sourceImageUrls = Array.isArray(projectDetail?.source_image_urls)
+        ? projectDetail.source_image_urls
+            .map((url) => String(url || "").trim())
+            .filter(Boolean)
+        : [];
+    const uniqueImageUrls = Array.from(new Set(sourceImageUrls)).slice(0, MAX_PHOTOS);
+    if (!uniqueImageUrls.length) {
+        return { restored: 0, failed: 0 };
+    }
+
+    const photoCb = document.getElementById("script-use-photos");
+    if (photoCb && !photoCb.checked) {
+        photoCb.checked = true;
+        togglePhotoUpload();
+    }
+
+    const restoredFiles = [];
+    let failedCount = 0;
+    for (const [index, imageUrl] of uniqueImageUrls.entries()) {
+        try {
+            restoredFiles.push(await _downloadScriptSourceImageFile(imageUrl, index));
+        } catch (error) {
+            failedCount += 1;
+            console.warn("[createSimilar] Falha ao restaurar imagem do projeto:", imageUrl, error?.message || error);
+        }
+    }
+
+    if (restoredFiles.length) {
+        addPhotos(restoredFiles);
+    } else if (photoCb?.checked) {
+        photoCb.checked = false;
+        togglePhotoUpload();
+    }
+
+    return { restored: restoredFiles.length, failed: failedCount };
+}
+
 async function createSimilar(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
-    if (!project || !project.lyrics_text) {
-        alert("Roteiro não disponível para este projeto.");
+    if (!project) {
+        alert("Projeto não encontrado.");
         return;
     }
 
@@ -5428,11 +5500,13 @@ async function createSimilar(projectId) {
     // 1. Reset wizard state
     resetCreateWizard();
 
+    const sourceScriptText = String(project.lyrics_text || projectDetail?.lyrics_text || "").trim();
+
     // 2. Pre-fill form fields (while modal is still closed)
     const textEl = document.getElementById("script-text");
-    if (textEl) textEl.value = project.lyrics_text;
+    if (textEl) textEl.value = sourceScriptText;
     const countEl = document.getElementById("script-char-count");
-    if (countEl) countEl.textContent = project.lyrics_text.length.toLocaleString("pt-BR");
+    if (countEl) countEl.textContent = sourceScriptText.length.toLocaleString("pt-BR");
     const titleEl = document.getElementById("script-title");
     if (titleEl) titleEl.value = project.title || "";
     if (project.style_prompt && !sourceLooksRealistic) {
@@ -5443,7 +5517,7 @@ async function createSimilar(projectId) {
     const realisticAspectEl = document.getElementById("script-realistic-aspect");
     if (realisticAspectEl) realisticAspectEl.value = sourceAspect;
 
-    scriptData.text = project.lyrics_text || "";
+    scriptData.text = sourceScriptText;
     scriptData.title = project.title || "";
     scriptData.aspect = sourceAspect;
 
@@ -5451,6 +5525,16 @@ async function createSimilar(projectId) {
     scriptData.promptOptimized = sourceLooksRealistic
         ? (typeof tagsData.prompt_optimized === "boolean" ? tagsData.prompt_optimized : true)
         : false;
+
+    const restoredImages = await _restoreScriptSourceImages(projectDetail);
+    if (restoredImages.failed > 0) {
+        showToast(
+            restoredImages.restored > 0
+                ? "Algumas imagens do projeto original nao puderam ser restauradas."
+                : "Nao foi possivel restaurar as imagens do projeto original.",
+            "info",
+        );
+    }
 
     if (sourceLooksRealistic) {
         const desiredDuration = Math.max(1, Math.round(Number(projectDetail?.track_duration || project.track_duration || tagsData.dialogue_duration || 8)));
@@ -5606,40 +5690,6 @@ function openCopyFormatModal(projectId) {
         selectEl.value = ["16:9", "9:16", "1:1"].includes(fallback) ? fallback : "9:16";
     }
     openModal("modal-copy-format");
-}
-
-function openCopyChoiceModal(projectId) {
-    const project = _projectsCache.find(p => p.id === projectId);
-    if (!project || project.status !== "completed") {
-        alert("Somente vídeos concluídos podem ser copiados.");
-        return;
-    }
-    _copyFormatSourceProjectId = projectId;
-    const sourceEl = document.getElementById("copy-choice-source");
-    if (sourceEl) {
-        sourceEl.textContent = `Origem: ${project.title || "Vídeo"} (${project.aspect_ratio || "16:9"})`;
-    }
-    openModal("modal-copy-choice");
-}
-
-function chooseCopyScript() {
-    const projectId = _copyFormatSourceProjectId;
-    if (!projectId) {
-        alert("Nenhum vídeo selecionado para cópia.");
-        return;
-    }
-    closeModal("modal-copy-choice");
-    _copyFormatSourceProjectId = 0;
-    createSimilar(projectId);
-}
-
-function chooseCopyFormat() {
-    if (!_copyFormatSourceProjectId) {
-        alert("Nenhum vídeo selecionado para cópia.");
-        return;
-    }
-    closeModal("modal-copy-choice");
-    openCopyFormatModal();
 }
 
 async function createFormatCopy() {
@@ -29781,9 +29831,6 @@ window.similarSelectSceneEngine = similarSelectSceneEngine;
 window.similarSelectUnifiedEngine = similarSelectUnifiedEngine;
 window.openRenameProjectModal = openRenameProjectModal;
 window.saveProjectTitle = saveProjectEdit;
-window.openCopyChoiceModal = openCopyChoiceModal;
-window.chooseCopyScript = chooseCopyScript;
-window.chooseCopyFormat = chooseCopyFormat;
 window.openCopyFormatModal = openCopyFormatModal;
 window.createFormatCopy = createFormatCopy;
 window.createSchedule = createSchedule;

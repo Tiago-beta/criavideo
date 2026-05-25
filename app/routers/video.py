@@ -1843,6 +1843,39 @@ def _safe_tags_dict(raw: object) -> dict[str, Any]:
     return {}
 
 
+def _collect_project_source_image_paths(project: VideoProject, tags_data: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for key in ("reference_delivery_image_paths", "reference_upload_image_paths"):
+        raw_value = tags_data.get(key) or []
+        if isinstance(raw_value, (list, tuple)):
+            candidates.extend(str(path or "").strip() for path in raw_value)
+        elif raw_value:
+            candidates.append(str(raw_value).strip())
+
+    if bool(getattr(project, "use_custom_images", False)):
+        image_dir = Path(settings.media_dir) / "images" / str(project.id)
+        if image_dir.exists():
+            candidates.extend(
+                str(path)
+                for path in sorted(image_dir.iterdir())
+                if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+            )
+
+    style_prompt_path = str(project.style_prompt or "").strip()
+    if style_prompt_path and os.path.splitext(style_prompt_path)[1].lower() in IMAGE_EXTS:
+        candidates.append(style_prompt_path)
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate or "").strip()
+        if not normalized or normalized in seen or not os.path.exists(normalized):
+            continue
+        seen.add(normalized)
+        resolved.append(normalized)
+    return resolved
+
+
 def _extract_similar_reference_frame_map(raw_tags: object) -> dict[str, str]:
     tags = _safe_tags_dict(raw_tags)
     raw_map = tags.get("similar_reference_frames") if isinstance(tags.get("similar_reference_frames"), dict) else {}
@@ -3289,6 +3322,8 @@ async def get_project(
     renders = result_renders.scalars().all()
 
     response_tags = project.tags
+    source_image_paths = _collect_project_source_image_paths(project, _safe_tags_dict(project.tags))
+    source_image_urls = [url for url in (_to_media_url(path) for path in source_image_paths) if url]
     reference_frame_map: dict[str, str] = {}
     reference_frame_end_map: dict[str, str] = {}
     reference_text_detected_map: dict[str, bool] = {}
@@ -3323,7 +3358,9 @@ async def get_project(
         "id": project.id,
         "title": project.title,
         "description": project.description,
+        "lyrics_text": project.lyrics_text or "",
         "tags": response_tags,
+        "source_image_urls": source_image_urls,
         "status": project.status.value,
         "progress": project.progress,
         "aspect_ratio": project.aspect_ratio,
