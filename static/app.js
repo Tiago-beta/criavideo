@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v547 loaded");
+console.log("[CriaVideo] app.js v548 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -7303,6 +7303,7 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
     const durationLabel = _formatCreateLiveSceneDuration(sceneItem);
     const statusLabel = _getCreateLiveSceneStatusLabel(sceneItem);
     const hideTitle = !!options.hideTitle;
+    const hideOutputFrame = !!options.hideOutputFrame;
     const inputFrameUrl = String(sceneItem?.sourceFrameUrl || "").trim() || (sceneNumber === 1 ? _getCreateLivePreferredSourcePreviewUrl() : "");
     const outputFrameUrl = String(sceneItem?.returnedFrameUrl || "").trim();
     const frameItems = [];
@@ -7317,7 +7318,7 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
         }));
     }
 
-    if (createLiveSessionState.returnFrameEnabled || outputFrameUrl || sceneItem?.extractingFrame) {
+    if (!hideOutputFrame && (createLiveSessionState.returnFrameEnabled || outputFrameUrl || sceneItem?.extractingFrame)) {
         frameItems.push(_buildCreateLiveFrameGalleryItem({
             previewAspectClass,
             badge: "Saída",
@@ -7585,8 +7586,9 @@ function _renderCreateLiveSession(project = null) {
     }
     if (scenesList) {
         scenesList.innerHTML = sceneProjects.length
-            ? sceneProjects.map((sceneItem) => _buildCreateLiveSceneCard(sceneItem, {
+            ? sceneProjects.map((sceneItem, index) => _buildCreateLiveSceneCard(sceneItem, {
                 hideTitle: (Number(sceneItem?.sceneNumber || 0) || 0) === featuredSceneNumber,
+                hideOutputFrame: !!String(sceneProjects[index + 1]?.sourceFrameUrl || "").trim(),
             })).join("")
             : '<div class="create-live-session-empty">A Cena 1 aparece aqui automaticamente.</div>';
     }
@@ -7831,13 +7833,18 @@ async function createSessionOpenInEditor() {
 
     createLiveSessionState.openingEditor = true;
     _renderCreateLiveSession(project);
+    const previousPage = String(document.querySelector(".page.active")?.id || "").replace(/^page-/, "") || "create";
 
     try {
         const entries = await _buildCreateLiveSessionEditorEntries(project);
         closeModal("modal-new-project");
+        navigateTo("editor");
         await _editorStartWithOrderedMediaEntries(entries);
         resetCreateWizard();
     } catch (error) {
+        if (previousPage && previousPage !== "editor") {
+            navigateTo(previousPage);
+        }
         openModal("modal-new-project");
         alert(error?.message || "Nao foi possivel abrir o projeto no Editor.");
     } finally {
