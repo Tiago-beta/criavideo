@@ -6878,6 +6878,9 @@ async def generate_realistic_endpoint(
     elif engine == "wan2":
         # Wan I2V should request native audio by default for better first-playback UX.
         provider_generate_audio = True
+        if not resolved_audio_source and not effective_add_narration and not dialogue_enabled:
+            # Ultra High 1.0 should preserve Atlas native audio exactly as returned.
+            effective_add_music = False
     elif engine == "avatar31":
         provider_generate_audio = True
         effective_add_narration = False

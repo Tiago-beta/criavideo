@@ -2727,8 +2727,18 @@ async def run_realistic_video_pipeline(project_id: int):
             has_audio = False
             provider_has_audio = await _video_has_audio_stream(output_path)
             provider_generate_audio = bool(tags.get("provider_generate_audio", False))
+            explicit_audio_source = str(tags.get("audio_upload_path") or tags.get("audio_url") or "").strip()
             provider_missing_audio = engine in {"seedance", "mega15", "lite2", "viduq3", "avatar31"} and provider_generate_audio and not provider_has_audio
             seedance_missing_audio = seedance_family_engine and provider_missing_audio
+            if engine == "wan2" and add_music and not explicit_audio_source and not add_narration and not dialogue_enabled:
+                logger.info(
+                    "Preserving Atlas native audio for Ultra High 1.0 project %s without extra music overlay.",
+                    project_id,
+                )
+                add_music = False
+                tags["add_music"] = False
+                project.tags = tags
+                await db.commit()
             if provider_missing_audio:
                 logger.warning(
                     "%s returned video without native audio for project %s.",
@@ -2869,7 +2879,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         narration_path = ""
 
                 # Use external audio URL (from Tevoxi) or generate background music
-                external_audio_url = str(tags.get("audio_upload_path") or tags.get("audio_url") or "")
+                external_audio_url = explicit_audio_source
                 if add_music and external_audio_url and not dialogue_enabled:
                     project.progress = 85
                     await db.commit()
