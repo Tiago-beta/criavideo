@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v549 loaded");
+console.log("[CriaVideo] app.js v550 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -449,32 +449,37 @@ function _syncCreateRealisticDurationOptions(prefix, preferredValue = null) {
     _syncSeedanceLastFrameToggle(prefix);
 }
 
+function _forceCheckboxChecked(elementId, checked = true) {
+    const toggleEl = document.getElementById(elementId);
+    if (toggleEl) {
+        toggleEl.checked = checked;
+    }
+    return checked;
+}
+
+function _isForcedSeedanceLastFrameEnabled(engine, elementId) {
+    return _forceCheckboxChecked(elementId, _isSeedanceFamilyEngine(engine));
+}
+
+function _isForcedReturnFrameEnabled(elementId) {
+    return _forceCheckboxChecked(elementId, true);
+}
+
 function _syncSeedanceLastFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-seedance-last-frame-group`);
-    if (!toggleGroup) return;
     const engine = _getRealisticSelectedEngine(prefix);
-    if (!_isSeedanceFamilyEngine(engine)) {
+    _isForcedSeedanceLastFrameEnabled(engine, `${prefix}-seedance-last-frame`);
+    if (toggleGroup) {
         toggleGroup.hidden = true;
-        _syncCreateReturnFrameToggle(prefix);
-        return;
     }
-    if (prefix !== "script") {
-        toggleGroup.hidden = false;
-        _syncCreateReturnFrameToggle(prefix);
-        return;
-    }
-    const isRealistic = _getSelectedCreateVideoType("script") === "realista";
-    toggleGroup.hidden = !isRealistic;
+    _syncCreateReturnFrameToggle(prefix);
 }
 
 function _syncCreateReturnFrameToggle(prefix) {
     const toggleGroup = document.getElementById(`${prefix}-return-frame-group`);
-    const toggleEl = document.getElementById(`${prefix}-return-frame-initial`);
-    if (!toggleGroup || !toggleEl) return;
-    const hasSelectedType = !!_getSelectedCreateVideoType(prefix);
-    toggleGroup.hidden = !hasSelectedType;
-    if (!hasSelectedType) {
-        toggleEl.checked = true;
+    _isForcedReturnFrameEnabled(`${prefix}-return-frame-initial`);
+    if (toggleGroup) {
+        toggleGroup.hidden = true;
     }
 }
 
@@ -4305,7 +4310,7 @@ let similarState = {
     unifiedEngine: "",
     unifiedDuration: 10,
     unifiedPendingImageUploads: [],
-    unifiedUseLastImageAsFinalFrame: false,
+    unifiedUseLastImageAsFinalFrame: true,
     unifiedLastFrameDirty: false,
     unifiedFrameEditorOpen: false,
     unifiedFrameBusy: false,
@@ -8116,7 +8121,7 @@ function _syncSimilarUnifiedUploadUi(project = null) {
     const uploadCountEl = document.getElementById("similar-unified-upload-count");
     const clearBtnEl = document.getElementById("similar-unified-clear-button");
     const toggleGroupEl = document.getElementById("similar-unified-seedance-last-frame-group");
-    const toggleEl = document.getElementById("similar-unified-seedance-last-frame");
+    const selectedEngine = _getSimilarUnifiedSelectedEngine(tags);
 
     const pendingUploads = _getSimilarUnifiedPendingUploads();
     if (uploadGridEl) {
@@ -8147,11 +8152,8 @@ function _syncSimilarUnifiedUploadUi(project = null) {
     if (toggleGroupEl) {
         toggleGroupEl.hidden = true;
     }
-    if (toggleEl) {
-        toggleEl.checked = false;
-        similarState.unifiedUseLastImageAsFinalFrame = false;
-        similarState.unifiedLastFrameDirty = false;
-    }
+    similarState.unifiedUseLastImageAsFinalFrame = _isForcedSeedanceLastFrameEnabled(selectedEngine, "similar-unified-seedance-last-frame");
+    similarState.unifiedLastFrameDirty = false;
 }
 
 function _buildSimilarUnifiedAutoImageKey(project, tags = null) {
@@ -13008,9 +13010,9 @@ function workflowSyncEngineDurationOptions() {
     durationSelect.innerHTML = options.map((value) => `<option value="${value}">${value}s</option>`).join("");
     durationSelect.value = String(nextValue);
     const toggleGroup = document.getElementById("workflow-seedance-last-frame-group");
+    _isForcedSeedanceLastFrameEnabled(selectedEngine, "workflow-seedance-last-frame");
     if (toggleGroup) {
-        toggleGroup.hidden = !_isSeedanceFamilyEngine(engineSelect.value || "wan2");
-        toggleGroup.hidden = !_isSeedanceFamilyEngine(selectedEngine);
+        toggleGroup.hidden = true;
     }
     const resolutionSelect = document.getElementById("workflow-resolution");
     if (resolutionSelect) {
@@ -13910,8 +13912,7 @@ async function workflowRunSeedance() {
         const aspect = document.getElementById("workflow-aspect")?.value || "16:9";
         const generateAudio = !!document.getElementById("workflow-generate-audio")?.checked;
         const resolution = document.getElementById("workflow-resolution")?.value || workflowPreferredResolutionForEngine(workflowEngine);
-        const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(workflowEngine)
-            && !!document.getElementById("workflow-seedance-last-frame")?.checked;
+        const useLastImageAsFinalFrame = _isForcedSeedanceLastFrameEnabled(workflowEngine, "workflow-seedance-last-frame");
         const workflowEngineLabel = workflowGetEngineLabel(workflowEngine);
         if (workflowEngine === "avatar31" && !workflowAudioUploadId) {
             throw new Error("Avatar 3.1 Plus exige uma imagem e um áudio no workflow.");
@@ -14181,7 +14182,7 @@ function _resetSimilarModeState() {
     similarState.unifiedEngine = "";
     similarState.unifiedDuration = 10;
     _clearSimilarUnifiedPendingUploads();
-    similarState.unifiedUseLastImageAsFinalFrame = false;
+    similarState.unifiedUseLastImageAsFinalFrame = true;
     similarState.unifiedLastFrameDirty = false;
     similarState.sourceAspectKey = "";
     similarState.sourceAspectManuallySelected = false;
@@ -14411,7 +14412,7 @@ async function similarStartAnalysis(analysisMode = "scene") {
         _clearAllSimilarScenePendingUploads();
         similarState.pendingImageUploadsBySceneId = {};
         _clearSimilarUnifiedPendingUploads();
-        similarState.unifiedUseLastImageAsFinalFrame = false;
+        similarState.unifiedUseLastImageAsFinalFrame = true;
         similarState.unifiedLastFrameDirty = false;
         _setSimilarStatus(
             normalizedAnalysisMode === "general"
@@ -14524,8 +14525,7 @@ async function similarGenerateUnifiedScene() {
             uploadIds.push(uploadId);
         }
     });
-    const useLastImageAsFinalFrame = _isSeedanceFamilyEngine(engine)
-        && !!document.getElementById("similar-unified-seedance-last-frame")?.checked;
+    const useLastImageAsFinalFrame = _isForcedSeedanceLastFrameEnabled(engine, "similar-unified-seedance-last-frame");
 
     try {
         _setSimilarBusyIntent("generating_unified_scene");
@@ -16195,8 +16195,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             audio_upload_id: audioUploadId,
             audio_upload_role: audioUploadRole,
             engine: engine,
-            use_last_image_as_final_frame: _isSeedanceFamilyEngine(engine)
-                && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
+            use_last_image_as_final_frame: _isForcedSeedanceLastFrameEnabled(engine, `${prefix}-seedance-last-frame`),
             audio_url: selectedTevoxiSong ? (selectedTevoxiSong.audio_url || "") : "",
             lyrics: selectedTevoxiSong
                 ? (selectedTevoxiClip?.lyrics_excerpt || selectedTevoxiSong.lyrics || "")
@@ -16254,9 +16253,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                 engineLabel,
                 aspectRatio: aspect,
                 promptText: finalPrompt,
-                returnFrameEnabled: !!document.getElementById(`${prefix}-return-frame-initial`)?.checked,
-                useLastImageAsFinalFrame: _isSeedanceFamilyEngine(engine)
-                    && !!document.getElementById(`${prefix}-seedance-last-frame`)?.checked,
+                returnFrameEnabled: _isForcedReturnFrameEnabled(`${prefix}-return-frame-initial`),
+                useLastImageAsFinalFrame: _isForcedSeedanceLastFrameEnabled(engine, `${prefix}-seedance-last-frame`),
                 continuationConfig: {
                     endpoint: "/video/generate-realistic",
                     requestBody: realisticRequestBody,
@@ -16895,7 +16893,7 @@ async function handleWizardCreate() {
             engineLabel: "IA",
             aspectRatio: wizardData.aspect,
             promptText: wizardData.topic,
-            returnFrameEnabled: !!document.getElementById("wizard-return-frame-initial")?.checked,
+            returnFrameEnabled: _isForcedReturnFrameEnabled("wizard-return-frame-initial"),
         });
     } catch (error) {
         const surfacedFailedProject = await revealFailedProjectFromCreateError(error);
@@ -17396,7 +17394,7 @@ async function handleScriptCreate() {
                 : "IA",
             aspectRatio: scriptData.aspect,
             promptText: scriptData.text || scriptData.title || "",
-            returnFrameEnabled: !!document.getElementById("script-return-frame-initial")?.checked,
+            returnFrameEnabled: _isForcedReturnFrameEnabled("script-return-frame-initial"),
         });
     } catch (error) {
         const surfacedFailedProject = await revealFailedProjectFromCreateError(error);
@@ -27430,8 +27428,9 @@ function _setAutoRealisticEngine(engineValue) {
     }
 
     const toggleGroup = document.getElementById("auto-seedance-last-frame-group");
+    _isForcedSeedanceLastFrameEnabled(selected?.dataset.value || "wan2", "auto-seedance-last-frame");
     if (toggleGroup) {
-        toggleGroup.hidden = !_isSeedanceFamilyEngine(selected?.dataset.value || "wan2");
+        toggleGroup.hidden = true;
     }
 
     _syncAutoRealisticDurationOptions();
@@ -29601,8 +29600,7 @@ async function createAutoSchedule() {
             add_music: useMusic && !useTevoxi,
             use_tevoxi: useTevoxi,
             use_last_image_as_final_frame: !useTevoxi
-                && _isSeedanceFamilyEngine(selectedEngine?.dataset.value || "")
-                && !!document.getElementById("auto-seedance-last-frame")?.checked,
+                && _isForcedSeedanceLastFrameEnabled(selectedEngine?.dataset.value || "", "auto-seedance-last-frame"),
             enable_subtitles: enableSubs,
         };
 
