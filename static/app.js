@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v543 loaded");
+console.log("[CriaVideo] app.js v544 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5501,6 +5501,25 @@ async function createSimilar(projectId) {
     resetCreateWizard();
 
     const sourceScriptText = String(project.lyrics_text || projectDetail?.lyrics_text || "").trim();
+    const speechMode = String(tagsData.speech_mode || "").trim().toLowerCase();
+    const audioUploadRole = String(tagsData.audio_upload_role || "").trim().toLowerCase();
+    const usesUploadedNarration = speechMode === "narration_uploaded" || audioUploadRole === "narration";
+    const narrationCopyState = _normalizeNarrationState(tagsData.narration_state || tagsData.narration_builder_state)
+        || (sourceLooksRealistic
+            ? _normalizeNarrationState({
+                text: String(projectDetail?.description || "").trim(),
+                voice: String(tagsData.narration_voice || "").trim(),
+                voice_type: String(tagsData.narration_voice_type || "builtin").trim(),
+                voice_profile_id: parseInt(tagsData.narration_voice_profile_id || "0", 10) || 0,
+            })
+            : _normalizeNarrationState({
+                text: sourceScriptText,
+                voice: String(tagsData.voice || tagsData.narration_voice || "").trim(),
+                voice_type: String(tagsData.voice_type || tagsData.narration_voice_type || "").trim(),
+                voice_profile_id: parseInt(tagsData.voice_profile_id || tagsData.narration_voice_profile_id || "0", 10) || 0,
+                tone: String(tagsData.tone || "").trim(),
+                pause_level: String(tagsData.pause_level || "").trim(),
+            }));
 
     // 2. Pre-fill form fields (while modal is still closed)
     const textEl = document.getElementById("script-text");
@@ -5566,14 +5585,13 @@ async function createSimilar(projectId) {
             }
         }
 
-        const speechMode = String(tagsData.speech_mode || "").trim().toLowerCase();
         const narrationEnabled = (
             speechMode === "dialogue_auto"
             || speechMode === "narration_manual"
             || speechMode === "narration_uploaded"
             || !!tagsData.dialogue_enabled
             || !!tagsData.add_narration
-            || String(tagsData.audio_upload_role || "").trim().toLowerCase() === "narration"
+            || usesUploadedNarration
         );
         const useUserAudioCb = document.getElementById("script-use-user-audio");
         if (useUserAudioCb) {
@@ -5668,6 +5686,34 @@ async function createSimilar(projectId) {
 
     // 5. Always start at video type step before prompt
     updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
+
+    if (usesUploadedNarration) {
+        if (narrationCopyState) {
+            await _restoreScriptAudioBuilderState(narrationCopyState, { showInfo: true });
+        } else {
+            const userAudioCb = document.getElementById("script-use-user-audio");
+            if (userAudioCb) {
+                userAudioCb.checked = true;
+                toggleUserAudioUpload();
+            }
+            toggleScriptAudioBuilder(true);
+            _setScriptAudioBuilderStatus("Nao foi possivel restaurar o texto original da narracao deste projeto. Gere novamente antes de criar a copia.", "info");
+        }
+    } else if (sourceLooksRealistic) {
+        if (narrationCopyState?.text) {
+            const realisticNarrationToggle = document.getElementById("script-realistic-narration");
+            const realisticNarrationText = document.getElementById("script-realistic-narration-text");
+            const realisticNarrationOptions = document.getElementById("script-realistic-narration-options");
+            if (realisticNarrationToggle) realisticNarrationToggle.checked = true;
+            if (realisticNarrationOptions) realisticNarrationOptions.hidden = false;
+            if (realisticNarrationText) realisticNarrationText.value = narrationCopyState.text;
+        }
+        if (narrationCopyState?.voice) {
+            _applyCreateRealisticVoiceSelection("script", narrationCopyState.voice);
+        }
+    } else if (narrationCopyState) {
+        await _restoreScriptInlineNarrationState(narrationCopyState, "script");
+    }
 }
 
 function openCopyFormatModal(projectId) {
@@ -16014,6 +16060,15 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         ? wantsScriptUploadedNarration
         : narrationChecked;
     const narrationVoice = voiceSelection.voice;
+    const narrationState = wantsScriptUploadedNarration
+        ? (createAudioSource.kind === "generated" ? _collectScriptAudioBuilderState() : null)
+        : (addNarration && narrationText
+            ? _normalizeNarrationState({
+                text: narrationText,
+                voice: narrationVoice,
+                voice_type: voiceSelection.voiceType || "builtin",
+            })
+            : null);
 
     if (scriptUserAudioEnabled && !createAudioSource.hasAudio) {
         _setScriptAudioBuilderStatus("Envie ou gere o áudio antes de criar o vídeo para manter tudo unido no resultado final.", "info");
@@ -16168,6 +16223,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             add_narration: addNarration,
             narration_text: narrationText,
             narration_voice: narrationVoice,
+            narration_state: narrationState || {},
             dialogue_enabled: dialogueEnabled,
             dialogue_characters: dialogueEnabled ? dialogueCharacters : [],
             dialogue_voice_profile_ids: dialogueEnabled ? dialogueVoiceProfileIds : [],
@@ -17297,6 +17353,19 @@ async function handleScriptCreate() {
             uploadedThumbId = uploadedThumb.upload_id || "";
         }
 
+        const narrationState = finalAudioSource.kind === "generated"
+            ? _collectScriptAudioBuilderState()
+            : ((!scriptData.useCustomAudio && !scriptData.useTevoxiAudio && scriptData.createNarration && scriptData.text)
+                ? _normalizeNarrationState({
+                    text: scriptData.text,
+                    voice: scriptData.voice,
+                    voice_type: scriptData.voiceType,
+                    voice_profile_id: scriptData.voiceProfileId,
+                    tone: scriptData.tone,
+                    pause_level: scriptData.pauseLevel,
+                })
+                : null);
+
         const formData = new FormData();
         formData.append("script", scriptData.text);
         formData.append("voice", scriptData.voice || "");
@@ -17307,6 +17376,9 @@ async function handleScriptCreate() {
         formData.append("style_prompt", scriptData.style);
         formData.append("pause_level", scriptData.pauseLevel || "normal");
         formData.append("tone", scriptData.tone || "informativo");
+        if (narrationState) {
+            formData.append("narration_state", JSON.stringify(narrationState));
+        }
         formData.append("enable_subtitles", scriptData.enableSubtitles ? "true" : "false");
         formData.append("subtitle_position_y", String(scriptData.subtitlePositionY || 80));
         formData.append("enable_audio_spectrum", scriptData.enableAudioSpectrum ? "true" : "false");
@@ -20313,6 +20385,201 @@ function _setSelectedSegmentedOptionValue(containerId, targetValue, optionSelect
     container.querySelectorAll(optionSelector).forEach((option) => {
         option.classList.toggle("selected", option.dataset.value === targetValue);
     });
+}
+
+function _normalizeNarrationState(rawState = null) {
+    if (!rawState || typeof rawState !== "object") {
+        return null;
+    }
+
+    const voiceProfileId = parseInt(rawState.voice_profile_id ?? rawState.voiceProfileId ?? "0", 10) || 0;
+    const state = {
+        text: String(rawState.text || "").trim(),
+        voice: String(rawState.voice || "").trim(),
+        voiceType: String(rawState.voice_type || rawState.voiceType || "").trim().toLowerCase(),
+        voiceProfileId,
+        tone: String(rawState.tone || "").trim(),
+        pauseLevel: String(rawState.pause_level || rawState.pauseLevel || "").trim(),
+        style: String(rawState.style || "").trim(),
+        pace: String(rawState.pace || "").trim(),
+        accent: String(rawState.accent || "").trim(),
+        notes: String(rawState.notes || "").trim(),
+    };
+
+    if (!state.voiceType && voiceProfileId > 0) {
+        state.voiceType = "profile";
+    }
+
+    if (!state.text && !state.voice && !state.voiceProfileId && !state.tone && !state.pauseLevel && !state.style && !state.pace && !state.accent && !state.notes) {
+        return null;
+    }
+
+    return state;
+}
+
+function _collectScriptAudioBuilderState() {
+    const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
+    return _normalizeNarrationState({
+        text: String(document.getElementById("script-audio-builder-text")?.value || scriptGeneratedAudioText || "").trim(),
+        voice: voiceSelection.voice,
+        voice_type: voiceSelection.voiceType,
+        voice_profile_id: voiceSelection.voiceProfileId,
+        tone: _getSelectedSegmentedOptionValue("script-audio-builder-tone-options", scriptData.tone || "informativo"),
+        pause_level: _getSelectedSegmentedOptionValue("script-audio-builder-pause-options", getSelectedPause("script-pause-options") || "normal"),
+        style: String(document.getElementById("script-audio-style")?.value || "").trim(),
+        pace: String(document.getElementById("script-audio-pace")?.value || "").trim(),
+        accent: String(document.getElementById("script-audio-accent")?.value || "").trim(),
+        notes: String(document.getElementById("script-audio-notes")?.value || "").trim(),
+    });
+}
+
+async function _applyVoiceSelectionToSelector(prefix, rawState = null) {
+    const selector = document.getElementById(`${prefix}-voice-selector`);
+    const state = _normalizeNarrationState(rawState);
+    if (!selector || !state) {
+        return false;
+    }
+
+    const targetVoice = String(state.voice || "").trim();
+    const targetVoiceType = String(state.voiceType || "").trim().toLowerCase();
+    const targetVoiceProfileId = parseInt(state.voiceProfileId || "0", 10) || 0;
+
+    selector.querySelectorAll(".persona-item.selected, .wizard-option.selected").forEach((node) => node.classList.remove("selected"));
+
+    if (targetVoiceProfileId > 0 || targetVoiceType === "profile" || targetVoiceType === "custom") {
+        if (!voiceProfiles.length) {
+            await loadVoiceProfiles();
+        } else {
+            renderPersonaList(prefix);
+        }
+
+        const personaList = document.getElementById(`${prefix}-persona-list`);
+        let personaItem = Array.from(personaList?.querySelectorAll(".persona-item") || []).find((item) => {
+            return (parseInt(item.dataset.profileId || "0", 10) || 0) === targetVoiceProfileId;
+        });
+
+        if (!personaItem && targetVoice) {
+            personaItem = Array.from(personaList?.querySelectorAll(".persona-item") || []).find((item) => {
+                return String(item.dataset.value || "").trim() === targetVoice;
+            });
+        }
+
+        if (personaItem) {
+            toggleMinhaVoz(prefix, true);
+            selectPersona(personaItem, prefix);
+            return true;
+        }
+    }
+
+    toggleMinhaVoz(prefix, false);
+    const options = Array.from(selector.querySelectorAll(".wizard-option"));
+    let selectedOption = options.find((option) => {
+        return String(option.dataset.value || "").trim() === targetVoice
+            && String(option.dataset.voiceType || "").trim().toLowerCase() === targetVoiceType;
+    });
+    if (!selectedOption && targetVoice) {
+        selectedOption = options.find((option) => String(option.dataset.value || "").trim() === targetVoice);
+    }
+    if (!selectedOption && targetVoiceType) {
+        selectedOption = options.find((option) => String(option.dataset.voiceType || "").trim().toLowerCase() === targetVoiceType);
+    }
+    if (!selectedOption) {
+        selectedOption = options.find((option) => option.classList.contains("selected")) || options[0] || null;
+    }
+
+    options.forEach((option) => option.classList.toggle("selected", option === selectedOption));
+    if (prefix === "script-audio-builder") {
+        _syncScriptAudioBuilderVoiceUi();
+    }
+    return !!selectedOption;
+}
+
+async function _restoreScriptInlineNarrationState(rawState = null, prefix = "script") {
+    const state = _normalizeNarrationState(rawState);
+    if (!state) {
+        return false;
+    }
+
+    if (prefix === "script") {
+        const narrationCb = document.getElementById("script-create-narration");
+        if (narrationCb) narrationCb.checked = true;
+        updateNarrationChoiceVisibility();
+    }
+
+    const panelId = prefix === "wizard" ? "create-panel-wizard" : "create-panel-script";
+    const selectedTone = state.tone || "informativo";
+    document.querySelectorAll(`#${panelId} .wizard-step[data-step='3'] .wizard-option`).forEach((option) => {
+        option.classList.toggle("selected", option.dataset.value === selectedTone);
+    });
+    _setSelectedSegmentedOptionValue(`${prefix}-pause-options`, state.pauseLevel || "normal");
+    await _applyVoiceSelectionToSelector(prefix, state);
+
+    if (prefix === "script") {
+        scriptData.tone = selectedTone;
+        scriptData.pauseLevel = state.pauseLevel || "normal";
+        scriptData.voice = state.voice || scriptData.voice || DEFAULT_CREATE_AI_VOICE_ID;
+        scriptData.voiceProfileId = state.voiceProfileId || 0;
+        scriptData.voiceType = state.voiceType || (state.voiceProfileId > 0 ? "custom" : "builtin");
+    }
+    return true;
+}
+
+async function _restoreScriptAudioBuilderState(rawState = null, options = {}) {
+    const state = _normalizeNarrationState(rawState);
+    if (!state) {
+        return false;
+    }
+
+    const showInfo = options.showInfo !== false;
+    const userAudioCb = document.getElementById("script-use-user-audio");
+    if (userAudioCb && !userAudioCb.checked) {
+        userAudioCb.checked = true;
+        toggleUserAudioUpload();
+    }
+
+    scriptGeneratedAudioUploadId = "";
+    scriptGeneratedAudioPreviewUrl = "";
+    scriptGeneratedAudioDurationSeconds = 0;
+    scriptGeneratedAudioFileName = "";
+    scriptGeneratedAudioText = state.text || "";
+    _updateScriptGeneratedAudioSummary();
+
+    toggleScriptAudioBuilder(true);
+    _syncScriptRealisticNarrationBuilderPlacement();
+
+    const textEl = document.getElementById("script-audio-builder-text");
+    if (textEl) {
+        textEl.value = state.text || "";
+    }
+    syncScriptAudioBuilderDraft();
+
+    _setSelectedSegmentedOptionValue("script-audio-builder-tone-options", state.tone || "informativo");
+    _setSelectedSegmentedOptionValue("script-audio-builder-pause-options", state.pauseLevel || "normal");
+
+    const styleEl = document.getElementById("script-audio-style");
+    if (styleEl) styleEl.value = state.style || "natural";
+    const paceEl = document.getElementById("script-audio-pace");
+    if (paceEl) paceEl.value = state.pace || "natural";
+    const accentEl = document.getElementById("script-audio-accent");
+    if (accentEl) accentEl.value = state.accent || "neutral";
+    const notesEl = document.getElementById("script-audio-notes");
+    if (notesEl) notesEl.value = state.notes || "";
+
+    await _applyVoiceSelectionToSelector("script-audio-builder", state);
+    _syncScriptAudioBuilderVoiceUi();
+
+    scriptData.tone = state.tone || scriptData.tone || "informativo";
+    scriptData.pauseLevel = state.pauseLevel || scriptData.pauseLevel || "normal";
+    scriptData.voice = state.voice || scriptData.voice || DEFAULT_CREATE_AI_VOICE_ID;
+    scriptData.voiceProfileId = state.voiceProfileId || 0;
+    scriptData.voiceType = state.voiceType || (state.voiceProfileId > 0 ? "profile" : "builtin");
+
+    if (showInfo) {
+        _setScriptAudioBuilderStatus("Texto e voz restaurados. Gere o áudio novamente para anexar esta narração na cópia.", "info");
+    }
+
+    updateScriptVideoAreaVisibility();
+    return true;
 }
 
 function _syncScriptAudioBuilderVoiceUi() {

@@ -5003,6 +5003,76 @@ class GenerateTTSRequest(BaseModel):
 
 class EstimateCreditsRequest(BaseModel):
     mode: str = "standard"  # standard | realistic | quick-create | similar-analysis | image-generation
+
+
+def _sanitize_narration_state(raw_state: Any) -> dict[str, Any]:
+    if not raw_state:
+        return {}
+
+    candidate = raw_state
+    if isinstance(candidate, str):
+        payload = candidate.strip()
+        if not payload:
+            return {}
+        try:
+            candidate = json.loads(payload)
+        except Exception:
+            return {}
+
+    if not isinstance(candidate, dict):
+        return {}
+
+    def _clean_str(*keys: str, max_len: int = 240) -> str:
+        for key in keys:
+            value = str(candidate.get(key) or "").strip()
+            if value:
+                return value[:max_len]
+        return ""
+
+    def _clean_int(*keys: str) -> int:
+        for key in keys:
+            try:
+                value = int(candidate.get(key) or 0)
+            except Exception:
+                value = 0
+            if value > 0:
+                return value
+        return 0
+
+    state: dict[str, Any] = {}
+    text = _clean_str("text", max_len=20000)
+    voice = _clean_str("voice", max_len=255)
+    voice_type = _clean_str("voice_type", "voiceType", max_len=40).lower()
+    voice_profile_id = _clean_int("voice_profile_id", "voiceProfileId")
+    tone = _clean_str("tone", max_len=40)
+    pause_level = _clean_str("pause_level", "pauseLevel", max_len=40)
+    style = _clean_str("style", max_len=40)
+    pace = _clean_str("pace", max_len=40)
+    accent = _clean_str("accent", max_len=40)
+    notes = _clean_str("notes", max_len=240)
+
+    if text:
+        state["text"] = text
+    if voice:
+        state["voice"] = voice
+    if voice_type:
+        state["voice_type"] = voice_type
+    if voice_profile_id > 0:
+        state["voice_profile_id"] = voice_profile_id
+    if tone:
+        state["tone"] = tone
+    if pause_level:
+        state["pause_level"] = pause_level
+    if style:
+        state["style"] = style
+    if pace:
+        state["pace"] = pace
+    if accent:
+        state["accent"] = accent
+    if notes:
+        state["notes"] = notes
+
+    return state
     duration_seconds: float = 0
     word_count: int = 0
     analysis_mode: str = "scene"
@@ -5435,6 +5505,7 @@ async def generate_audio_endpoint(
     custom_video_id: str = ""
     custom_thumbnail_id: str = ""
     karaoke_operation_id: str = ""
+    submitted_narration_state: dict[str, Any] = {}
     if "multipart/form-data" in content_type:
         form = await request.form()
         enable_sub_raw = str(form.get("enable_subtitles", "true")).lower()
@@ -5507,9 +5578,11 @@ async def generate_audio_endpoint(
         custom_video_id = str(form.get("custom_video_id", "")).strip()
         custom_thumbnail_id = str(form.get("custom_thumbnail_id", "")).strip()
         karaoke_operation_id = str(form.get("karaoke_operation_id", "")).strip()
+        submitted_narration_state = _sanitize_narration_state(form.get("narration_state", ""))
     else:
         payload = await request.json()
         karaoke_operation_id = str(payload.get("karaoke_operation_id", "")).strip()
+        submitted_narration_state = _sanitize_narration_state(payload.get("narration_state"))
         req = GenerateTTSRequest(**payload)
 
     if karaoke_operation_id:
@@ -5642,6 +5715,51 @@ async def generate_audio_endpoint(
                 voice_type = "builtin"
             tts_instructions = default_profile.tts_instructions or ""
 
+    narration_state = _sanitize_narration_state(submitted_narration_state)
+    if not narration_state and script_text and not has_uploaded_custom_audio and not use_tevoxi_audio:
+        narration_state = _sanitize_narration_state(
+            {
+                "text": script_text,
+                "voice": voice,
+                "voice_type": voice_type,
+                "voice_profile_id": req.voice_profile_id,
+                "tone": req.tone,
+                "pause_level": req.pause_level,
+            }
+        )
+
+    standard_speech_mode = "none"
+    standard_audio_upload_role = ""
+    if narration_state and req.use_custom_audio and not req.audio_is_music:
+        standard_speech_mode = "narration_uploaded"
+        standard_audio_upload_role = "narration"
+    elif narration_state and script_text and not has_uploaded_custom_audio and not use_tevoxi_audio:
+        standard_speech_mode = "narration_manual"
+    elif has_uploaded_custom_audio and req.use_custom_audio and not req.audio_is_music:
+        standard_speech_mode = "audio_uploaded"
+        standard_audio_upload_role = "audio"
+    elif has_uploaded_custom_audio and req.use_custom_audio and req.audio_is_music:
+        standard_audio_upload_role = "music"
+
+    tags_data: dict[str, Any] = {}
+    if has_tevoxi_audio:
+        tags_data.update(
+            {
+                "audio_source": "tevoxi",
+                "force_karaoke_two_line": True,
+                "audio_url": (req.tevoxi_audio_url or "").strip(),
+                "lyrics": req.tevoxi_lyrics or "",
+                "clip_start": float(req.tevoxi_clip_start or 0),
+                "clip_duration": float(req.tevoxi_clip_duration or 0),
+            }
+        )
+    if standard_speech_mode != "none":
+        tags_data["speech_mode"] = standard_speech_mode
+    if standard_audio_upload_role:
+        tags_data["audio_upload_role"] = standard_audio_upload_role
+    if narration_state:
+        tags_data["narration_state"] = narration_state
+
     project: VideoProject | None = None
 
     def _http_exception_message(exc: HTTPException, fallback: str) -> str:
@@ -5694,7 +5812,7 @@ async def generate_audio_endpoint(
         track_id=0,
         title=req.title or "Vídeo com IA",
         description="",
-        tags={"audio_source": "tevoxi", "force_karaoke_two_line": True} if has_tevoxi_audio else [],
+        tags=tags_data,
         style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
         aspect_ratio=req.aspect_ratio,
         track_title=req.title or ("Vídeo enviado" if has_custom_video else "Áudio Tevoxi" if has_tevoxi_audio else "Áudio enviado" if has_custom_audio else "Narração IA"),
@@ -6453,6 +6571,7 @@ class GenerateRealisticRequest(BaseModel):
     add_narration: bool = False
     narration_text: str = ""
     narration_voice: str = "onyx"
+    narration_state: dict[str, Any] = Field(default_factory=dict)
     title: str = ""
     image_upload_id: str = ""
     image_upload_ids: list[str] = Field(default_factory=list)
@@ -6795,6 +6914,7 @@ async def generate_realistic_endpoint(
 
     # Narration config stored in tags JSON
     narration_voice = req.narration_voice or "onyx"
+    narration_state = _sanitize_narration_state(req.narration_state)
     speech_mode = "none"
     if dialogue_enabled:
         speech_mode = "dialogue_auto"
@@ -6802,6 +6922,22 @@ async def generate_realistic_endpoint(
         speech_mode = "narration_uploaded"
     elif req.add_narration and bool(narration_text):
         speech_mode = "narration_manual"
+
+    if not narration_state and narration_text:
+        narration_state = _sanitize_narration_state(
+            {
+                "text": narration_text,
+                "voice": narration_voice,
+                "voice_type": "builtin",
+            }
+        )
+    elif not narration_state and uploaded_audio_is_narration:
+        narration_state = _sanitize_narration_state(
+            {
+                "voice": narration_voice,
+                "voice_type": "builtin",
+            }
+        )
 
     reference_source = "upload" if upload_ids else ("none" if disable_persona_reference else "persona")
     tags_data = {
@@ -6846,6 +6982,8 @@ async def generate_realistic_endpoint(
         "reference_upload_image_paths": upload_image_paths[:6],
         "preserve_prompt_exactly": preserve_prompt_exactly,
     }
+    if narration_state:
+        tags_data["narration_state"] = narration_state
     if external_audio_url:
         tags_data["audio_url"] = external_audio_url
         tags_data["clip_start"] = req.clip_start
