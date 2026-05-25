@@ -6473,6 +6473,78 @@ svg.spin {
     line-height: 1.45;
 }
 
+.tevoxi-library-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.tevoxi-library-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.tevoxi-library-copy strong {
+    font-size: 0.95rem;
+}
+
+.tevoxi-library-copy small {
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.tevoxi-composer-modal {
+    width: min(720px, calc(100vw - 24px));
+}
+
+.tevoxi-composer-subtitle {
+    margin-top: 4px;
+}
+
+.tevoxi-composer-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.tevoxi-composer-tabs {
+    margin-bottom: 0;
+}
+
+.tevoxi-composer-balance-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.tevoxi-composer-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.tevoxi-composer-grid-compact {
+    align-items: end;
+}
+
+.tevoxi-composer-textarea {
+    min-height: 180px;
+}
+
+.tevoxi-composer-status {
+    margin-bottom: 0;
+    text-align: left;
+    border: 1px solid rgba(var(--accent-rgb), 0.24);
+    border-radius: 12px;
+    background: rgba(var(--accent-rgb), 0.08);
+    padding: 10px 12px;
+}
+
 .tevoxi-empty-state {
     display: flex;
     flex-direction: column;
@@ -6487,6 +6559,23 @@ svg.spin {
 
 .tevoxi-empty-cta-btn {
     align-self: flex-start;
+}
+
+@media (max-width: 640px) {
+    .tevoxi-library-toolbar,
+    .tevoxi-composer-balance-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .tevoxi-library-toolbar .btn,
+    .tevoxi-composer-balance-row .photo-count {
+        width: 100%;
+    }
+
+    .tevoxi-composer-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .photo-dropzone {

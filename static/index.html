@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260517-08">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260525-10">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 476;
+        var REQUIRED_VER = 477;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1920,6 +1920,13 @@
 
                         <div class="photo-upload-section script-media-panel">
                             <div id="script-tevoxi-panel" class="photo-upload-area" hidden>
+                                <div class="tevoxi-library-toolbar">
+                                    <div class="tevoxi-library-copy">
+                                        <strong>Biblioteca de músicas</strong>
+                                        <small>Crie músicas no estilo Tevoxi sem sair do CriaVideo.</small>
+                                    </div>
+                                    <button class="btn btn-secondary btn-sm" type="button" onclick="openScriptTevoxiComposer()">Criar música</button>
+                                </div>
                                 <div id="script-song-list" class="auto-song-list">
                                     <p class="loading">Carregando músicas...</p>
                                 </div>
@@ -3660,6 +3667,80 @@
         </div>
     </div>
 
+    <div id="modal-script-tevoxi-composer" class="modal" style="z-index:3110">
+        <div class="modal-content tevoxi-composer-modal">
+            <div class="modal-header">
+                <div>
+                    <h3 style="margin:0">Criar música</h3>
+                    <p id="script-tevoxi-composer-hint" class="muted tevoxi-composer-subtitle">Descreva o tema, o clima e a voz desejada. O CriaVideo gera a música e já coloca na sua biblioteca.</p>
+                </div>
+                <button class="modal-close" onclick="closeScriptTevoxiComposer()" type="button">&times;</button>
+            </div>
+            <div class="modal-body tevoxi-composer-body">
+                <div class="pause-options tevoxi-composer-tabs">
+                    <button id="script-tevoxi-tab-assistant" class="pause-option selected" type="button" onclick="setScriptTevoxiComposerMode('assistant')">Assistente</button>
+                    <button id="script-tevoxi-tab-lyrics" class="pause-option" type="button" onclick="setScriptTevoxiComposerMode('lyrics')">Minha Letra</button>
+                </div>
+
+                <div class="tevoxi-composer-balance-row">
+                    <div id="script-tevoxi-composer-balance" class="photo-count">Saldo atual: 0 créditos</div>
+                    <div class="photo-count">Custo fixo: 13 créditos</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="script-tevoxi-title-input">Título</label>
+                    <input id="script-tevoxi-title-input" type="text" class="input" maxlength="120" placeholder="Ex: Volta por Cima">
+                </div>
+
+                <div class="form-group">
+                    <label id="script-tevoxi-theme-label" for="script-tevoxi-theme-input">Tema</label>
+                    <textarea id="script-tevoxi-theme-input" class="input" rows="4" maxlength="1200" placeholder="Ex: Pop romântico sobre recomeço e esperança"></textarea>
+                </div>
+
+                <div id="script-tevoxi-lyrics-group" class="form-group" hidden>
+                    <label for="script-tevoxi-lyrics-input">Letra</label>
+                    <textarea id="script-tevoxi-lyrics-input" class="input tevoxi-composer-textarea" rows="8" maxlength="8000" placeholder="Cole sua letra completa aqui"></textarea>
+                </div>
+
+                <div class="tevoxi-composer-grid">
+                    <div class="form-group">
+                        <label for="script-tevoxi-genre-input">Gênero</label>
+                        <input id="script-tevoxi-genre-input" type="text" class="input" maxlength="120" placeholder="Ex: Pop, worship, sertanejo">
+                    </div>
+                    <div class="form-group">
+                        <label for="script-tevoxi-mood-input">Clima</label>
+                        <input id="script-tevoxi-mood-input" type="text" class="input" maxlength="120" placeholder="Ex: Emocionante, motivacional">
+                    </div>
+                </div>
+
+                <div class="tevoxi-composer-grid tevoxi-composer-grid-compact">
+                    <div class="form-group">
+                        <label for="script-tevoxi-vocalist-input">Voz</label>
+                        <select id="script-tevoxi-vocalist-input" class="input">
+                            <option value="female">Feminina</option>
+                            <option value="male">Masculina</option>
+                            <option value="duet">Dueto</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="script-tevoxi-duration-input">Duração</label>
+                        <select id="script-tevoxi-duration-input" class="input">
+                            <option value="60">1 minuto</option>
+                            <option value="120" selected>2 minutos</option>
+                            <option value="180">3 minutos</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="script-tevoxi-composer-status" class="photo-count tevoxi-composer-status" hidden></div>
+            </div>
+            <div class="modal-footer modal-footer-space">
+                <button class="btn btn-secondary" type="button" onclick="closeScriptTevoxiComposer()">Cancelar</button>
+                <button id="script-tevoxi-compose-submit" class="btn btn-accent" type="button" onclick="submitScriptTevoxiComposer()">Gerar música</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Subtitle Setup Modal (Automation) -->
     <div id="modal-auto-subtitle" class="modal" style="z-index:3120">
         <div class="modal-content" style="width:min(100%, 640px)">
@@ -4390,8 +4471,8 @@
         </div>
     </div>
 
-    <script src="/video/static/app.js?v=20260517-08"></script>
-    <script src="/video/static/pwa.js?v=20260517-08"></script>
+    <script src="/video/static/app.js?v=20260525-10"></script>
+    <script src="/video/static/pwa.js?v=20260525-10"></script>
 </body>
 </html>
 
