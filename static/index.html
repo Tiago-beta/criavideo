@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260524-02">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260524-03">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 541;
+        var REQUIRED_VER = 542;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1959,6 +1959,7 @@
                                     <div id="script-user-audio-name" class="script-media-status" hidden></div>
                                     <button class="btn-icon-sm script-video-clear-btn" id="script-user-audio-clear-btn" type="button" onclick="clearScriptUserAudioSelection()" title="Remover áudio" aria-label="Remover áudio" hidden>&times;</button>
                                 </div>
+                                <div id="script-user-audio-builder-slot" class="script-user-audio-builder-slot"></div>
                                 <input id="script-user-audio-input" type="file" accept="audio/*" hidden onchange="handleUserAudioSelect(event)">
                                 <input id="script-user-audio-video-input" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv,.avi" hidden onchange="handleUserAudioVideoSelect(event)">
 
@@ -2307,19 +2308,6 @@
                             </div>
                         </div>
 
-                        <div class="form-group realistic-audio-toggle" id="script-seedance-last-frame-group" hidden>
-                            <label class="toggle-label">
-                                <input type="checkbox" id="script-seedance-last-frame" checked>
-                                <span>Ultima imagem = quadro final</span>
-                            </label>
-                            <small class="pause-hint">No Mega 2.0 Ultra, a primeira imagem vira o quadro inicial e a ultima vira o quadro final quando houver 2+ imagens.</small>
-                        </div>
-                        <div class="form-group realistic-audio-toggle" id="script-realistic-narration-group">
-                            <label class="toggle-label">
-                                <input type="checkbox" id="script-realistic-narration">
-                                <span>Adicionar narração</span>
-                            </label>
-                        </div>
                         <div class="form-group" id="script-realistic-duration-group">
                             <label>Duração</label>
                             <div class="duration-options" id="script-realistic-duration">
@@ -2332,11 +2320,6 @@
                                 <button class="duration-option" data-value="56" type="button">56s</button>
                             </div>
                         </div>
-                        <div id="script-realistic-narration-options" class="realistic-narration-options" hidden>
-                            <div class="realistic-narration-builder-slot" id="script-realistic-narration-builder-slot"></div>
-                            <small class="pause-hint">Gere a narração primeiro. O vídeo final sai pronto com a voz mais alta que o áudio da cena.</small>
-                        </div>
-
                     </div>
 
                     <!-- Script Wizard Navigation -->
@@ -4515,8 +4498,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260524-02"></script>
-    <script src="/video/static/pwa.js?v=20260524-02"></script>
+    <script src="/video/static/app.js?v=20260524-03"></script>
+    <script src="/video/static/pwa.js?v=20260524-03"></script>
 </body>
 </html>
 

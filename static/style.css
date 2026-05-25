@@ -6040,8 +6040,22 @@ th {
     flex-direction: column;
     gap: 12px;
 }
+
+.script-user-audio-builder-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.script-user-audio-builder-slot:empty {
+    display: none;
+    margin-top: 0;
+}
 .realistic-narration-builder-slot .script-generated-audio-summary,
-.realistic-narration-builder-slot .script-video-audio-builder {
+.realistic-narration-builder-slot .script-video-audio-builder,
+.script-user-audio-builder-slot .script-generated-audio-summary,
+.script-user-audio-builder-slot .script-video-audio-builder {
     margin: 0;
 }
 .realistic-voice-grid {

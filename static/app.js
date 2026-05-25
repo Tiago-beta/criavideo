@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v541 loaded");
+console.log("[CriaVideo] app.js v542 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -464,8 +464,7 @@ function _syncSeedanceLastFrameToggle(prefix) {
         return;
     }
     const isRealistic = _getSelectedCreateVideoType("script") === "realista";
-    const usePhotos = !!document.getElementById("script-use-photos")?.checked;
-    toggleGroup.hidden = !(isRealistic && usePhotos);
+    toggleGroup.hidden = !isRealistic;
 }
 
 function _syncCreateReturnFrameToggle(prefix) {
@@ -4589,15 +4588,18 @@ function _buildRealisticEstimatePayload(prefix) {
 
     const narrationChecked = !!document.getElementById(`${prefix}-realistic-narration`)?.checked;
     const narrationText = (document.getElementById(`${prefix}-realistic-narration-text`)?.value || "").trim();
-    const scriptNarrationFromBuilder = prefix === "script"
+    const scriptUserAudioEnabled = prefix === "script"
         && scriptData.videoType === "realista"
-        && narrationChecked;
-    const scriptNarrationSource = scriptNarrationFromBuilder
+        && !!document.getElementById("script-use-user-audio")?.checked;
+    const scriptAudioIsMusic = scriptUserAudioEnabled && !!document.getElementById("script-audio-is-music")?.checked;
+    const scriptNarrationFromBuilder = scriptUserAudioEnabled && !scriptAudioIsMusic;
+    const scriptNarrationSource = scriptUserAudioEnabled
         ? _getScriptAudioSourceState(true)
         : { hasAudio: false };
     const addNarration = scriptNarrationFromBuilder
         ? !!scriptNarrationSource.hasAudio
         : narrationChecked && !!narrationText;
+    const addMusicWithUploadedAudio = scriptUserAudioEnabled && scriptAudioIsMusic && !!scriptNarrationSource.hasAudio;
 
     const enableSubtitles = prefix === "auto"
         ? !!document.getElementById("auto-realistic-subtitles")?.checked
@@ -4625,10 +4627,10 @@ function _buildRealisticEstimatePayload(prefix) {
         engine,
         duration_seconds: durationSeconds,
         has_reference_image: hasReferenceImage,
-        add_music: addMusic,
+        add_music: addMusic || addMusicWithUploadedAudio,
         add_narration: addNarration,
         enable_subtitles: enableSubtitles,
-        use_external_audio: useTevoxi && (prefix === "auto" ? true : hasSelectedSong),
+        use_external_audio: (useTevoxi && (prefix === "auto" ? true : hasSelectedSong)) || addMusicWithUploadedAudio,
     };
 }
 
@@ -5489,21 +5491,14 @@ async function createSimilar(projectId) {
             || !!tagsData.add_narration
             || String(tagsData.audio_upload_role || "").trim().toLowerCase() === "narration"
         );
-        const narrationCb = document.getElementById("script-realistic-narration");
-        if (narrationCb) narrationCb.checked = narrationEnabled;
-
-        const narrationOptionsEl = document.getElementById("script-realistic-narration-options");
-        if (narrationOptionsEl) narrationOptionsEl.hidden = !narrationEnabled;
-
-        const narrationTextEl = document.getElementById("script-realistic-narration-text");
-        if (narrationTextEl) {
-            const shouldFillText = speechMode === "narration_manual" || (narrationEnabled && !speechMode);
-            narrationTextEl.value = shouldFillText ? String(projectDetail?.description || "").trim() : "";
+        const useUserAudioCb = document.getElementById("script-use-user-audio");
+        if (useUserAudioCb) {
+            useUserAudioCb.checked = narrationEnabled || !!tagsData.audio_upload_path || !!tagsData.narration_upload_path;
         }
 
         const narrationVoice = String(tagsData.narration_voice || "onyx").trim();
         _applyCreateRealisticVoiceSelection("script", narrationVoice);
-    _syncScriptRealisticNarrationBuilderPlacement();
+        _syncScriptRealisticNarrationBuilderPlacement();
 
         const selectedPersona = _normalizeRealisticPersonaType(tagsData.interaction_persona || "", "");
         setSelectedRealisticPersona(selectedPersona);
@@ -15926,16 +15921,18 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const aspect = aspectEl ? aspectEl.value : "16:9";
     const musicEl = document.getElementById(musicCheckboxId);
     const addMusic = musicEl ? musicEl.checked : true;
-    const addMusicRequested = useTevoxi ? false : addMusic;
     const engineBtn = document.querySelector(`#${engineSelectorId} .engine-option.selected`);
     let engine = engineBtn ? engineBtn.dataset.value : selectedEngineForPromptCheck;
     const narrationEl = document.getElementById(`${prefix}-realistic-narration`);
     const narrationChecked = narrationEl ? narrationEl.checked : false;
-    const wantsScriptUploadedNarration = prefix === "script"
+    const scriptUserAudioEnabled = prefix === "script"
         && scriptData.videoType === "realista"
-        && narrationChecked;
+        && !!document.getElementById("script-use-user-audio")?.checked;
+    const scriptAudioIsMusic = scriptUserAudioEnabled && !!document.getElementById("script-audio-is-music")?.checked;
+    const wantsScriptUploadedNarration = scriptUserAudioEnabled && !scriptAudioIsMusic;
+    const addMusicRequested = useTevoxi ? false : (addMusic || (scriptUserAudioEnabled && scriptAudioIsMusic));
     const hasAttachedAudio = prefix === "script"
-        && (engine === "avatar31" ? !!createAudioSource.hasAudio : wantsScriptUploadedNarration && !!createAudioSource.hasAudio);
+        && (engine === "avatar31" ? !!createAudioSource.hasAudio : scriptUserAudioEnabled && !!createAudioSource.hasAudio);
     const avatarAutomaticDuration = engine === "avatar31"
         ? await _resolveAvatarAutomaticDurationForCreate(prefix)
         : 0;
@@ -15963,13 +15960,15 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const voiceSelection = wantsScriptUploadedNarration
         ? _resolveVoiceSelectionFromSelector("script-audio-builder")
         : _resolveCreateRealisticVoiceSelection(prefix);
-    const addNarration = narrationChecked;
+    const addNarration = prefix === "script" && scriptData.videoType === "realista"
+        ? wantsScriptUploadedNarration
+        : narrationChecked;
     const narrationVoice = voiceSelection.voice;
 
-    if (wantsScriptUploadedNarration && !createAudioSource.hasAudio) {
-        _setScriptAudioBuilderStatus("Gere a narração antes de criar o vídeo para manter tudo unido no resultado final.", "info");
+    if (scriptUserAudioEnabled && !createAudioSource.hasAudio) {
+        _setScriptAudioBuilderStatus("Envie ou gere o áudio antes de criar o vídeo para manter tudo unido no resultado final.", "info");
         toggleScriptAudioBuilder(true);
-        showToast("Gere a narração antes de criar o vídeo.", "info");
+        showToast("Envie ou gere o áudio antes de criar o vídeo.", "info");
         return;
     }
 
@@ -19564,7 +19563,7 @@ function _updateScriptGeneratedAudioSummary() {
     if (summaryEl) summaryEl.hidden = !hasGeneratedAudio;
     if (titleEl) {
         titleEl.textContent = usingRealisticNarration
-            ? "Narração pronta para este vídeo"
+            ? "Narração pronta para esta cena"
             : usingVideo
                 ? "Áudio pronto para este vídeo"
                 : "Áudio pronto para este projeto";
@@ -19601,7 +19600,7 @@ function _updateScriptGeneratedAudioSummary() {
 }
 
 function _isScriptRealisticNarrationBuilderActive() {
-    return scriptData.videoType === "realista" && !!document.getElementById("script-realistic-narration")?.checked;
+    return scriptData.videoType === "realista" && !!document.getElementById("script-use-user-audio")?.checked;
 }
 
 function _ensureScriptRealisticNarrationDockAnchor() {
@@ -19619,14 +19618,13 @@ function _ensureScriptRealisticNarrationDockAnchor() {
 }
 
 function _syncScriptRealisticNarrationBuilderPlacement({ openWhenEnabled = false } = {}) {
-    const slot = document.getElementById("script-realistic-narration-builder-slot");
+    const slot = document.getElementById("script-user-audio-builder-slot");
     const summary = document.getElementById("script-generated-audio-summary");
     const builder = document.getElementById("script-video-audio-builder");
     const anchor = _ensureScriptRealisticNarrationDockAnchor();
     if (!slot || !summary || !builder || !anchor) return;
 
     if (_isScriptRealisticNarrationBuilderActive()) {
-        slot.hidden = false;
         if (summary.parentElement !== slot) slot.appendChild(summary);
         if (builder.parentElement !== slot) slot.appendChild(builder);
         if (openWhenEnabled || !scriptGeneratedAudioUploadId) {
@@ -19642,7 +19640,6 @@ function _syncScriptRealisticNarrationBuilderPlacement({ openWhenEnabled = false
                 originalParent.insertBefore(builder, summary.nextSibling);
             }
         }
-        slot.hidden = true;
     }
 
     _updateScriptGeneratedAudioSummary();
@@ -19708,7 +19705,7 @@ function updateScriptVideoAreaVisibility() {
     if (builderCopy) builderCopy.hidden = realisticNarrationBuilderActive ? false : audioFirstMode || !hasVideo;
     if (builderHeading) {
         builderHeading.textContent = realisticNarrationBuilderActive
-            ? "Criar narração para este vídeo"
+            ? "Criar narração para esta cena"
             : hasVideo
                 ? "Criar áudio para este vídeo"
                 : "Criar áudio com voz IA";
@@ -20054,7 +20051,7 @@ function toggleScriptAudioBuilder(forceOpen = null) {
         loadVoiceProfiles();
         const builderText = document.getElementById("script-audio-builder-text");
         if (builderText && !builderText.value.trim()) {
-            builderText.value = (scriptGeneratedAudioText || document.getElementById("script-text")?.value || "").trim();
+            builderText.value = String(scriptGeneratedAudioText || "").trim();
             syncScriptAudioBuilderDraft();
         }
     }
@@ -20346,6 +20343,7 @@ async function generateScriptVideoAudio() {
     const textEl = document.getElementById("script-audio-builder-text");
     const text = String(textEl?.value || "").trim();
     const usingVideo = !!document.getElementById("script-use-video")?.checked;
+    const usingRealisticSceneAudio = scriptData.videoType === "realista" && !!document.getElementById("script-use-user-audio")?.checked;
     if (!text) {
         alert("Grave/transcreva ou escreva o texto antes de gerar o áudio.");
         return;
@@ -20376,7 +20374,7 @@ async function generateScriptVideoAudio() {
                 tts_instructions: ttsInstructions,
                 pause_level: selectedPauseLevel,
                 tone: selectedTone,
-                filename: usingVideo ? "narracao-video.mp3" : "narracao-projeto.mp3",
+                filename: (usingVideo || usingRealisticSceneAudio) ? "narracao-video.mp3" : "narracao-projeto.mp3",
             }),
         });
 
@@ -20389,12 +20387,12 @@ async function generateScriptVideoAudio() {
         scriptUserAudioFile = null;
         scriptUserAudioDurationSeconds = 0;
         const userAudioCb = document.getElementById("script-use-user-audio");
-        if (userAudioCb) userAudioCb.checked = false;
+        if (userAudioCb) userAudioCb.checked = true;
         const userAudioArea = document.getElementById("script-user-audio-area");
-        if (userAudioArea) userAudioArea.hidden = true;
+        if (userAudioArea) userAudioArea.hidden = false;
         _clearScriptManualAudioInputUi();
 
-        _setScriptTextValue(text);
+        _syncScriptRealisticNarrationBuilderPlacement();
         _updateScriptGeneratedAudioSummary();
         updateScriptVideoAreaVisibility();
         toggleScriptAudioBuilder(false);
@@ -20403,8 +20401,8 @@ async function generateScriptVideoAudio() {
         }
         scheduleScriptCreditEstimate();
         _setScriptAudioBuilderStatus(
-            usingVideo
-                ? `Áudio gerado com ${providerLabel} e anexado a este vídeo.`
+            (usingVideo || usingRealisticSceneAudio)
+                ? `Áudio gerado com ${providerLabel} e anexado a esta cena.`
                 : `Áudio gerado com ${providerLabel} e anexado a este projeto.`,
             "success",
         );
@@ -20525,10 +20523,18 @@ function toggleUserAudioUpload() {
         scriptUserAudioFile = null;
         scriptUserAudioDurationSeconds = 0;
         _clearScriptManualAudioInputUi();
-    } else {
         clearScriptGeneratedAudio(true);
+    } else {
+        if (scriptData.videoType === "realista") {
+            if (!scriptGeneratedAudioUploadId && !scriptUserAudioFile) {
+                toggleScriptAudioBuilder(true);
+            }
+        } else if (scriptUserAudioFile) {
+            clearScriptGeneratedAudio(true);
+        }
     }
 
+    _syncScriptRealisticNarrationBuilderPlacement();
     updateScriptVideoAreaVisibility();
     _syncCreateRealisticDurationOptions("script");
     toggleAudioMusicOptions();
