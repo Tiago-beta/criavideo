@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v545 loaded");
+console.log("[CriaVideo] app.js v546 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -7164,21 +7164,27 @@ function _buildCreateLiveReferencePanel(options = {}) {
     const subtitle = workflowEscapeHtml(String(options.subtitle || "").trim());
     const frameItems = Array.isArray(options.frameItems) ? options.frameItems.filter(Boolean) : [];
     const clipMarkup = String(options.clipMarkup || "").trim();
+    const hideHead = !!options.hideHead;
     const galleryClass = frameItems.length <= 1 || options.forceSingle
         ? "similar-reference-frame-gallery similar-reference-frame-gallery-single"
         : "similar-reference-frame-gallery";
     const framesMarkup = frameItems.length
         ? `<div class="${galleryClass}">${frameItems.join("")}</div>`
         : '<div class="create-live-session-empty create-live-session-empty--compact">Aguardando.</div>';
-
-    return `
-        <section class="similar-reference-frame-panel create-live-session-panel">
+    const headMarkup = hideHead
+        ? ""
+        : `
             <div class="similar-reference-frame-head">
                 <div>
                     <strong>${title}</strong>
                     ${subtitle ? `<span>${subtitle}</span>` : ""}
                 </div>
             </div>
+        `;
+
+    return `
+        <section class="similar-reference-frame-panel create-live-session-panel">
+            ${headMarkup}
             <div class="similar-reference-frame-body${clipMarkup ? " similar-reference-frame-body-has-clip" : ""}">
                 <div class="similar-reference-frame-primary-column">
                     ${framesMarkup}
@@ -7287,62 +7293,8 @@ function _renderCreateLiveSessionSourceItems() {
     const wrap = document.getElementById("create-live-session-source-wrap");
     const list = document.getElementById("create-live-session-source-list");
     if (!wrap || !list) return;
-
-    const sourceItems = Array.isArray(createLiveSessionState.sourceItems) ? createLiveSessionState.sourceItems : [];
-    if (!sourceItems.length) {
-        wrap.hidden = true;
-        list.innerHTML = "";
-        return;
-    }
-
-    const previewAspectClass = _similarPreviewAspectClass(createLiveSessionState.aspectRatio || "9:16");
-    const frameItems = [];
-    let clipMarkup = "";
-    const noteCards = [];
-
-    sourceItems.forEach((item, index) => {
-        const kind = String(item?.kind || "image").trim();
-        const label = String(item?.label || item?.name || `Referencia ${index + 1}`).trim() || `Referencia ${index + 1}`;
-        if (kind === "image" && item?.url) {
-            frameItems.push(_buildCreateLiveFrameGalleryItem({
-                previewAspectClass,
-                badge: index === 0 ? "Entrada" : `Base ${index + 1}`,
-                url: String(item.url || "").trim(),
-                alt: label,
-                downloadName: index === 0
-                    ? "referencia-entrada.png"
-                    : `referencia-base-${index + 1}.png`,
-            }));
-            return;
-        }
-        if (kind === "video" && item?.url && !clipMarkup) {
-            clipMarkup = _buildCreateLiveClipColumn({
-                previewAspectClass,
-                url: String(item.url || "").trim(),
-                placeholderTitle: label,
-            });
-            return;
-        }
-
-        const note = workflowEscapeHtml(String(item?.note || item?.name || "Pronto para usar.").trim() || "Pronto para usar.");
-        noteCards.push(`
-            <div class="create-live-session-note-card">
-                <strong>${workflowEscapeHtml(label)}</strong>
-                <span>${note}</span>
-            </div>
-        `);
-    });
-
-    list.innerHTML = _buildCreateLiveReferencePanel({
-        title: "Referência",
-        frameItems,
-        clipMarkup,
-        forceSingle: frameItems.length <= 1,
-        afterMarkup: noteCards.length
-            ? `<div class="create-live-session-note-grid">${noteCards.join("")}</div>`
-            : "",
-    });
-    wrap.hidden = false;
+    list.innerHTML = "";
+    wrap.hidden = true;
 }
 
 function _buildCreateLiveSceneCard(sceneItem) {
@@ -7404,27 +7356,20 @@ function _buildCreateLiveSceneCard(sceneItem) {
             ? (sceneItem?.errorMessage || "Tente gerar novamente.")
             : (isActive ? "A cena aparece aqui assim que terminar." : "Aguardando vídeo."),
     });
-    const panelSubtitle = outputFrameUrl
-        ? "Entrada, vídeo e retorno prontos."
-        : sceneItem?.extractingFrame
-            ? "Vídeo pronto. Lendo o quadro final."
-            : isActive
-                ? "A cena continua neste modal."
-                : isFailed
-                    ? "Revise o erro abaixo."
-                    : "Vídeo pronto.";
+    const headMeta = durationLabel
+        ? `<span class="similar-scene-time">${workflowEscapeHtml(durationLabel)}</span>`
+        : "";
 
     return `
         <article class="similar-scene-card create-live-session-scene-card${isActive ? " is-active" : ""}">
             <div class="similar-scene-head">
                 <strong>Cena ${sceneNumber}</strong>
-                <span class="similar-scene-time">${workflowEscapeHtml(durationLabel || statusLabel)}</span>
+                ${headMeta}
             </div>
             ${_buildCreateLiveReferencePanel({
-                title: `Cena ${sceneNumber}`,
-                subtitle: panelSubtitle,
                 frameItems,
                 clipMarkup,
+                hideHead: true,
                 afterMarkup: sceneItem?.errorMessage
                     ? `<p class="create-live-session-next-error">${workflowEscapeHtml(sceneItem.errorMessage)}</p>`
                     : sceneItem?.extractError
