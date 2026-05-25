@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v554 loaded");
+console.log("[CriaVideo] app.js v555 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -27865,23 +27865,24 @@ function _resetScriptTevoxiComposerForm() {
     const titleInput = document.getElementById("script-tevoxi-title-input");
     const themeInput = document.getElementById("script-tevoxi-theme-input");
     const lyricsInput = document.getElementById("script-tevoxi-lyrics-input");
-    const genreInput = document.getElementById("script-tevoxi-genre-input");
-    const moodInput = document.getElementById("script-tevoxi-mood-input");
-    const vocalistInput = document.getElementById("script-tevoxi-vocalist-input");
-    const durationInput = document.getElementById("script-tevoxi-duration-input");
     const statusEl = document.getElementById("script-tevoxi-composer-status");
 
     if (titleInput) titleInput.value = "";
     if (themeInput) themeInput.value = "";
     if (lyricsInput) lyricsInput.value = "";
-    if (genreInput) genreInput.value = "";
-    if (moodInput) moodInput.value = "";
-    if (vocalistInput) vocalistInput.value = "female";
-    if (durationInput) durationInput.value = "120";
+    _setSelectedSegmentedOptionValue("script-tevoxi-mood-options", "emocionante", ".tevoxi-choice");
+    _setSelectedSegmentedOptionValue("script-tevoxi-genre-options", "pop", ".tevoxi-choice");
+    _setSelectedSegmentedOptionValue("script-tevoxi-vocalist-options", "female", ".tevoxi-choice");
+    _setSelectedSegmentedOptionValue("script-tevoxi-duration-options", "120", ".tevoxi-choice");
     if (statusEl) {
         statusEl.hidden = true;
         statusEl.textContent = "";
     }
+}
+
+function selectScriptTevoxiComposerOption(groupId, value) {
+    if (_scriptTevoxiComposerState.creating) return;
+    _setSelectedSegmentedOptionValue(groupId, value, ".tevoxi-choice");
 }
 
 function _renderScriptTevoxiComposer() {
@@ -27926,13 +27927,12 @@ function _renderScriptTevoxiComposer() {
     [
         "script-tevoxi-title-input",
         "script-tevoxi-lyrics-input",
-        "script-tevoxi-genre-input",
-        "script-tevoxi-mood-input",
-        "script-tevoxi-vocalist-input",
-        "script-tevoxi-duration-input",
     ].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.disabled = creating;
+    });
+    document.querySelectorAll("#modal-script-tevoxi-composer .tevoxi-choice").forEach((btn) => {
+        btn.disabled = creating;
     });
 }
 
@@ -27958,10 +27958,10 @@ function _buildScriptTevoxiComposerPayload() {
     const title = String(document.getElementById("script-tevoxi-title-input")?.value || "").trim();
     const theme = String(document.getElementById("script-tevoxi-theme-input")?.value || "").trim();
     const lyrics = String(document.getElementById("script-tevoxi-lyrics-input")?.value || "").trim();
-    const genre = String(document.getElementById("script-tevoxi-genre-input")?.value || "").trim();
-    const mood = String(document.getElementById("script-tevoxi-mood-input")?.value || "").trim();
-    const vocalist = String(document.getElementById("script-tevoxi-vocalist-input")?.value || "female").trim() || "female";
-    const duration = parseInt(document.getElementById("script-tevoxi-duration-input")?.value || "120", 10) || 120;
+    const genre = _getSelectedSegmentedOptionValue("script-tevoxi-genre-options", "pop", ".tevoxi-choice");
+    const mood = _getSelectedSegmentedOptionValue("script-tevoxi-mood-options", "emocionante", ".tevoxi-choice");
+    const vocalist = _getSelectedSegmentedOptionValue("script-tevoxi-vocalist-options", "female", ".tevoxi-choice");
+    const duration = parseInt(_getSelectedSegmentedOptionValue("script-tevoxi-duration-options", "120", ".tevoxi-choice"), 10) || 120;
 
     if (mode === "lyrics" && !lyrics) {
         throw new Error("Cole a letra para usar o modo Minha Letra.");
@@ -29517,8 +29517,11 @@ async function addClipToThemes() {
                     lyrics_excerpt: transcribedText,
                 };
             } catch (error) {
-                alert("Nao foi possivel transcrever o trecho agora. Tente novamente em alguns segundos.");
-                return;
+                payload = {
+                    ...payload,
+                    lyrics_excerpt: String(payload.lyrics_excerpt || song.lyrics || "").trim(),
+                };
+                showToast("Trecho selecionado. A transcrição automática não ficou disponível agora.", "info");
             } finally {
                 _setClipTranscriptionLoading(false);
             }

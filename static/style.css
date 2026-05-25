@@ -7956,6 +7956,92 @@ svg.spin {
     min-height: 180px;
 }
 
+.tevoxi-choice-panel {
+    border: 1px solid rgba(72, 144, 206, 0.28);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(9, 37, 65, 0.72), rgba(21, 57, 94, 0.58));
+    padding: 18px;
+}
+
+.tevoxi-choice-panel h4 {
+    margin: 0 0 14px;
+    color: rgba(236, 245, 255, 0.92);
+    font-size: 1rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+.tevoxi-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.tevoxi-choice {
+    min-height: 76px;
+    border: 1px solid rgba(120, 174, 224, 0.24);
+    border-radius: 12px;
+    background: rgba(6, 31, 53, 0.62);
+    color: rgba(236, 245, 255, 0.86);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 700;
+    transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.tevoxi-choice span {
+    color: rgba(221, 235, 248, 0.86);
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
+.tevoxi-choice:hover:not(:disabled) {
+    border-color: rgba(0, 196, 255, 0.62);
+    background: rgba(16, 58, 94, 0.78);
+    transform: translateY(-1px);
+}
+
+.tevoxi-choice.selected {
+    border-color: rgba(118, 92, 255, 0.95);
+    background: linear-gradient(135deg, rgba(0, 168, 217, 0.45), rgba(96, 73, 204, 0.62));
+    box-shadow: 0 0 0 1px rgba(0, 214, 255, 0.36), 0 14px 32px rgba(0, 0, 0, 0.18);
+    color: #fff;
+}
+
+.tevoxi-choice.selected span {
+    color: #19d8ff;
+}
+
+.tevoxi-choice:disabled {
+    cursor: wait;
+    opacity: 0.68;
+}
+
+.tevoxi-duration-panel {
+    text-align: center;
+}
+
+.tevoxi-duration-options {
+    display: flex;
+    justify-content: center;
+    gap: 9px;
+    flex-wrap: wrap;
+}
+
+.tevoxi-duration-chip {
+    min-height: 34px;
+    min-width: 72px;
+    border-radius: 999px;
+    flex-direction: row;
+    padding: 0 14px;
+}
+
 .tevoxi-composer-status {
     margin-bottom: 0;
     text-align: left;
@@ -7995,6 +8081,14 @@ svg.spin {
 
     .tevoxi-composer-grid {
         grid-template-columns: 1fr;
+    }
+
+    .tevoxi-choice-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tevoxi-choice {
+        min-height: 68px;
     }
 }
 
