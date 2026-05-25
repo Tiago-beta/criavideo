@@ -8151,8 +8151,57 @@ svg.spin {
 
 .script-video-tools-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
+}
+
+.script-video-tools-header,
+.script-media-large-actions {
+    --script-media-tile-size: clamp(72px, 18vw, 96px);
+}
+
+.script-media-large-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.script-media-large-trigger {
+    width: var(--script-media-tile-size);
+    min-height: var(--script-media-tile-size);
+    aspect-ratio: 1;
+    flex: 0 0 var(--script-media-tile-size);
+    padding: 0;
+    gap: 0;
+    appearance: none;
+}
+
+.script-media-large-trigger .script-media-large-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.script-media-large-trigger svg {
+    width: 30px;
+    height: 30px;
+}
+
+.script-media-large-trigger.has-file {
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), 0.64);
+    background:
+        radial-gradient(circle at top right, rgba(var(--accent-rgb), 0.16), transparent 55%),
+        linear-gradient(180deg, rgba(12, 40, 66, 0.96), rgba(8, 26, 43, 0.98));
+}
+
+.script-media-large-trigger:focus-visible {
+    outline: none;
+    border-color: rgba(var(--accent-rgb), 0.72);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
 }
 
 .script-video-icon-btn,
@@ -8261,13 +8310,6 @@ svg.spin {
     display: flex;
     flex-direction: column;
     gap: 12px;
-}
-
-.script-audio-entry-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
 }
 
 .script-audio-selection-row {
@@ -8547,10 +8589,6 @@ svg.spin {
 
     .script-video-audio-btn {
         flex: 1;
-    }
-
-    .script-audio-entry-row .photo-upload-hint {
-        flex: 1 0 100%;
     }
 
     .script-video-tools-header .photo-upload-hint {
