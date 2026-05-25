@@ -6472,6 +6472,10 @@ svg.spin {
     --script-media-chip-accent-2: 184, 138, 23;
 }
 
+#script-media-toggle-group .script-media-chip[hidden] {
+    display: none !important;
+}
+
 .script-media-chip .media-toggle-chip-body {
     position: relative;
     min-height: 52px;

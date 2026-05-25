@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v552 loaded");
+console.log("[CriaVideo] app.js v553 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -6624,6 +6624,32 @@ function _syncScriptAudioFirstSurface() {
     panel.classList.toggle("create-panel--audio-first-mode", isAudioFirstMode);
     panel.classList.toggle("create-panel--audio-first-ready", isAudioFirstMode && hasGeneratedAudio);
     panel.classList.toggle("create-panel--audio-first-type-selected", isAudioFirstMode && hasSelectedType);
+}
+
+function _syncScriptModeMediaToggleVisibility(videoType = "") {
+    const normalizedType = String(videoType || _getSelectedCreateVideoType("script") || scriptData.videoType || "").trim().toLowerCase();
+    const isImageMode = !!normalizedType && normalizedType !== "realista";
+    const audioChip = document.getElementById("script-media-chip-audio");
+    const videoChip = document.getElementById("script-media-chip-video");
+
+    if (audioChip) audioChip.hidden = isImageMode;
+    if (videoChip) videoChip.hidden = isImageMode;
+
+    if (!isImageMode) {
+        return;
+    }
+
+    const videoToggle = document.getElementById("script-use-video");
+    if (videoToggle && videoToggle.checked) {
+        videoToggle.checked = false;
+        toggleVideoUpload();
+    }
+
+    const userAudioToggle = document.getElementById("script-use-user-audio");
+    if (userAudioToggle && userAudioToggle.checked) {
+        userAudioToggle.checked = false;
+        toggleUserAudioUpload();
+    }
 }
 
 function _syncScriptAudioFirstSelection(selectedType = "") {
@@ -21385,6 +21411,7 @@ function adaptScriptStepForVideoType(videoType) {
             ? "Cole ou escreva seu prompt aqui..."
             : "Cole ou escreva o roteiro completo da narração aqui...";
     }
+    _syncScriptModeMediaToggleVisibility(videoType);
     updateScriptVideoAreaVisibility();
     updateNarrationChoiceVisibility();
     _updateScriptDetailsForTevoxiMode();
