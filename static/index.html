@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260526-08">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260526-09">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 564;
+        var REQUIRED_VER = 565;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1239,7 +1239,15 @@
                 </div>
             </div>
             <div class="modal-header">
-                <h3 id="create-modal-title">Novo projeto de vídeo</h3>
+                <div class="create-modal-header-main">
+                    <button class="btn btn-secondary btn-sm wizard-back-btn btn-back-icon" id="wizard-back" type="button" hidden title="Voltar" aria-label="Voltar">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <button class="btn btn-secondary btn-sm wizard-back-btn btn-back-icon" id="script-back" type="button" hidden title="Voltar" aria-label="Voltar">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <h3 id="create-modal-title">Novo projeto de vídeo</h3>
+                </div>
                 <button class="modal-close" onclick="handleNewProjectModalClose()" type="button">&times;</button>
             </div>
             <div class="modal-body">
@@ -1631,9 +1639,6 @@
 
                     <!-- Wizard Navigation -->
                     <div class="wizard-nav">
-                        <button class="btn btn-secondary btn-sm wizard-back-btn btn-back-icon" id="wizard-back" type="button" hidden title="Voltar" aria-label="Voltar">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                        </button>
                         <div class="wizard-dots" id="wizard-dots-container">
                             <span class="wizard-dot active"></span>
                             <span class="wizard-dot"></span>
@@ -2330,9 +2335,6 @@
 
                     <!-- Script Wizard Navigation -->
                     <div class="wizard-nav">
-                        <button class="btn btn-secondary btn-sm wizard-back-btn btn-back-icon" id="script-back" type="button" hidden title="Voltar" aria-label="Voltar">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-                        </button>
                         <div class="wizard-dots" id="script-dots-container">
                             <span class="wizard-dot active"></span>
                             <span class="wizard-dot"></span>
@@ -4574,8 +4576,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260526-08"></script>
-    <script src="/video/static/pwa.js?v=20260526-08"></script>
+    <script src="/video/static/app.js?v=20260526-09"></script>
+    <script src="/video/static/pwa.js?v=20260526-09"></script>
 </body>
 </html>
 
