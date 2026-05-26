@@ -5604,6 +5604,25 @@ th {
     margin-top: 0;
 }
 
+.create-live-session-next-engine-group {
+    margin-top: 16px;
+}
+
+.create-live-session-next-engine-group label {
+    display: block;
+    margin-bottom: 10px;
+}
+
+#create-live-session-next-engine .engine-option {
+    min-height: 108px;
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
 .create-live-session-next-prompt-input {
     min-height: 260px;
     padding-bottom: 18px;
@@ -6064,7 +6083,8 @@ th {
 }
 
 #wizard-realistic-engine .engine-option strong,
-#script-realistic-engine .engine-option strong {
+#script-realistic-engine .engine-option strong,
+#create-live-session-next-engine .engine-option strong {
     font-size: 0.94rem;
     line-height: 1.14;
 }
@@ -6075,7 +6095,8 @@ th {
 }
 
 #wizard-realistic-engine .engine-option::after,
-#script-realistic-engine .engine-option::after {
+#script-realistic-engine .engine-option::after,
+#create-live-session-next-engine .engine-option::after {
     inset: auto 12px 10px auto;
     width: 34px;
     height: 34px;
@@ -6121,7 +6142,8 @@ th {
 
 @media (max-width: 980px) {
     #wizard-realistic-engine,
-    #script-realistic-engine {
+    #script-realistic-engine,
+    #create-live-session-next-engine {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
@@ -6346,15 +6368,17 @@ th {
 
 .btn-create-video-credit {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    padding: 4px 9px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 6px;
     border-radius: 999px;
     background: rgba(44, 32, 0, 0.16);
     border: 1px solid rgba(44, 32, 0, 0.18);
     color: #2c2000;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 900;
     line-height: 1;
     white-space: nowrap;

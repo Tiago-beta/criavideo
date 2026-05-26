@@ -4375,6 +4375,7 @@ function _createLiveSessionDefaultState() {
         videoType: "",
         title: "",
         engineLabel: "",
+        selectedEngine: "viduq3",
         aspectRatio: "9:16",
         returnFrameEnabled: true,
         useLastImageAsFinalFrame: false,
@@ -4392,6 +4393,65 @@ function _createLiveSessionDefaultState() {
 }
 
 let createLiveSessionState = _createLiveSessionDefaultState();
+
+function _getCreateLiveEngineSourceGroup() {
+    const prefix = String(createLiveSessionState.prefix || "").trim();
+    return document.getElementById(`${prefix}-realistic-engine`)
+        || document.getElementById("script-realistic-engine")
+        || document.getElementById("wizard-realistic-engine");
+}
+
+function _getCreateLiveEngineValues() {
+    return Array.from(_getCreateLiveEngineSourceGroup()?.querySelectorAll(".engine-option") || [])
+        .map((option) => String(option.dataset.value || "").trim())
+        .filter(Boolean);
+}
+
+function _normalizeCreateLiveEngine(engineValue) {
+    const normalized = String(engineValue || "").trim();
+    const availableValues = _getCreateLiveEngineValues();
+    if (availableValues.includes(normalized)) {
+        return normalized;
+    }
+    return availableValues[0] || "viduq3";
+}
+
+function _getCreateLiveSelectedEngine() {
+    return _normalizeCreateLiveEngine(
+        createLiveSessionState.selectedEngine
+            || createLiveSessionState.continuationConfig?.requestBody?.engine
+    );
+}
+
+function _buildCreateLiveNextSceneEngineOptionsMarkup(disabled = false) {
+    const sourceGroup = _getCreateLiveEngineSourceGroup();
+    if (!sourceGroup) {
+        return "";
+    }
+
+    const selectedEngine = _getCreateLiveSelectedEngine();
+    const disabledAttr = disabled ? "disabled" : "";
+    return Array.from(sourceGroup.querySelectorAll(".engine-option")).map((option) => {
+        const engineValue = String(option.dataset.value || "").trim();
+        const selectedClass = engineValue === selectedEngine ? " selected" : "";
+        return `<button class="engine-option${selectedClass}" data-value="${engineValue}" type="button" ${disabledAttr}>${option.innerHTML}</button>`;
+    }).join("");
+}
+
+function createLiveSessionSelectNextEngine(engineValue) {
+    if (createLiveSessionState.nextSceneBusy) {
+        return;
+    }
+
+    const normalizedEngine = _normalizeCreateLiveEngine(engineValue);
+    if (normalizedEngine === createLiveSessionState.selectedEngine) {
+        return;
+    }
+
+    createLiveSessionState.selectedEngine = normalizedEngine;
+    createLiveSessionState.engineLabel = getRealisticEngineLabel(normalizedEngine);
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+}
 
 let workflowState = {
     initialized: false,
@@ -6580,6 +6640,8 @@ function initCreateWizard() {
             } else if (engineGroupId === "auto-realistic-engine") {
                 _syncAutoRealisticDurationOptions();
                 scheduleAutoCreditEstimate();
+            } else if (engineGroupId === "create-live-session-next-engine") {
+                createLiveSessionSelectNextEngine(engineVal);
             } else if (engineGroupId === "similar-engine-options") {
                 similarState.engineManuallySelected = true;
                 similarState.selectedEngine = _normalizeSimilarEngine(engineVal);
@@ -6933,15 +6995,15 @@ function _getCreateSinglePageVisibleSteps(prefix) {
             return [1, 2];
         }
         return selectedType === "realista"
-            ? [1, 2, 7]
-            : [1, 2, 3, 4, 5, 6];
+            ? [1, 7]
+            : [1, 3, 4, 5, 6];
     }
     if (!selectedType) {
         return [2];
     }
     return selectedType === "realista"
-        ? [2, 1, 7]
-        : [2, 1, 3, 4, 5, 6];
+        ? [1, 7]
+        : [1, 3, 4, 5, 6];
 }
 
 function _syncCreateActionRow(prefix) {
@@ -7683,6 +7745,17 @@ function _buildCreateLiveNextSceneCard() {
     const promptValue = workflowEscapeHtml(promptRaw);
     const promptLength = promptRaw.length;
     const nextSceneDisabled = !hasContinuationFrame || createLiveSessionState.nextSceneBusy;
+    const nextSceneEngineOptionsMarkup = _buildCreateLiveNextSceneEngineOptionsMarkup(nextSceneDisabled);
+    const nextSceneEngineMarkup = nextSceneEngineOptionsMarkup
+        ? `
+                        <div class="form-group create-live-session-next-engine-group">
+                            <label>Motor de IA</label>
+                            <div class="engine-options" id="create-live-session-next-engine">
+                                ${nextSceneEngineOptionsMarkup}
+                            </div>
+                        </div>
+                    `
+        : "";
 
     return `
         <article class="similar-scene-card create-live-session-next-card">
@@ -7701,6 +7774,7 @@ function _buildCreateLiveNextSceneCard() {
                         <div class="create-live-session-next-meta">
                             <span class="char-count"><span id="create-live-session-next-char-count">${promptLength}</span> / 20.000</span>
                         </div>
+                        ${nextSceneEngineMarkup}
                         ${createLiveSessionState.nextSceneError
                             ? `<p class="create-live-session-next-error">${workflowEscapeHtml(createLiveSessionState.nextSceneError)}</p>`
                             : ""}
@@ -7733,6 +7807,7 @@ async function createLiveSessionGenerateNextScene() {
     const continuationConfig = createLiveSessionState.continuationConfig;
     const previousScene = _getCreateLiveLastSceneProject();
     const sceneNumber = _getCreateLiveSceneProjects().length + 1;
+    const selectedEngine = _getCreateLiveSelectedEngine();
     const promptEl = document.getElementById("create-live-session-next-prompt");
     const promptText = String(promptEl?.value || createLiveSessionState.nextScenePrompt || "").trim();
     if (!continuationConfig?.endpoint || !continuationConfig?.requestBody) {
@@ -7758,6 +7833,7 @@ async function createLiveSessionGenerateNextScene() {
         const sceneTitle = `Cena ${sceneNumber}`;
         const requestBody = {
             ...baseRequest,
+            engine: selectedEngine,
             prompt: promptText,
             title: sceneTitle,
             image_upload_id: String(previousScene.returnedFrameUploadId || "").trim(),
@@ -7767,6 +7843,11 @@ async function createLiveSessionGenerateNextScene() {
             persona_profile_ids: [],
             disable_persona_reference: true,
         };
+        requestBody.duration_seconds = _pickClosestDurationOption(
+            _getCreateRealisticDurationOptions(selectedEngine),
+            requestBody.duration_seconds || baseRequest.duration_seconds || 0
+        );
+        createLiveSessionState.engineLabel = getRealisticEngineLabel(selectedEngine);
 
         const response = await api(String(continuationConfig.endpoint || "/video/generate-realistic"), {
             method: "POST",
@@ -7989,7 +8070,10 @@ function _startCreateLiveSession(options = {}) {
     createLiveSessionState.mode = String(options.mode || prefix).trim() || prefix;
     createLiveSessionState.videoType = String(options.videoType || _getSelectedCreateVideoType(prefix) || "").trim();
     createLiveSessionState.title = String(options.title || "").trim();
-    createLiveSessionState.engineLabel = String(options.engineLabel || "IA").trim() || "IA";
+    createLiveSessionState.selectedEngine = _normalizeCreateLiveEngine(
+        options.continuationConfig?.requestBody?.engine || _getRealisticSelectedEngine(prefix)
+    );
+    createLiveSessionState.engineLabel = String(options.engineLabel || getRealisticEngineLabel(createLiveSessionState.selectedEngine) || "IA").trim() || "IA";
     createLiveSessionState.aspectRatio = _resolveCreateLiveAspectRatio(prefix, options.aspectRatio);
     createLiveSessionState.returnFrameEnabled = options.returnFrameEnabled !== false;
     createLiveSessionState.useLastImageAsFinalFrame = !!options.useLastImageAsFinalFrame;
@@ -17038,6 +17122,12 @@ function wizardNext() {
 }
 
 function wizardBack() {
+    const panel = document.getElementById("create-panel-wizard");
+    if (_isSinglePageCreatePanel(panel) && _getSelectedCreateVideoType("wizard")) {
+        _clearCreateVideoTypeSelection("wizard");
+        updateFlowUI("create-panel-wizard", 1, getWizardFlow(), "wizard");
+        return;
+    }
     if (wizardStep <= 1) {
         // Go back to mode selection
         document.getElementById("create-panel-wizard").hidden = true;
@@ -17341,6 +17431,13 @@ function scriptNext() {
 }
 
 function scriptBack() {
+    const panel = document.getElementById("create-panel-script");
+    if (_isSinglePageCreatePanel(panel) && _getSelectedCreateVideoType("script")) {
+        _clearCreateVideoTypeSelection("script");
+        adaptScriptStepForVideoType("");
+        updateFlowUI("create-panel-script", 1, getScriptFlow(), "script");
+        return;
+    }
     if (scriptStep <= 1) {
         // Go back to mode selection
         document.getElementById("create-panel-script").hidden = true;
