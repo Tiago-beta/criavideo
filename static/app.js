@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v560 loaded");
+console.log("[CriaVideo] app.js v561 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4825,6 +4825,9 @@ function _clearScriptManualAudioInputUi() {
     const userAudioVideoInput = document.getElementById("script-user-audio-video-input");
     if (userAudioVideoInput) userAudioVideoInput.value = "";
     scriptUserAudioSourceKind = "";
+    scriptUserAudioBaseLabel = "";
+    scriptSelectedAudioClip = null;
+    _clearScriptUserAudioPreviewUrl();
     const userAudioName = document.getElementById("script-user-audio-name");
     if (userAudioName) {
         userAudioName.hidden = true;
@@ -4834,8 +4837,99 @@ function _clearScriptManualAudioInputUi() {
     if (userAudioSelectionRow) userAudioSelectionRow.hidden = true;
     const userAudioClearBtn = document.getElementById("script-user-audio-clear-btn");
     if (userAudioClearBtn) userAudioClearBtn.hidden = true;
+    const userAudioClipBtn = document.getElementById("script-user-audio-clip-btn");
+    if (userAudioClipBtn) userAudioClipBtn.hidden = true;
     const audioMusicChoice = document.getElementById("script-audio-music-choice");
     if (audioMusicChoice) audioMusicChoice.hidden = true;
+}
+
+function _clearScriptUserAudioPreviewUrl() {
+    if (!scriptUserAudioPreviewUrl) {
+        return;
+    }
+    URL.revokeObjectURL(scriptUserAudioPreviewUrl);
+    scriptUserAudioPreviewUrl = "";
+}
+
+function _getScriptSelectedAudioClipDuration(baseDuration = 0) {
+    const clipDuration = Number(scriptSelectedAudioClip?.clip_duration || 0);
+    if (Number.isFinite(clipDuration) && clipDuration > 0) {
+        return clipDuration;
+    }
+    return Math.max(0, Number(baseDuration || 0));
+}
+
+function _formatScriptSelectedAudioClipLabel(clip = scriptSelectedAudioClip) {
+    const clipStart = Number(clip?.clip_start || 0);
+    const clipDuration = Number(clip?.clip_duration || 0);
+    if (!Number.isFinite(clipDuration) || clipDuration <= 0) {
+        return "";
+    }
+    const clipEnd = clipStart + clipDuration;
+    return `trecho ${_formatDuration(clipStart)} - ${_formatDuration(clipEnd)}`;
+}
+
+function _buildScriptAudioClipPayload(source, clipStart, clipDuration, totalDuration) {
+    const resolvedTotal = Math.max(0, Number(totalDuration || source?.duration || 0));
+    if (!Number.isFinite(resolvedTotal) || resolvedTotal <= 0) {
+        return null;
+    }
+
+    const normalizedStart = Math.max(0, Math.min(Number(clipStart || 0), resolvedTotal));
+    let normalizedDuration = Number(clipDuration || 0);
+    if (!Number.isFinite(normalizedDuration) || normalizedDuration <= 0) {
+        return null;
+    }
+
+    normalizedDuration = Math.min(normalizedDuration, Math.max(0, resolvedTotal - normalizedStart));
+    if (!Number.isFinite(normalizedDuration) || normalizedDuration <= 0) {
+        return null;
+    }
+
+    if (normalizedDuration >= resolvedTotal - 0.2) {
+        return null;
+    }
+
+    return {
+        clip_start: Number(normalizedStart.toFixed(3)),
+        clip_duration: Number(normalizedDuration.toFixed(3)),
+        source_duration: Number(resolvedTotal.toFixed(3)),
+    };
+}
+
+function _updateScriptAudioClipButton(buttonId, hasAudio) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    button.hidden = !hasAudio;
+    button.textContent = scriptSelectedAudioClip ? "Editar trecho" : "Selecionar trecho";
+}
+
+function _refreshScriptManualAudioSelectionUi() {
+    const nameEl = document.getElementById("script-user-audio-name");
+    const selectionRow = document.getElementById("script-user-audio-selection-row");
+    const clearBtn = document.getElementById("script-user-audio-clear-btn");
+    const hasManualAudio = !!scriptUserAudioFile;
+
+    if (!hasManualAudio) {
+        if (nameEl) {
+            nameEl.hidden = true;
+            nameEl.textContent = "";
+        }
+        if (selectionRow) selectionRow.hidden = true;
+        if (clearBtn) clearBtn.hidden = true;
+        _updateScriptAudioClipButton("script-user-audio-clip-btn", false);
+        return;
+    }
+
+    const baseLabel = scriptUserAudioBaseLabel || `Áudio selecionado: ${scriptUserAudioFile?.name || "audio.mp3"}`;
+    const clipLabel = _formatScriptSelectedAudioClipLabel();
+    if (nameEl) {
+        nameEl.hidden = false;
+        nameEl.textContent = clipLabel ? `${baseLabel} • ${clipLabel}` : baseLabel;
+    }
+    if (selectionRow) selectionRow.hidden = false;
+    if (clearBtn) clearBtn.hidden = false;
+    _updateScriptAudioClipButton("script-user-audio-clip-btn", true);
 }
 
 function _getScriptAudioSourceState(includeGeneratedAudio = true) {
@@ -4845,8 +4939,11 @@ function _getScriptAudioSourceState(includeGeneratedAudio = true) {
             hasAudio: true,
             uploadId: scriptGeneratedAudioUploadId,
             previewUrl: scriptGeneratedAudioPreviewUrl,
-            durationSeconds: scriptGeneratedAudioDurationSeconds,
+            durationSeconds: _getScriptSelectedAudioClipDuration(scriptGeneratedAudioDurationSeconds),
+            sourceDurationSeconds: scriptGeneratedAudioDurationSeconds,
             label: scriptGeneratedAudioFileName || "audio-gerado.mp3",
+            clipStart: Number(scriptSelectedAudioClip?.clip_start || 0),
+            clipDuration: Number(scriptSelectedAudioClip?.clip_duration || 0),
         };
     }
 
@@ -4856,9 +4953,12 @@ function _getScriptAudioSourceState(includeGeneratedAudio = true) {
             kind: "upload",
             hasAudio: true,
             uploadId: "",
-            previewUrl: "",
-            durationSeconds: scriptUserAudioDurationSeconds,
+            previewUrl: scriptUserAudioPreviewUrl,
+            durationSeconds: _getScriptSelectedAudioClipDuration(scriptUserAudioDurationSeconds),
+            sourceDurationSeconds: scriptUserAudioDurationSeconds,
             label: scriptUserAudioFile.name || "audio.mp3",
+            clipStart: Number(scriptSelectedAudioClip?.clip_start || 0),
+            clipDuration: Number(scriptSelectedAudioClip?.clip_duration || 0),
         };
     }
 
@@ -4868,7 +4968,23 @@ function _getScriptAudioSourceState(includeGeneratedAudio = true) {
         uploadId: "",
         previewUrl: "",
         durationSeconds: 0,
+        sourceDurationSeconds: 0,
         label: "",
+        clipStart: 0,
+        clipDuration: 0,
+    };
+}
+
+function _getScriptClipAudioSource() {
+    const audioSource = _getScriptAudioSourceState(true);
+    if (!audioSource.hasAudio) {
+        return null;
+    }
+    return {
+        title: audioSource.label || "Áudio",
+        duration: Number(audioSource.sourceDurationSeconds || audioSource.durationSeconds || 0),
+        audio_url: audioSource.previewUrl || "",
+        preview_url: audioSource.previewUrl || "",
     };
 }
 
@@ -16342,8 +16458,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             lyrics: selectedTevoxiSong
                 ? (selectedTevoxiClip?.lyrics_excerpt || selectedTevoxiSong.lyrics || "")
                 : "",
-            clip_start: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_start || 0) : 0,
-            clip_duration: selectedTevoxiClip ? Number(selectedTevoxiClip.clip_duration || 0) : 0,
+            clip_start: selectedTevoxiClip
+                ? Number(selectedTevoxiClip.clip_start || 0)
+                : Number(createAudioSource.clipStart || 0),
+            clip_duration: selectedTevoxiClip
+                ? Number(selectedTevoxiClip.clip_duration || 0)
+                : Number(createAudioSource.clipDuration || 0),
             prompt_optimized: scriptData.promptOptimized || false,
             realistic_style: realisticStyle || "",
             interaction_persona: interactionPersona,
@@ -17502,6 +17622,11 @@ async function handleScriptCreate() {
             formData.append("tevoxi_clip_duration", String(Number(selectedTevoxiClip.clip_duration || 0)));
         }
 
+        if (finalAudioSource.hasAudio && finalAudioSource.clipDuration > 0) {
+            formData.append("clip_start", String(Number(finalAudioSource.clipStart || 0)));
+            formData.append("clip_duration", String(Number(finalAudioSource.clipDuration || 0)));
+        }
+
         if (uploadedMainAudioId) {
             formData.append("custom_audio_id", uploadedMainAudioId);
         }
@@ -17588,6 +17713,8 @@ let scriptPhotos = []; // array of File objects
 let scriptUserAudioFile = null;
 let scriptUserAudioDurationSeconds = 0;
 let scriptUserAudioSourceKind = "";
+let scriptUserAudioPreviewUrl = "";
+let scriptUserAudioBaseLabel = "";
 let scriptUserAudioVideoExtracting = false;
 const scriptAudioVideoUrlModalState = {
     loading: false,
@@ -17600,6 +17727,7 @@ let scriptGeneratedAudioPreviewUrl = "";
 let scriptGeneratedAudioDurationSeconds = 0;
 let scriptGeneratedAudioFileName = "";
 let scriptGeneratedAudioText = "";
+let scriptSelectedAudioClip = null;
 let scriptAudioDictationRecorder = null;
 let scriptAudioDictationChunks = [];
 let scriptAudioDictationTimer = null;
@@ -19797,7 +19925,8 @@ function _updateScriptGeneratedAudioSummary() {
             const durationLabel = scriptGeneratedAudioDurationSeconds > 0
                 ? ` • ${Math.max(1, Math.round(scriptGeneratedAudioDurationSeconds))}s`
                 : "";
-            nameEl.textContent = `${scriptGeneratedAudioFileName || "audio-gerado.mp3"}${durationLabel}`;
+            const clipLabel = _formatScriptSelectedAudioClipLabel();
+            nameEl.textContent = `${scriptGeneratedAudioFileName || "audio-gerado.mp3"}${durationLabel}${clipLabel ? ` • ${clipLabel}` : ""}`;
         }
     }
     if (playerEl) {
@@ -19819,6 +19948,7 @@ function _updateScriptGeneratedAudioSummary() {
     if (userAudioBuilderTrigger) {
         userAudioBuilderTrigger.classList.toggle("is-ready", hasGeneratedAudio);
     }
+    _updateScriptAudioClipButton("script-generated-audio-clip-btn", hasGeneratedAudio);
 }
 
 function _isScriptRealisticNarrationBuilderActive() {
@@ -19977,6 +20107,34 @@ function openScriptUserAudioVideoPicker() {
     openModal("modal-script-audio-video-source");
 }
 
+async function openScriptAttachedAudioClipSelector() {
+    const source = _getScriptClipAudioSource();
+    if (!source) {
+        alert("Selecione ou gere um áudio primeiro.");
+        return;
+    }
+
+    if ((!Number.isFinite(Number(source.duration)) || Number(source.duration) <= 0) && scriptUserAudioFile) {
+        const currentFile = scriptUserAudioFile;
+        const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(currentFile);
+        if (scriptUserAudioFile === currentFile && resolvedDuration > 0) {
+            scriptUserAudioDurationSeconds = resolvedDuration;
+            source.duration = resolvedDuration;
+            _refreshScriptManualAudioSelectionUi();
+            _syncCreateRealisticDurationOptions("script");
+            scheduleScriptCreditEstimate();
+        }
+    }
+
+    const audioUrl = String(source.audio_url || source.preview_url || "").trim();
+    if (!audioUrl) {
+        alert("Não foi possível carregar esse áudio agora.");
+        return;
+    }
+
+    openClipSelector("script-audio", source);
+}
+
 function closeScriptAudioVideoSourceModal() {
     closeModal("modal-script-audio-video-source");
 }
@@ -20060,15 +20218,8 @@ function handleScriptAudioVideoUrlKeydown(event) {
 }
 
 function _setScriptManualAudioSelectionUi(labelText) {
-    const nameEl = document.getElementById("script-user-audio-name");
-    const selectionRow = document.getElementById("script-user-audio-selection-row");
-    const clearBtn = document.getElementById("script-user-audio-clear-btn");
-    if (nameEl) {
-        nameEl.hidden = false;
-        nameEl.textContent = labelText;
-    }
-    if (selectionRow) selectionRow.hidden = false;
-    if (clearBtn) clearBtn.hidden = false;
+    scriptUserAudioBaseLabel = String(labelText || "").trim();
+    _refreshScriptManualAudioSelectionUi();
 }
 
 async function _applyScriptManualAudioFile(file, options = {}) {
@@ -20082,6 +20233,9 @@ async function _applyScriptManualAudioFile(file, options = {}) {
     if (audioCb) audioCb.checked = true;
     scriptUserAudioFile = file;
     scriptUserAudioSourceKind = sourceKind;
+    scriptSelectedAudioClip = null;
+    _clearScriptUserAudioPreviewUrl();
+    scriptUserAudioPreviewUrl = URL.createObjectURL(file);
     clearScriptGeneratedAudio(true);
     scriptUserAudioDurationSeconds = 0;
     _setScriptManualAudioSelectionUi(labelText);
@@ -20094,6 +20248,7 @@ async function _applyScriptManualAudioFile(file, options = {}) {
         const resolvedDuration = await _resolveLocalAudioFileDurationSeconds(file);
         if (scriptUserAudioFile === file) {
             scriptUserAudioDurationSeconds = resolvedDuration;
+            _refreshScriptManualAudioSelectionUi();
             _syncCreateRealisticDurationOptions("script");
             scheduleScriptCreditEstimate();
         }
@@ -20236,6 +20391,7 @@ function clearScriptGeneratedAudio(preserveBuilderText = true) {
     scriptGeneratedAudioDurationSeconds = 0;
     scriptGeneratedAudioFileName = "";
     scriptGeneratedAudioText = "";
+    scriptSelectedAudioClip = null;
 
     if (_isCreateAudioFirstMode()) {
         _clearCreateVideoTypeSelection("script");
@@ -20250,6 +20406,7 @@ function clearScriptGeneratedAudio(preserveBuilderText = true) {
     }
 
     _updateScriptGeneratedAudioSummary();
+    _refreshScriptManualAudioSelectionUi();
     updateScriptVideoAreaVisibility();
     if (_isScriptRealisticNarrationBuilderActive()) {
         toggleScriptAudioBuilder(true);
@@ -20269,6 +20426,7 @@ function clearScriptVideoSelection() {
 function clearScriptUserAudioSelection() {
     scriptUserAudioFile = null;
     scriptUserAudioDurationSeconds = 0;
+    scriptSelectedAudioClip = null;
     const audioMusicCb = document.getElementById("script-audio-is-music");
     if (audioMusicCb) audioMusicCb.checked = false;
     _clearScriptManualAudioInputUi();
@@ -20823,6 +20981,7 @@ async function generateScriptVideoAudio() {
         scriptGeneratedAudioDurationSeconds = Math.max(0, Number(result?.duration_seconds || 0));
         scriptGeneratedAudioFileName = String(result?.filename || "narracao-video.mp3").trim() || "narracao-video.mp3";
         scriptGeneratedAudioText = text;
+        scriptSelectedAudioClip = null;
 
         scriptUserAudioFile = null;
         scriptUserAudioDurationSeconds = 0;
@@ -20840,12 +20999,7 @@ async function generateScriptVideoAudio() {
             updateFlowUI("create-panel-script", scriptStep, getScriptFlow(), "script");
         }
         scheduleScriptCreditEstimate();
-        _setScriptAudioBuilderStatus(
-            (usingVideo || usingRealisticSceneAudio)
-                ? `Áudio gerado com ${providerLabel} e anexado a esta cena.`
-                : `Áudio gerado com ${providerLabel} e anexado a este projeto.`,
-            "success",
-        );
+        _setScriptAudioBuilderStatus("Áudio gerado com sucesso.", "success");
     } catch (error) {
         _setScriptAudioBuilderStatus(`Erro ao gerar o áudio: ${error.message}`, "error");
     } finally {
@@ -28994,7 +29148,12 @@ let _clipSelectedSong = null;
 let _clipTranscriptionLoading = false;
 
 function _getClipAudioUrl(song) {
-    return _getTevoxiSongAudioUrl(song);
+    if (!song) return "";
+    const tevoxiUrl = _getTevoxiSongAudioUrl(song);
+    if (tevoxiUrl) {
+        return tevoxiUrl;
+    }
+    return song.preview_url || song.audio_url || "";
 }
 
 function _clearClipAudioElementSource() {
@@ -29119,12 +29278,14 @@ function _stopClipPreview() {
 
 function _resolveClipSong(context, songOverride = null) {
     if (songOverride) return songOverride;
+    if (context === "script-audio") return _getScriptClipAudioSource();
     if (context === "script") return _scriptSelectedSong;
     if (context === "wizard") return _wizardSelectedSong;
     return _autoSelectedSong;
 }
 
 function _getStoredClipSelection(context) {
+    if (context === "script-audio") return scriptSelectedAudioClip;
     if (context === "script") return _scriptSelectedClip;
     if (context === "wizard") return _wizardSelectedClip;
     return null;
@@ -29190,10 +29351,10 @@ async function _transcribeScriptTevoxiClipText(song, clip) {
 }
 
 function openClipSelector(context = "auto", songOverride = null) {
-    const normalizedContext = ["auto", "script", "wizard"].includes(context) ? context : "auto";
+    const normalizedContext = ["auto", "script", "wizard", "script-audio"].includes(context) ? context : "auto";
     const song = _resolveClipSong(normalizedContext, songOverride);
     if (!song) {
-        alert("Selecione uma música primeiro.");
+        alert(normalizedContext === "script-audio" ? "Selecione ou gere um áudio primeiro." : "Selecione uma música primeiro.");
         return;
     }
 
@@ -29223,7 +29384,7 @@ function openClipSelector(context = "auto", songOverride = null) {
     _clipDragging = null;
     _clipDragX = 0;
 
-    document.getElementById("clip-song-title").textContent = song.title || "Música";
+    document.getElementById("clip-song-title").textContent = song.title || (normalizedContext === "script-audio" ? "Áudio" : "Música");
     _setClipTranscriptionLoading(false);
     _updateClipDurationButtons();
     _setClipApplyButtonLabel(normalizedContext);
@@ -29297,12 +29458,13 @@ async function _loadClipWaveform(song, audioUrl) {
     _clipWaveformPeaks = [];
 
     try {
-        const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+        const isObjectUrl = String(audioUrl || "").startsWith("blob:");
+        const authHeaders = !isObjectUrl && token ? { Authorization: `Bearer ${token}` } : {};
         const resp = await fetch(audioUrl, {
             method: "GET",
             headers: authHeaders,
             cache: "no-store",
-            credentials: "same-origin",
+            credentials: isObjectUrl ? "omit" : "same-origin",
         });
         if (resp.status === 401) {
             clearSession();
@@ -29752,6 +29914,16 @@ async function addClipToThemes() {
     if (_clipTranscriptionLoading) return;
     const song = _clipSelectedSong || _resolveClipSong(_clipSelectorContext);
     if (!song) return;
+
+    if (_clipSelectorContext === "script-audio") {
+        scriptSelectedAudioClip = _buildScriptAudioClipPayload(song, _clipStart, _clipDuration, _clipSongDuration);
+        _updateScriptGeneratedAudioSummary();
+        _refreshScriptManualAudioSelectionUi();
+        _syncCreateRealisticDurationOptions("script");
+        scheduleScriptCreditEstimate();
+        closeClipSelector();
+        return;
+    }
 
     let payload = _buildTevoxiSelectionPayload(song, _clipStart, _clipDuration, _clipSongDuration);
 

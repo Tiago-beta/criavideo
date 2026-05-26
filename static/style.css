@@ -8616,6 +8616,7 @@ svg.spin {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .script-audio-selection-row .script-media-status {
@@ -8697,6 +8698,11 @@ svg.spin {
     align-items: center;
     gap: 8px;
     justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.script-audio-clip-btn {
+    white-space: nowrap;
 }
 
 .script-video-audio-builder {

@@ -5032,6 +5032,8 @@ class GenerateTTSRequest(BaseModel):
     use_tevoxi_audio: bool = False
     tevoxi_audio_url: str = ""
     tevoxi_lyrics: str = ""
+    clip_start: float = 0
+    clip_duration: float = 0
     tevoxi_clip_start: float = 0
     tevoxi_clip_duration: float = 0
 
@@ -5555,6 +5557,8 @@ async def generate_audio_endpoint(
         use_tevoxi_audio_raw = str(form.get("use_tevoxi_audio", "false")).lower()
         tevoxi_audio_url_raw = str(form.get("tevoxi_audio_url", "")).strip()
         tevoxi_lyrics_raw = str(form.get("tevoxi_lyrics", ""))
+        clip_start_raw = form.get("clip_start", 0)
+        clip_duration_raw = form.get("clip_duration", 0)
         tevoxi_clip_start_raw = form.get("tevoxi_clip_start", 0)
         tevoxi_clip_duration_raw = form.get("tevoxi_clip_duration", 0)
         req = GenerateTTSRequest(
@@ -5579,6 +5583,8 @@ async def generate_audio_endpoint(
             use_tevoxi_audio=use_tevoxi_audio_raw in ("true", "1", "yes"),
             tevoxi_audio_url=tevoxi_audio_url_raw,
             tevoxi_lyrics=tevoxi_lyrics_raw,
+            clip_start=float(clip_start_raw or 0),
+            clip_duration=float(clip_duration_raw or 0),
             tevoxi_clip_start=float(tevoxi_clip_start_raw or 0),
             tevoxi_clip_duration=float(tevoxi_clip_duration_raw or 0),
         )
@@ -5669,6 +5675,9 @@ async def generate_audio_endpoint(
 
         src_audio = _resolve_temp_file(user["id"], custom_audio_id, AUDIO_EXTS)
         estimated_duration_seconds = get_media_duration(str(src_audio)) if src_audio else 0.0
+        generic_clip_duration = max(0.0, float(req.clip_duration or 0))
+        if generic_clip_duration > 0:
+            estimated_duration_seconds = generic_clip_duration
     elif has_custom_video and custom_video_id:
         from app.services.video_composer import _get_duration as get_media_duration
 
@@ -5984,6 +5993,8 @@ async def generate_audio_endpoint(
         try:
             audio_dir = Path(settings.media_dir) / "audio" / str(project.id)
             audio_dir.mkdir(parents=True, exist_ok=True)
+            clip_start = max(0.0, float(req.clip_start or 0))
+            clip_duration = max(0.0, float(req.clip_duration or 0))
 
             source_path = None
             ext = ".mp3"
@@ -6008,7 +6019,13 @@ async def generate_audio_endpoint(
             else:
                 raise HTTPException(status_code=400, detail="Áudio principal não enviado.")
 
-            custom_main_audio_path = str(target)
+            if clip_start > 0 or clip_duration > 0:
+                clipped_path = audio_dir / "user_main_audio_clipped.mp3"
+                _trim_audio_clip(str(target), str(clipped_path), clip_start, clip_duration)
+                custom_main_audio_path = str(clipped_path)
+            else:
+                custom_main_audio_path = str(target)
+
             project.audio_path = custom_main_audio_path
 
             from app.services.video_composer import _get_duration as get_audio_duration
