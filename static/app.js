@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v562 loaded");
+console.log("[CriaVideo] app.js v563 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -8088,6 +8088,25 @@ function _restoreCreateLiveOriginPanel(prefix) {
     }
 }
 
+function _queueCreateLiveScroll(options = {}) {
+    const delay = Math.max(0, Number(options.delay || 120));
+
+    window.setTimeout(() => {
+        const activeSceneEl = document.querySelector("#create-live-session .create-live-session-scene-card.is-active");
+        const nextSceneEl = document.querySelector("#create-live-session .create-live-session-next-card");
+        const rootEl = document.getElementById("create-live-session");
+        const target = activeSceneEl || nextSceneEl || rootEl;
+
+        if (target && typeof target.scrollIntoView === "function") {
+            target.scrollIntoView({
+                behavior: "smooth",
+                block: activeSceneEl ? "start" : "nearest",
+                inline: "nearest",
+            });
+        }
+    }, delay);
+}
+
 function _startCreateLiveSession(options = {}) {
     const projectId = Number(options.projectId || 0);
     if (!(projectId > 0)) return;
@@ -8138,6 +8157,7 @@ function _startCreateLiveSession(options = {}) {
     _restoreCreateLiveOriginPanel(prefix);
 
     _renderCreateLiveSession();
+    _queueCreateLiveScroll();
     _startCreateLiveSessionPolling();
     void _refreshCreateLiveSessionProject({ silent: true });
     void loadProjects();
