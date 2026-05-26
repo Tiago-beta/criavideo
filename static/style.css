@@ -2351,19 +2351,35 @@ a {
 
 .auto-song-item {
     display: flex;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 0.75rem;
     padding: 0.7rem 0.75rem;
     border: 2px solid var(--border);
     border-radius: 10px;
     background: var(--bg-input);
-    cursor: pointer;
     transition: border-color 0.2s, background 0.2s, transform 0.2s;
     text-align: left;
     width: 100%;
     color: var(--text);
-    position: relative;
     min-height: 84px;
+}
+
+.auto-song-select-btn {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.auto-song-select-btn:focus-visible {
+    outline: none;
 }
 
 .auto-song-item:hover {
@@ -2399,10 +2415,56 @@ a {
     font-size: 0.75rem;
 }
 
+.auto-song-item .song-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.55rem;
+    flex-shrink: 0;
+}
+
+.auto-song-item .song-action-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.auto-song-item .song-action-btn {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, color 0.2s, transform 0.2s;
+}
+
+.auto-song-item .song-action-btn:hover:not(:disabled),
+.auto-song-item .song-action-btn:focus-visible:not(:disabled) {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--primary);
+    transform: translateY(-1px);
+}
+
+.auto-song-item .song-action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.auto-song-item .song-action-btn-danger:hover:not(:disabled),
+.auto-song-item .song-action-btn-danger:focus-visible:not(:disabled) {
+    border-color: rgba(255, 107, 107, 0.72);
+    background: rgba(255, 107, 107, 0.12);
+    color: #ff9a9a;
+}
+
 .auto-song-item .song-check {
-    position: absolute;
-    top: 8px;
-    right: 8px;
     width: 22px;
     height: 22px;
     display: flex;

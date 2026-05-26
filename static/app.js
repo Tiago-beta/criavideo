@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v559 loaded");
+console.log("[CriaVideo] app.js v560 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -16083,14 +16083,6 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     }
 
     let finalPrompt = String(prompt || "").trim();
-    if (useTevoxi && selectedTevoxiSong && selectedTevoxiClip) {
-        const tevoxiContext = _buildTevoxiPromptContext(selectedTevoxiSong, selectedTevoxiClip);
-        if (prefix === "wizard") {
-            finalPrompt = finalPrompt ? `${finalPrompt}\n\n${tevoxiContext}` : tevoxiContext;
-        } else if (!finalPrompt) {
-            finalPrompt = tevoxiContext;
-        }
-    }
 
     const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value
         || (prefix === "auto" ? "wan2" : "viduq3");
@@ -27959,6 +27951,198 @@ async function _fetchTevoxiSongs() {
     return Array.isArray(body) ? body : [];
 }
 
+function _getTevoxiSongsForContext(context) {
+    switch (String(context || "auto")) {
+        case "script":
+            return _scriptTevoxiSongs;
+        case "wizard":
+            return _wizardTevoxiSongs;
+        default:
+            return _autoTevoxiSongs;
+    }
+}
+
+function _getTevoxiSongForContext(context, index) {
+    const songs = _getTevoxiSongsForContext(context);
+    return Array.isArray(songs) ? (songs[index] || null) : null;
+}
+
+function _getTevoxiSongKey(song) {
+    if (!song || typeof song !== "object") return "";
+    const localId = Number(song.id || 0);
+    if (localId > 0 && song.is_local) {
+        return `local:${localId}`;
+    }
+    const jobId = String(song.job_id || "").trim();
+    if (jobId) {
+        return `job:${jobId}`;
+    }
+    const audioUrl = String(song.audio_url || "").trim();
+    return audioUrl ? `url:${audioUrl}` : "";
+}
+
+function _syncTevoxiSelectedSong(currentSong, songs, removedKey = "") {
+    const currentKey = _getTevoxiSongKey(currentSong);
+    if (!currentKey || currentKey === removedKey) return null;
+    return (Array.isArray(songs) ? songs : []).find((song) => _getTevoxiSongKey(song) === currentKey) || null;
+}
+
+function _getTevoxiSongAudioUrl(song) {
+    if (!song) return "";
+    const directUrl = String(song.audio_url || "").trim();
+    if (song.is_local && directUrl) {
+        return directUrl;
+    }
+    if (song.job_id) {
+        return `${API}/automation/tevoxi-audio/${encodeURIComponent(song.job_id)}`;
+    }
+    return directUrl;
+}
+
+function _buildTevoxiSongFilename(song) {
+    const baseName = String(song?.title || "musica-tevoxi")
+        .replace(/[\\/:*?"<>|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "musica-tevoxi";
+    return `${baseName}.mp3`;
+}
+
+function _renderTevoxiSongCard(song, index, context, selected, selectHandlerName) {
+    const dur = Number(song?.duration) > 0 ? _formatDuration(Number(song.duration)) : "";
+    const genres = (Array.isArray(song?.genres) ? song.genres : [])
+        .map((genre) => String(genre || "").trim())
+        .filter(Boolean)
+        .join(", ");
+    const origin = song?.is_local ? "Criada aqui" : "Tevoxi";
+    const meta = [origin, genres, dur].filter(Boolean).join(" · ");
+    const deleteDisabled = !(song?.is_local && Number(song?.id || 0) > 0);
+    const deleteTitle = deleteDisabled ? "Só é possível excluir músicas criadas aqui" : "Excluir música";
+
+    return `<div class="auto-song-item${selected ? ' active' : ''}">
+        <button class="auto-song-select-btn" type="button" onclick="${selectHandlerName}(${index})">
+            <div class="song-info">
+                <strong>${esc(song?.title || 'Sem título')}</strong>
+                <span class="muted">${esc(meta || 'Sem detalhes')}</span>
+            </div>
+        </button>
+        <div class="song-actions">
+            <div class="song-action-row">
+                <button class="song-action-btn" type="button" onclick="downloadTevoxiSong('${context}', ${index})" title="Baixar música completa" aria-label="Baixar música completa">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                </button>
+                <button class="song-action-btn song-action-btn-danger" type="button" onclick="deleteTevoxiSong('${context}', ${index})" title="${esc(deleteTitle)}" aria-label="${esc(deleteTitle)}"${deleteDisabled ? ' disabled' : ''}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </button>
+            </div>
+            <span class="song-check">${selected ? '✓' : ''}</span>
+        </div>
+    </div>`;
+}
+
+async function downloadTevoxiSong(context, index) {
+    const song = _getTevoxiSongForContext(context, index);
+    if (!song) return;
+
+    const audioUrl = _getTevoxiSongAudioUrl(song);
+    if (!audioUrl) {
+        showToast("Não foi possível localizar o áudio completo dessa música.", "error");
+        return;
+    }
+
+    try {
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const response = await fetch(audioUrl, {
+            method: "GET",
+            headers,
+            cache: "no-store",
+            credentials: "same-origin",
+        });
+
+        if (response.status === 401) {
+            clearSession();
+            showAuth("Sua sessao expirou. Entre novamente.");
+            return;
+        }
+
+        const body = await response.clone().json().catch(() => null);
+        if (!response.ok) {
+            throw new Error(getApiErrorMessage(body, response.statusText || "Erro ao baixar música"));
+        }
+
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const downloadLink = document.createElement("a");
+        downloadLink.href = blobUrl;
+        downloadLink.download = _buildTevoxiSongFilename(song);
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (error) {
+        showToast(error?.message || "Não foi possível baixar a música agora.", "error");
+    }
+}
+
+async function _reloadTevoxiSongsAfterMutation(removedSong = null) {
+    const songs = await _fetchTevoxiSongs();
+    const nextSongs = Array.isArray(songs) ? songs : [];
+    const removedKey = _getTevoxiSongKey(removedSong);
+
+    levitaSongs = nextSongs.slice();
+    _scriptTevoxiSongs = nextSongs.slice();
+    _wizardTevoxiSongs = nextSongs.slice();
+    _autoTevoxiSongs = nextSongs.slice();
+
+    _scriptSelectedSong = _syncTevoxiSelectedSong(_scriptSelectedSong, _scriptTevoxiSongs, removedKey);
+    if (!_scriptSelectedSong) {
+        _scriptSelectedClip = null;
+    }
+
+    _wizardSelectedSong = _syncTevoxiSelectedSong(_wizardSelectedSong, _wizardTevoxiSongs, removedKey);
+    if (!_wizardSelectedSong) {
+        _wizardSelectedClip = null;
+    }
+
+    _autoSelectedSong = _syncTevoxiSelectedSong(_autoSelectedSong, _autoTevoxiSongs, removedKey);
+
+    if (_getTevoxiSongKey(_clipSelectedSong) === removedKey) {
+        closeClipSelector();
+    }
+
+    _renderScriptTevoxiSongs();
+    _updateScriptTevoxiSelectionUI();
+    _renderWizardTevoxiSongs();
+    _updateWizardTevoxiSelectionUI();
+    _renderTevoxiSongs();
+    scheduleScriptCreditEstimate();
+    scheduleWizardCreditEstimate();
+    scheduleAutoCreditEstimate();
+}
+
+async function deleteTevoxiSong(context, index) {
+    const song = _getTevoxiSongForContext(context, index);
+    if (!song) return;
+    if (!(song.is_local && Number(song.id || 0) > 0)) {
+        showToast("Só é possível excluir músicas criadas aqui no CriaVideo.", "info");
+        return;
+    }
+
+    const songTitle = String(song.title || "esta música").trim() || "esta música";
+    if (!confirm(`Excluir a música "${songTitle}"?`)) {
+        return;
+    }
+
+    try {
+        await api(`/automation/tevoxi-songs/local/${Number(song.id)}`, {
+            method: "DELETE",
+        });
+        await _reloadTevoxiSongsAfterMutation(song);
+        showToast("Música excluída da biblioteca.", "success");
+    } catch (error) {
+        showToast(error?.message || "Não foi possível excluir a música agora.", "error");
+    }
+}
+
 function _tevoxiEmptyStateHtml(message = "Nenhuma musica encontrada no Tevoxi.") {
     return `
         <div class="tevoxi-empty-state">
@@ -28652,23 +28836,10 @@ function _renderScriptTevoxiSongs() {
         list.innerHTML = _scriptTevoxiEmptyStateHtml();
         return;
     }
-    list.innerHTML = _scriptTevoxiSongs.map((s, i) => {
-        const dur = Number(s.duration) > 0 ? _formatDuration(Number(s.duration)) : "";
-        const genres = (Array.isArray(s.genres) ? s.genres : [])
-            .map(g => String(g || "").trim())
-            .filter(Boolean)
-            .join(", ");
-        const origin = s.is_local ? "Criada aqui" : "Tevoxi";
-        const meta = [origin, genres, dur].filter(Boolean).join(" · ");
-        const selected = _scriptSelectedSong && _scriptSelectedSong.job_id === s.job_id;
-        return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectScriptTevoxiSong(${i})">
-            <div class="song-info">
-                <strong>${esc(s.title || 'Sem título')}</strong>
-                <span class="muted">${esc(meta || 'Sem detalhes')}</span>
-            </div>
-            <span class="song-check">${selected ? '✓' : ''}</span>
-        </button>`;
-    }).join("");
+    const selectedKey = _getTevoxiSongKey(_scriptSelectedSong);
+    list.innerHTML = _scriptTevoxiSongs.map((song, index) => (
+        _renderTevoxiSongCard(song, index, "script", _getTevoxiSongKey(song) === selectedKey, "selectScriptTevoxiSong")
+    )).join("");
 }
 
 function selectScriptTevoxiSong(index) {
@@ -28716,22 +28887,10 @@ function _renderWizardTevoxiSongs() {
         list.innerHTML = _tevoxiEmptyStateHtml("Nenhuma musica encontrada no Tevoxi.");
         return;
     }
-    list.innerHTML = _wizardTevoxiSongs.map((s, i) => {
-        const dur = Number(s.duration) > 0 ? _formatDuration(Number(s.duration)) : "";
-        const genres = (Array.isArray(s.genres) ? s.genres : [])
-            .map(g => String(g || "").trim())
-            .filter(Boolean)
-            .join(", ");
-        const meta = [genres, dur].filter(Boolean).join(" · ");
-        const selected = _wizardSelectedSong && _wizardSelectedSong.job_id === s.job_id;
-        return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectWizardTevoxiSong(${i})">
-            <div class="song-info">
-                <strong>${esc(s.title || 'Sem título')}</strong>
-                <span class="muted">${esc(meta || 'Sem detalhes')}</span>
-            </div>
-            <span class="song-check">${selected ? '✓' : ''}</span>
-        </button>`;
-    }).join("");
+    const selectedKey = _getTevoxiSongKey(_wizardSelectedSong);
+    list.innerHTML = _wizardTevoxiSongs.map((song, index) => (
+        _renderTevoxiSongCard(song, index, "wizard", _getTevoxiSongKey(song) === selectedKey, "selectWizardTevoxiSong")
+    )).join("");
 }
 
 function selectWizardTevoxiSong(index) {
@@ -28796,22 +28955,10 @@ async function _loadTevoxiSongsIfNeeded() {
 function _renderTevoxiSongs() {
     const list = document.getElementById("auto-song-list");
     if (!list) return;
-    list.innerHTML = _autoTevoxiSongs.map((s, i) => {
-        const dur = Number(s.duration) > 0 ? _formatDuration(Number(s.duration)) : "";
-        const genres = (Array.isArray(s.genres) ? s.genres : [])
-            .map(g => String(g || "").trim())
-            .filter(Boolean)
-            .join(", ");
-        const meta = [genres, dur].filter(Boolean).join(" · ");
-        const selected = _autoSelectedSong && _autoSelectedSong.job_id === s.job_id;
-        return `<button class="auto-song-item${selected ? ' active' : ''}" type="button" onclick="selectTevoxiSong(${i})">
-            <div class="song-info">
-                <strong>${esc(s.title || 'Sem título')}</strong>
-                <span class="muted">${esc(meta || 'Sem detalhes')}</span>
-            </div>
-            <span class="song-check">${selected ? '✓' : ''}</span>
-        </button>`;
-    }).join("");
+    const selectedKey = _getTevoxiSongKey(_autoSelectedSong);
+    list.innerHTML = _autoTevoxiSongs.map((song, index) => (
+        _renderTevoxiSongCard(song, index, "auto", _getTevoxiSongKey(song) === selectedKey, "selectTevoxiSong")
+    )).join("");
 }
 
 function _formatDuration(seconds) {
@@ -28847,11 +28994,7 @@ let _clipSelectedSong = null;
 let _clipTranscriptionLoading = false;
 
 function _getClipAudioUrl(song) {
-    if (!song) return "";
-    if (song.job_id) {
-        return `${API}/automation/tevoxi-audio/${encodeURIComponent(song.job_id)}`;
-    }
-    return song.audio_url || "";
+    return _getTevoxiSongAudioUrl(song);
 }
 
 function _clearClipAudioElementSource() {
@@ -29638,10 +29781,8 @@ async function addClipToThemes() {
 
         _scriptSelectedSong = song;
         _scriptSelectedClip = payload;
-
-        const clipSignature = _buildScriptTevoxiClipSignature(song, payload);
-        const scriptPrompt = _buildScriptTevoxiPrompt(song, payload);
-        _applyScriptTevoxiPrompt(scriptPrompt, clipSignature);
+        _scriptTevoxiPromptAuto = false;
+        _scriptTevoxiPromptSignature = "";
 
         _renderScriptTevoxiSongs();
         _updateScriptTevoxiSelectionUI();
@@ -29654,14 +29795,6 @@ async function addClipToThemes() {
     if (_clipSelectorContext === "wizard") {
         _wizardSelectedSong = song;
         _wizardSelectedClip = payload;
-        if (!String(wizardData.topic || "").trim()) {
-            const autoTopic = _buildTevoxiAiTopicSeed(song, payload);
-            wizardData.topic = autoTopic;
-            const wizardTopicEl = document.getElementById("wizard-topic");
-            if (wizardTopicEl && !wizardTopicEl.value.trim()) {
-                wizardTopicEl.value = autoTopic;
-            }
-        }
         _renderWizardTevoxiSongs();
         _updateWizardTevoxiSelectionUI();
         scheduleWizardCreditEstimate();

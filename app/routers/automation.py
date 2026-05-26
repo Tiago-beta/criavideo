@@ -818,6 +818,30 @@ async def generate_inline_tevoxi_song(
     return serialized
 
 
+@router.delete("/tevoxi-songs/local/{track_id}")
+async def delete_local_tevoxi_song(
+    track_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    track = await db.get(UserMusicTrack, int(track_id or 0))
+    if not track or track.user_id != int(user.get("id") or 0) or str(track.provider or "") != "tevoxi":
+        raise HTTPException(status_code=404, detail="Música não encontrada.")
+
+    audio_path = Path(str(track.audio_path or "").strip()) if str(track.audio_path or "").strip() else None
+
+    await db.delete(track)
+    await db.commit()
+
+    if audio_path and audio_path.exists() and audio_path.is_file():
+        try:
+            audio_path.unlink()
+        except OSError as exc:
+            logger.warning("Failed to delete local Tevoxi song file %s: %s", audio_path, exc)
+
+    return {"deleted": True, "id": int(track_id)}
+
+
 @router.get("/tevoxi-songs/local/{track_id}/audio")
 async def proxy_local_tevoxi_song_audio(
     track_id: int,
