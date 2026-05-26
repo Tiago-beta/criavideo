@@ -113,6 +113,18 @@ _SIMILAR_MOVING_CAMERA_TERMS = (
     "micro shake",
     "shaky",
 )
+
+
+async def _refund_project_pending_credits(db, project: VideoProject, reason: str) -> int:
+    from app.routers.credits import refund_pending_project_credit_charge
+
+    return await refund_pending_project_credit_charge(db, project, reason=reason)
+
+
+def _clear_project_pending_credits(project: VideoProject) -> None:
+    from app.routers.credits import clear_project_pending_credit_charge
+
+    clear_project_pending_credit_charge(project)
 _SIMILAR_NO_TEXT_MARKERS = (
     "sem texto na tela",
     "sem nada escrito na tela",
@@ -263,9 +275,11 @@ async def _sync_similar_scene_generation_tracking(
         tags.pop("similar_generation_mode", None)
         if failed_message:
             tags.update({"type": "similar", "similar_stage": "regenerate_failed"})
+            failure_message = failed_message[:1000]
+            await _refund_project_pending_credits(db, project, failure_message)
             project.status = VideoStatus.FAILED
             project.progress = 0
-            project.error_message = failed_message[:1000]
+            project.error_message = failure_message
         else:
             tags.update({"type": "similar", "similar_stage": "preview_ready"})
             project.status = VideoStatus.PENDING
@@ -3333,6 +3347,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
             return
 
         if not _is_similar_project(project):
+            await _refund_project_pending_credits(db, project, "Projeto nao esta no modo Semelhante")
             project.status = VideoStatus.FAILED
             project.error_message = "Projeto nao esta no modo Semelhante"
             await db.commit()
@@ -3412,6 +3427,7 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
             tags.pop("similar_current_scene_index", None)
             tags.pop("similar_total_scenes", None)
             project.tags = tags
+            _clear_project_pending_credits(project)
             project.status = VideoStatus.COMPLETED
             project.progress = 100
             project.track_duration = preview_duration or float(project.track_duration or 0)
@@ -3423,11 +3439,13 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
             project = await db.get(VideoProject, project_id)
             if not project:
                 return
+            failure_message = _safe_error_message(exc, "Falha ao gerar previews das cenas")[:1000]
+            await _refund_project_pending_credits(db, project, failure_message)
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "preview_failed"})
             project.tags = tags
             project.status = VideoStatus.FAILED
-            project.error_message = _safe_error_message(exc, "Falha ao gerar previews das cenas")[:1000]
+            project.error_message = failure_message
             await db.commit()
 
 
@@ -3438,6 +3456,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
             return
 
         if not _is_similar_project(project):
+            await _refund_project_pending_credits(db, project, "Projeto nao esta no modo Semelhante")
             project.status = VideoStatus.FAILED
             project.error_message = "Projeto nao esta no modo Semelhante"
             await db.commit()
@@ -3514,6 +3533,7 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "preview_ready"})
             project.tags = tags
+            _clear_project_pending_credits(project)
             project.status = VideoStatus.COMPLETED
             project.progress = 100
             project.track_duration = preview_duration or float(project.track_duration or 0)
@@ -3546,6 +3566,7 @@ async def run_similar_generate_unified_scene(
         requested_duration = _engine_duration(normalized_engine, int(duration_seconds or 10))
 
         if not _is_similar_project(project):
+            await _refund_project_pending_credits(db, project, "Projeto nao esta no modo Semelhante")
             project.status = VideoStatus.FAILED
             project.error_message = "Projeto nao esta no modo Semelhante"
             await db.commit()
@@ -3707,6 +3728,7 @@ async def run_similar_generate_unified_scene(
             if merged_reference_path and os.path.exists(merged_reference_path):
                 tags["similar_unified_reference_image_path"] = merged_reference_path
             project.tags = tags
+            _clear_project_pending_credits(project)
             project.status = VideoStatus.COMPLETED
             project.progress = 100
             project.track_duration = unified_duration or float(project.track_duration or 0)
@@ -3723,6 +3745,8 @@ async def run_similar_generate_unified_scene(
             project = await db.get(VideoProject, project_id)
             if not project:
                 return
+            failure_message = _safe_error_message(exc, "Falha ao gerar a cena unica")[:1000]
+            await _refund_project_pending_credits(db, project, failure_message)
             tags = _clear_similar_unified_clip_tags(project.tags)
             tags.update(
                 {
@@ -3734,7 +3758,7 @@ async def run_similar_generate_unified_scene(
             )
             project.tags = tags
             project.status = VideoStatus.FAILED
-            project.error_message = _safe_error_message(exc, "Falha ao gerar a cena unica")[:1000]
+            project.error_message = failure_message
             await db.commit()
 
 
@@ -3745,6 +3769,7 @@ async def run_similar_merge(project_id: int, aspect_ratio: str, scene_ids: list[
             return
 
         if not _is_similar_project(project):
+            await _refund_project_pending_credits(db, project, "Projeto nao esta no modo Semelhante")
             project.status = VideoStatus.FAILED
             project.error_message = "Projeto nao esta no modo Semelhante"
             await db.commit()
@@ -3821,6 +3846,7 @@ async def run_similar_merge(project_id: int, aspect_ratio: str, scene_ids: list[
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "merged"})
             project.tags = tags
+            _clear_project_pending_credits(project)
             project.status = VideoStatus.COMPLETED
             project.progress = 100
             project.aspect_ratio = aspect_ratio
@@ -3832,9 +3858,11 @@ async def run_similar_merge(project_id: int, aspect_ratio: str, scene_ids: list[
             project = await db.get(VideoProject, project_id)
             if not project:
                 return
+            failure_message = _safe_error_message(exc, "Falha ao unir as cenas")[:1000]
+            await _refund_project_pending_credits(db, project, failure_message)
             tags = _safe_tags_dict(project.tags)
             tags.update({"type": "similar", "similar_stage": "merge_failed"})
             project.tags = tags
             project.status = VideoStatus.FAILED
-            project.error_message = _safe_error_message(exc, "Falha ao unir as cenas")[:1000]
+            project.error_message = failure_message
             await db.commit()

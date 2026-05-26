@@ -3675,7 +3675,7 @@ async def generate_similar_unified_scene(
         has_boundary_pair or (bool(req.use_last_image_as_final_frame) and len(unified_upload_paths) > 1)
     )
 
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import deduct_credits, set_project_pending_credit_charge
 
     estimate = estimate_similar_scene_credits(engine=engine, duration_seconds=duration_seconds)
     credits_needed = int(estimate.get("credits_needed", 0) or 0)
@@ -3684,6 +3684,7 @@ async def generate_similar_unified_scene(
     aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     project.aspect_ratio = aspect_ratio
     project.tags = tags_data
+    set_project_pending_credit_charge(project, credits_needed, "similar_unified_scene")
     project.status = VideoStatus.GENERATING_CLIPS
     project.progress = 1
     project.error_message = None
@@ -4419,7 +4420,7 @@ async def generate_similar_previews(
     if engine not in _SIMILAR_ENGINES:
         raise HTTPException(status_code=400, detail="Engine invalida")
 
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import deduct_credits, set_project_pending_credit_charge
 
     estimate = estimate_similar_previews_credits(
         engine=engine,
@@ -4430,6 +4431,7 @@ async def generate_similar_previews(
 
     aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     project.aspect_ratio = aspect_ratio
+    set_project_pending_credit_charge(project, credits_needed, "similar_preview_generation")
     project.status = VideoStatus.GENERATING_CLIPS
     project.progress = 1
     project.error_message = None
@@ -4466,7 +4468,7 @@ async def regenerate_similar_scene(
     if generation_mode not in {"image", "text"}:
         raise HTTPException(status_code=400, detail="Modo de geracao invalido")
 
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import deduct_credits, set_project_pending_credit_charge
 
     estimate = estimate_similar_scene_credits(
         engine=engine,
@@ -4485,6 +4487,7 @@ async def regenerate_similar_scene(
 
     aspect_ratio = req.aspect_ratio if req.aspect_ratio in {"16:9", "9:16", "1:1"} else (project.aspect_ratio or "16:9")
     project.aspect_ratio = aspect_ratio
+    set_project_pending_credit_charge(project, credits_needed, "similar_scene_regeneration")
     project.status = VideoStatus.GENERATING_CLIPS
     project.progress = 1
     project.error_message = None
@@ -4535,7 +4538,7 @@ async def merge_similar_scenes(
     if not scenes:
         raise HTTPException(status_code=400, detail="Nenhuma cena pronta foi selecionada para unir")
 
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import deduct_credits, set_project_pending_credit_charge
 
     estimated_duration = sum(_similar_scene_duration_seconds(scene) for scene in scenes)
     estimate = estimate_local_video_processing_credits(
@@ -4545,6 +4548,7 @@ async def merge_similar_scenes(
     await deduct_credits(db, user["id"], credits_needed)
 
     project.aspect_ratio = aspect_ratio
+    set_project_pending_credit_charge(project, credits_needed, "similar_scene_merge")
     project.status = VideoStatus.RENDERING
     project.progress = 1
     project.error_message = None
@@ -4799,7 +4803,7 @@ async def copy_project_with_format(
     if not os.path.exists(source_render.file_path):
         raise HTTPException(status_code=400, detail="Arquivo do vídeo origem não foi encontrado")
 
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import build_project_tags_with_pending_credit, deduct_credits
 
     estimate = estimate_local_video_processing_credits(
         float(source_render.duration or source.track_duration or 0) or 60.0
@@ -4815,7 +4819,7 @@ async def copy_project_with_format(
         track_id=source.track_id,
         title=new_title,
         description=source.description or "",
-        tags=source.tags or [],
+        tags=build_project_tags_with_pending_credit(source.tags or [], credits_needed, "copy_format"),
         style_prompt=source.style_prompt or "",
         aspect_ratio=req.aspect_ratio,
         track_title=source.track_title or "",
@@ -4953,7 +4957,7 @@ JSON apenas, sem markdown."""
             logger.warning("AI metadata generation failed, using defaults: %s", e)
 
     # ── Credit check: deduct based on song duration ──
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import build_project_tags_with_pending_credit, deduct_credits
 
     estimate = estimate_quick_create_credits(req.duration or 60)
     credits_needed = int(estimate.get("credits_needed", 0) or 0)
@@ -4964,7 +4968,7 @@ JSON apenas, sem markdown."""
         track_id=0,
         title=title,
         description=description,
-        tags=tags,
+        tags=build_project_tags_with_pending_credit(tags, credits_needed, "quick_create"),
         style_prompt=style_prompt,
         aspect_ratio=req.aspect_ratio,
         track_title=req.song_title or "",
@@ -5661,7 +5665,7 @@ async def generate_audio_endpoint(
         raise HTTPException(status_code=400, detail="Sem narração, envie fotos ou áudio para criar um vídeo personalizado.")
 
     # ── Credit check: centralized estimator (same rule used by frontend calculator) ──
-    from app.routers.credits import deduct_credits
+    from app.routers.credits import build_project_tags_with_pending_credit, deduct_credits
 
     has_custom_video = bool(custom_video_id)
     has_custom_images = (len(custom_image_uploads) > 0 or len(custom_image_ids) > 0) and not has_custom_video
@@ -5823,6 +5827,8 @@ async def generate_audio_endpoint(
 
     async def _raise_created_project_failure(status_code: int, message: str) -> None:
         nonlocal project
+        from app.routers.credits import refund_pending_project_credit_charge
+
         clean_message = str(message or "Falha ao criar o video").strip() or "Falha ao criar o video"
         if project and getattr(project, "id", 0):
             try:
@@ -5832,6 +5838,7 @@ async def generate_audio_endpoint(
             try:
                 stored_project = await db.get(VideoProject, project.id)
                 if stored_project:
+                    await refund_pending_project_credit_charge(db, stored_project, clean_message)
                     stored_project.status = VideoStatus.FAILED
                     stored_project.progress = 0
                     stored_project.error_message = clean_message[:1000]
@@ -5856,7 +5863,7 @@ async def generate_audio_endpoint(
         track_id=0,
         title=req.title or "Vídeo com IA",
         description="",
-        tags=tags_data,
+        tags=build_project_tags_with_pending_credit(tags_data, credits_needed, "standard_generation"),
         style_prompt=req.style_prompt or "cinematic, vibrant colors, dynamic lighting",
         aspect_ratio=req.aspect_ratio,
         track_title=req.title or ("Vídeo enviado" if has_custom_video else "Áudio Tevoxi" if has_tevoxi_audio else "Áudio enviado" if has_custom_audio else "Narração IA"),
@@ -6941,7 +6948,7 @@ async def generate_realistic_endpoint(
         effective_add_narration = False
 
     # Credit check — centralized realistic estimator.
-    from app.routers.credits import deduct_credits, is_levita_credit_bypass_user
+    from app.routers.credits import build_project_tags_with_pending_credit, deduct_credits, is_levita_credit_bypass_user
 
     estimate = estimate_realistic_credits(
         engine=engine,
@@ -7053,6 +7060,8 @@ async def generate_realistic_endpoint(
             tags_data["audio_upload_path"] = resolved_audio_upload_path
     if external_lyrics:
         tags_data["lyrics"] = external_lyrics
+
+    tags_data = build_project_tags_with_pending_credit(tags_data, credits_needed, "realistic_generation")
 
     project = VideoProject(
         user_id=user["id"],

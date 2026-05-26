@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v565 loaded");
+console.log("[CriaVideo] app.js v566 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -7063,6 +7063,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     const panel = document.getElementById(panelId);
     if (!panel) return;
     const isSinglePage = _isSinglePageCreatePanel(panel);
+    const panelIsVisible = !panel.hidden;
     const currentDataStep = flow[stepIndex - 1];
     const dotsContainer = document.getElementById(`${prefix}-dots-container`);
     const backBtn = document.getElementById(`${prefix}-back`);
@@ -7093,7 +7094,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
             dotsContainer.hidden = true;
             dotsContainer.innerHTML = "";
         }
-        if (backBtn) backBtn.hidden = false;
+        if (backBtn) backBtn.hidden = !panelIsVisible;
         if (nextBtn) nextBtn.hidden = true;
         if (createBtn) createBtn.hidden = !hasSelectedType;
         if (estimateBadge) estimateBadge.hidden = !hasSelectedType;
@@ -7137,7 +7138,7 @@ function updateFlowUI(panelId, stepIndex, flow, prefix) {
     }
 
     // Update buttons
-    if (backBtn) backBtn.hidden = false; // Always show — step 1 goes back to mode selection
+    if (backBtn) backBtn.hidden = !panelIsVisible; // Step 1 goes back to mode selection, but only for the visible panel
     if (nextBtn) nextBtn.hidden = stepIndex >= flow.length;
     if (createBtn) createBtn.hidden = stepIndex < flow.length;
     _syncCreateActionRow(prefix);

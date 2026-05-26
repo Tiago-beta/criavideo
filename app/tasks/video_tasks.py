@@ -41,6 +41,18 @@ def _safe_error_message(err, fallback: str) -> str:
     return f"{fallback} ({err_name})."
 
 
+async def _refund_project_pending_credits(db, project: VideoProject, reason: str) -> int:
+    from app.routers.credits import refund_pending_project_credit_charge
+
+    return await refund_pending_project_credit_charge(db, project, reason=reason)
+
+
+def _clear_project_pending_credits(project: VideoProject) -> None:
+    from app.routers.credits import clear_project_pending_credit_charge
+
+    clear_project_pending_credit_charge(project)
+
+
 async def fail_interrupted_video_projects_on_startup() -> int:
     """Mark in-memory video jobs lost during restart as failed so they reappear in the UI."""
     interrupted_statuses = [
@@ -60,6 +72,7 @@ async def fail_interrupted_video_projects_on_startup() -> int:
 
         interrupted_ids: list[int] = []
         for project in interrupted_projects:
+            await _refund_project_pending_credits(db, project, restart_message)
             project.status = VideoStatus.FAILED
             project.progress = 0
             if not str(project.error_message or "").strip():
@@ -1351,6 +1364,7 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
             )
             db.add(render)
 
+            _clear_project_pending_credits(project)
             project.status = VideoStatus.COMPLETED
             project.progress = 100
             await db.commit()
@@ -1361,11 +1375,13 @@ async def run_video_pipeline(project_id: int, pipeline_options: dict | None = No
             logger.error(f"Video pipeline failed for project {project_id}: {e}", exc_info=True)
             project = await db.get(VideoProject, project_id)
             if project:
-                project.status = VideoStatus.FAILED
-                project.error_message = _safe_error_message(
+                failure_message = _safe_error_message(
                     e,
                     "Falha ao processar o vídeo",
                 )[:1000]
+                await _refund_project_pending_credits(db, project, failure_message)
+                project.status = VideoStatus.FAILED
+                project.error_message = failure_message
                 await db.commit()
 
 
@@ -1425,6 +1441,7 @@ async def run_video_format_copy_pipeline(project_id: int, source_video_path: str
             )
             db.add(render)
 
+            _clear_project_pending_credits(project)
             project.status = VideoStatus.COMPLETED
             project.progress = 100
             await db.commit()
@@ -1436,11 +1453,13 @@ async def run_video_format_copy_pipeline(project_id: int, source_video_path: str
             if project is None:
                 project = await db.get(VideoProject, project_id)
             if project:
-                project.status = VideoStatus.FAILED
-                project.error_message = _safe_error_message(
+                failure_message = _safe_error_message(
                     e,
                     "Falha ao copiar o formato do vídeo",
                 )[:1000]
+                await _refund_project_pending_credits(db, project, failure_message)
+                project.status = VideoStatus.FAILED
+                project.error_message = failure_message
                 await db.commit()
 
 
@@ -3114,6 +3133,7 @@ async def run_realistic_video_pipeline(project_id: int):
             )
             db.add(render)
 
+            _clear_project_pending_credits(project)
             project.status = VideoStatus.COMPLETED
             project.progress = 100
             project.track_duration = video_duration
@@ -3125,9 +3145,11 @@ async def run_realistic_video_pipeline(project_id: int):
             logger.error(f"Realistic video pipeline failed for project {project_id}: {e}", exc_info=True)
             project = await db.get(VideoProject, project_id)
             if project:
-                project.status = VideoStatus.FAILED
-                project.error_message = _safe_error_message(
+                failure_message = _safe_error_message(
                     e,
                     "Falha ao gerar o vídeo realista",
                 )[:1000]
+                await _refund_project_pending_credits(db, project, failure_message)
+                project.status = VideoStatus.FAILED
+                project.error_message = failure_message
                 await db.commit()

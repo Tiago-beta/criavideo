@@ -38,6 +38,8 @@ INITIAL_CREDITS = 100
 CREDITS_PER_MINUTE = 5
 CREDIT_REFERENCE_PREFIX = "CVCR"
 PLAN_REFERENCE_PREFIX = "CVPLN"
+_PROJECT_TAG_LIST_KEY = "_tag_list"
+_PENDING_PROJECT_CREDIT_KEY = "_pending_credit_charge"
 
 
 def _extract_error_detail_message(detail) -> str:
@@ -618,6 +620,84 @@ async def is_levita_credit_bypass_user(
     _ = user
     _ = user_id
     return False
+
+
+def _coerce_project_tags(raw_tags):
+    if isinstance(raw_tags, dict):
+        return dict(raw_tags)
+
+    tags_data: dict[str, object] = {}
+    if isinstance(raw_tags, list):
+        tags_data[_PROJECT_TAG_LIST_KEY] = list(raw_tags)
+    return tags_data
+
+
+def _serialize_project_tags(tags_data: dict[str, object]):
+    public_keys = [key for key in tags_data.keys() if not str(key).startswith("_")]
+    if not public_keys and _PENDING_PROJECT_CREDIT_KEY not in tags_data:
+        preserved_tags = tags_data.get(_PROJECT_TAG_LIST_KEY)
+        if isinstance(preserved_tags, list):
+            return preserved_tags
+    return tags_data
+
+
+def build_project_tags_with_pending_credit(raw_tags, amount: int, context: str = ""):
+    tags_data = _coerce_project_tags(raw_tags)
+    normalized_amount = max(0, int(amount or 0))
+    if normalized_amount > 0:
+        pending_charge = {
+            "amount": normalized_amount,
+            "charged_at": datetime.utcnow().isoformat() + "Z",
+        }
+        normalized_context = str(context or "").strip()
+        if normalized_context:
+            pending_charge["context"] = normalized_context
+        tags_data[_PENDING_PROJECT_CREDIT_KEY] = pending_charge
+    else:
+        tags_data.pop(_PENDING_PROJECT_CREDIT_KEY, None)
+    return _serialize_project_tags(tags_data)
+
+
+def set_project_pending_credit_charge(project, amount: int, context: str = "") -> int:
+    normalized_amount = max(0, int(amount or 0))
+    project.tags = build_project_tags_with_pending_credit(project.tags, normalized_amount, context)
+    return normalized_amount
+
+
+def clear_project_pending_credit_charge(project) -> bool:
+    tags_data = _coerce_project_tags(getattr(project, "tags", None))
+    had_pending_charge = _PENDING_PROJECT_CREDIT_KEY in tags_data
+    tags_data.pop(_PENDING_PROJECT_CREDIT_KEY, None)
+    project.tags = _serialize_project_tags(tags_data)
+    return had_pending_charge
+
+
+async def refund_pending_project_credit_charge(db: AsyncSession, project, reason: str = "") -> int:
+    tags_data = _coerce_project_tags(getattr(project, "tags", None))
+    pending_charge = tags_data.get(_PENDING_PROJECT_CREDIT_KEY)
+    if not isinstance(pending_charge, dict):
+        project.tags = _serialize_project_tags(tags_data)
+        return 0
+
+    amount = max(0, int(pending_charge.get("amount") or 0))
+    if amount <= 0:
+        tags_data.pop(_PENDING_PROJECT_CREDIT_KEY, None)
+        project.tags = _serialize_project_tags(tags_data)
+        return 0
+
+    await db.execute(
+        text("UPDATE auth_users SET credits = credits + :amount WHERE id = :uid"),
+        {"amount": amount, "uid": int(getattr(project, "user_id", 0) or 0)},
+    )
+    tags_data.pop(_PENDING_PROJECT_CREDIT_KEY, None)
+    project.tags = _serialize_project_tags(tags_data)
+    logger.info(
+        "[Credits] Refunded %s credits for project %s (%s)",
+        amount,
+        getattr(project, "id", None),
+        str(reason or "failure").strip() or "failure",
+    )
+    return amount
 
 
 async def deduct_credits(db: AsyncSession, user_id: int, amount: int) -> int:
