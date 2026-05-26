@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v561 loaded");
+console.log("[CriaVideo] app.js v562 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4383,6 +4383,7 @@ function _createLiveSessionDefaultState() {
         sceneProjects: [],
         continuationConfig: null,
         nextScenePrompt: "",
+        nextSceneDurationSeconds: 0,
         nextSceneBusy: false,
         nextSceneError: "",
         pollingTimer: null,
@@ -4423,6 +4424,17 @@ function _getCreateLiveSelectedEngine() {
     );
 }
 
+function _getCreateLiveSelectedDuration() {
+    const selectedEngine = _getCreateLiveSelectedEngine();
+    const options = _getCreateRealisticDurationOptions(selectedEngine);
+    return _pickClosestDurationOption(
+        options,
+        createLiveSessionState.nextSceneDurationSeconds
+            || createLiveSessionState.continuationConfig?.requestBody?.duration_seconds
+            || 0
+    );
+}
+
 function _buildCreateLiveNextSceneEngineOptionsMarkup(disabled = false) {
     const sourceGroup = _getCreateLiveEngineSourceGroup();
     if (!sourceGroup) {
@@ -4438,6 +4450,15 @@ function _buildCreateLiveNextSceneEngineOptionsMarkup(disabled = false) {
     }).join("");
 }
 
+function _buildCreateLiveNextSceneDurationOptionsMarkup(disabled = false) {
+    const selectedDuration = _getCreateLiveSelectedDuration();
+    const disabledAttr = disabled ? "disabled" : "";
+    return _getCreateRealisticDurationOptions(_getCreateLiveSelectedEngine()).map((value) => {
+        const selectedClass = value === selectedDuration ? " selected" : "";
+        return `<button class="duration-option${selectedClass}" data-value="${value}" type="button" onclick="createLiveSessionSelectNextDuration(${value})" ${disabledAttr}>${value}s</button>`;
+    }).join("");
+}
+
 function createLiveSessionSelectNextEngine(engineValue) {
     if (createLiveSessionState.nextSceneBusy) {
         return;
@@ -4449,7 +4470,25 @@ function createLiveSessionSelectNextEngine(engineValue) {
     }
 
     createLiveSessionState.selectedEngine = normalizedEngine;
+    createLiveSessionState.nextSceneDurationSeconds = _pickClosestDurationOption(
+        _getCreateRealisticDurationOptions(normalizedEngine),
+        createLiveSessionState.nextSceneDurationSeconds
+            || createLiveSessionState.continuationConfig?.requestBody?.duration_seconds
+            || 0
+    );
     createLiveSessionState.engineLabel = getRealisticEngineLabel(normalizedEngine);
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+}
+
+function createLiveSessionSelectNextDuration(durationSeconds) {
+    if (createLiveSessionState.nextSceneBusy) {
+        return;
+    }
+
+    createLiveSessionState.nextSceneDurationSeconds = _pickClosestDurationOption(
+        _getCreateRealisticDurationOptions(_getCreateLiveSelectedEngine()),
+        durationSeconds
+    );
     _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
 }
 
@@ -7633,9 +7672,7 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
     const durationLabel = _formatCreateLiveSceneDuration(sceneItem);
     const statusLabel = _getCreateLiveSceneStatusLabel(sceneItem);
     const hideTitle = !!options.hideTitle;
-    const hideOutputFrame = !!options.hideOutputFrame;
     const inputFrameUrl = String(sceneItem?.sourceFrameUrl || "").trim() || (sceneNumber === 1 ? _getCreateLivePreferredSourcePreviewUrl() : "");
-    const outputFrameUrl = String(sceneItem?.returnedFrameUrl || "").trim();
     const frameItems = [];
 
     if (inputFrameUrl) {
@@ -7645,23 +7682,6 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
             url: inputFrameUrl,
             alt: `Cena ${sceneNumber} entrada`,
             downloadName: _getCreateLiveFrameDownloadName(sceneNumber, "entrada"),
-        }));
-    }
-
-    if (!hideOutputFrame && (createLiveSessionState.returnFrameEnabled || outputFrameUrl || sceneItem?.extractingFrame)) {
-        frameItems.push(_buildCreateLiveFrameGalleryItem({
-            previewAspectClass,
-            badge: "Saída",
-            url: outputFrameUrl,
-            alt: `Cena ${sceneNumber} saída`,
-            downloadName: _getCreateLiveFrameDownloadName(sceneNumber, "saida"),
-            busy: !!sceneItem?.extractingFrame,
-            busyTitle: "Lendo frame",
-            busySubtitle: "Próxima cena",
-            placeholderTitle: sceneItem?.extractingFrame ? "Lendo frame" : "Saída",
-            placeholderCopy: sceneItem?.extractingFrame
-                ? "O quadro final entra aqui automaticamente."
-                : "A próxima cena abre daqui.",
         }));
     }
 
@@ -7746,12 +7766,23 @@ function _buildCreateLiveNextSceneCard() {
     const promptLength = promptRaw.length;
     const nextSceneDisabled = !hasContinuationFrame || createLiveSessionState.nextSceneBusy;
     const nextSceneEngineOptionsMarkup = _buildCreateLiveNextSceneEngineOptionsMarkup(nextSceneDisabled);
+    const nextSceneDurationOptionsMarkup = _buildCreateLiveNextSceneDurationOptionsMarkup(nextSceneDisabled);
     const nextSceneEngineMarkup = nextSceneEngineOptionsMarkup
         ? `
                         <div class="form-group create-live-session-next-engine-group">
                             <label>Motor de IA</label>
                             <div class="engine-options" id="create-live-session-next-engine">
                                 ${nextSceneEngineOptionsMarkup}
+                            </div>
+                        </div>
+                    `
+        : "";
+    const nextSceneDurationMarkup = nextSceneDurationOptionsMarkup
+        ? `
+                        <div class="form-group create-live-session-next-duration-group">
+                            <label>Duração</label>
+                            <div class="duration-options" id="create-live-session-next-duration">
+                                ${nextSceneDurationOptionsMarkup}
                             </div>
                         </div>
                     `
@@ -7775,6 +7806,7 @@ function _buildCreateLiveNextSceneCard() {
                             <span class="char-count"><span id="create-live-session-next-char-count">${promptLength}</span> / 20.000</span>
                         </div>
                         ${nextSceneEngineMarkup}
+                        ${nextSceneDurationMarkup}
                         ${createLiveSessionState.nextSceneError
                             ? `<p class="create-live-session-next-error">${workflowEscapeHtml(createLiveSessionState.nextSceneError)}</p>`
                             : ""}
@@ -7808,6 +7840,7 @@ async function createLiveSessionGenerateNextScene() {
     const previousScene = _getCreateLiveLastSceneProject();
     const sceneNumber = _getCreateLiveSceneProjects().length + 1;
     const selectedEngine = _getCreateLiveSelectedEngine();
+    const selectedDuration = _getCreateLiveSelectedDuration();
     const promptEl = document.getElementById("create-live-session-next-prompt");
     const promptText = String(promptEl?.value || createLiveSessionState.nextScenePrompt || "").trim();
     if (!continuationConfig?.endpoint || !continuationConfig?.requestBody) {
@@ -7843,10 +7876,7 @@ async function createLiveSessionGenerateNextScene() {
             persona_profile_ids: [],
             disable_persona_reference: true,
         };
-        requestBody.duration_seconds = _pickClosestDurationOption(
-            _getCreateRealisticDurationOptions(selectedEngine),
-            requestBody.duration_seconds || baseRequest.duration_seconds || 0
-        );
+        requestBody.duration_seconds = selectedDuration;
         createLiveSessionState.engineLabel = getRealisticEngineLabel(selectedEngine);
 
         const response = await api(String(continuationConfig.endpoint || "/video/generate-realistic"), {
@@ -7861,6 +7891,7 @@ async function createLiveSessionGenerateNextScene() {
         createLiveSessionState.projectId = nextProjectId;
         createLiveSessionState.lastProjectSnapshot = null;
         createLiveSessionState.nextScenePrompt = "";
+        createLiveSessionState.nextSceneDurationSeconds = selectedDuration;
         createLiveSessionState.nextSceneBusy = false;
         _upsertCreateLiveSceneProject({
             id: nextProjectId,
@@ -8074,6 +8105,10 @@ function _startCreateLiveSession(options = {}) {
         options.continuationConfig?.requestBody?.engine || _getRealisticSelectedEngine(prefix)
     );
     createLiveSessionState.engineLabel = String(options.engineLabel || getRealisticEngineLabel(createLiveSessionState.selectedEngine) || "IA").trim() || "IA";
+    createLiveSessionState.nextSceneDurationSeconds = _pickClosestDurationOption(
+        _getCreateRealisticDurationOptions(createLiveSessionState.selectedEngine),
+        options.continuationConfig?.requestBody?.duration_seconds || 0
+    );
     createLiveSessionState.aspectRatio = _resolveCreateLiveAspectRatio(prefix, options.aspectRatio);
     createLiveSessionState.returnFrameEnabled = options.returnFrameEnabled !== false;
     createLiveSessionState.useLastImageAsFinalFrame = !!options.useLastImageAsFinalFrame;

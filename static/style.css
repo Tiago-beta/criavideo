@@ -5613,6 +5613,15 @@ th {
     margin-bottom: 10px;
 }
 
+.create-live-session-next-duration-group {
+    margin-top: 16px;
+}
+
+.create-live-session-next-duration-group label {
+    display: block;
+    margin-bottom: 10px;
+}
+
 #create-live-session-next-engine .engine-option {
     min-height: 108px;
     padding: 16px 12px;
