@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v556 loaded");
+console.log("[CriaVideo] app.js v557 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -3877,6 +3877,7 @@ async function loadProjects() {
             const isExpired = project.video_expired || false;
             const canWatch = (normalizedStatus === "completed" || normalizedStatus === "published") && !isExpired;
             const isGenerating = _isProjectProcessingStatus(normalizedStatus);
+            const isCopyLoading = _projectCopyLoadingIds.has(project.id);
             const thumbClick = canWatch
                 ? `onclick="watchVideo(${project.id})" style="cursor:pointer"`
                 : (isSimilarProject ? `onclick="openSimilarProject(${project.id})" style="cursor:pointer"` : "");
@@ -3884,11 +3885,12 @@ async function loadProjects() {
             const reopenSimilarButton = isSimilarProject
                 ? `<button class="card-btn card-btn-similar" onclick="openSimilarProject(${project.id})" type="button" title="Abrir semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 4 1.5 3L20 8.5 16.5 10 15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m4 20 7-7"/><path d="M9 20H4v-5"/></svg></button>`
                 : "";
+            const similarDisabledAttr = isCopyLoading ? "disabled" : "";
             const cardActions = `
                 ${reopenSimilarButton}
                 ${canWatch ? `<button class="card-btn card-btn-publish" onclick="openPublishForProject(${project.id})" type="button" title="Publicar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><polyline points="8 7 12 3 16 7"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></button>` : ""}
                 ${((project.status === "pending" || project.status === "failed") && !isSimilarProject) ? `<button class="card-btn card-btn-generate" onclick="generateVideo(${project.id})" type="button" title="Gerar vídeo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>` : ""}
-                ${canWatch ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar copia"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
+                ${canWatch ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar copia" data-copy-trigger="true" ${similarDisabledAttr}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : (project.lyrics_text ? `<button class="card-btn card-btn-similar" onclick="createSimilar(${project.id})" type="button" title="Criar Semelhante" data-copy-trigger="true" ${similarDisabledAttr}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>` : "")}
                 ${(canWatch && !isSimilarProject) ? `<button class="card-btn card-btn-edit" onclick="openProjectEditorFromCreate(${project.id})" type="button" title="Editar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ""}
                 <button class="card-btn card-btn-delete" onclick="deleteProject(${project.id})" type="button" title="Excluir"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
             `;
@@ -3897,10 +3899,14 @@ async function loadProjects() {
                 : `<div class="card-thumb card-thumb-placeholder${isGenerating ? " is-generating" : ""}" ${thumbClick}><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
             return `
                 <div class="${cardClasses}" data-project-id="${project.id}">
-                    <div class="card-media">
+                    <div class="card-media${isCopyLoading ? " is-copy-loading" : ""}" aria-busy="${isCopyLoading ? "true" : "false"}">
                         ${thumb}
                         <div class="card-media-actions">
                             ${cardActions}
+                        </div>
+                        <div class="card-copy-loading-overlay" aria-live="polite"${isCopyLoading ? "" : " hidden"}>
+                            <span class="card-copy-loading-spinner" aria-hidden="true"></span>
+                            <span class="card-copy-loading-text">Carregando</span>
                         </div>
                     </div>
                     <div class="card-body card-body--create-project">
@@ -3975,6 +3981,42 @@ function handleProjectThumbError(imgElement, projectId, canWatch) {
     }
     placeholder.innerHTML = '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
     imgElement.replaceWith(placeholder);
+}
+
+const _projectCopyLoadingIds = new Set();
+
+function _syncProjectCopyLoadingUi(projectId) {
+    const normalizedProjectId = parseInt(projectId || "0", 10) || 0;
+    if (!normalizedProjectId) return;
+
+    const isLoading = _projectCopyLoadingIds.has(normalizedProjectId);
+    const card = document.querySelector(`.card[data-project-id="${normalizedProjectId}"]`);
+    if (!card) return;
+
+    const cardMedia = card.querySelector(".card-media");
+    if (cardMedia) {
+        cardMedia.classList.toggle("is-copy-loading", isLoading);
+        cardMedia.setAttribute("aria-busy", isLoading ? "true" : "false");
+        const overlay = cardMedia.querySelector(".card-copy-loading-overlay");
+        if (overlay) overlay.hidden = !isLoading;
+    }
+
+    card.querySelectorAll('[data-copy-trigger="true"]').forEach((button) => {
+        button.disabled = isLoading;
+    });
+}
+
+function _setProjectCopyLoading(projectId, loading) {
+    const normalizedProjectId = parseInt(projectId || "0", 10) || 0;
+    if (!normalizedProjectId) return;
+
+    if (loading) {
+        _projectCopyLoadingIds.add(normalizedProjectId);
+    } else {
+        _projectCopyLoadingIds.delete(normalizedProjectId);
+    }
+
+    _syncProjectCopyLoadingUi(normalizedProjectId);
 }
 
 const _projectVisualProgress = new Map();
@@ -5362,10 +5404,64 @@ function _buildScriptSourceImageFileName(imageUrl, index = 0) {
     return rawBaseName.trim() || fallbackName;
 }
 
+function _getSceneCopyReferenceImageUrl(scene, preferEnd = false) {
+    if (!scene || typeof scene !== "object") return "";
+
+    const directUrl = preferEnd
+        ? String(scene.reference_frame_end_url || scene.reference_frame_end_path || "").trim()
+        : String(scene.reference_frame_url || scene.reference_frame_path || "").trim();
+    if (directUrl) return directUrl;
+
+    const referenceUrls = Array.isArray(scene.reference_frame_urls)
+        ? scene.reference_frame_urls.map((url) => String(url || "").trim()).filter(Boolean)
+        : [];
+    if (!referenceUrls.length) return "";
+
+    return preferEnd ? referenceUrls[referenceUrls.length - 1] : referenceUrls[0];
+}
+
+function _getProjectCopySourceImageUrls(projectDetail, tagsData = {}) {
+    const urls = [];
+    const appendUrl = (url) => {
+        const normalizedUrl = String(url || "").trim();
+        if (normalizedUrl && !urls.includes(normalizedUrl)) {
+            urls.push(normalizedUrl);
+        }
+    };
+
+    const safeTags = tagsData && typeof tagsData === "object" && !Array.isArray(tagsData)
+        ? tagsData
+        : {};
+    appendUrl(safeTags.similar_unified_start_frame_url);
+    appendUrl(safeTags.similar_unified_end_frame_url);
+
+    const scenes = Array.isArray(projectDetail?.scenes) ? projectDetail.scenes : [];
+    if (urls.length < 1) {
+        for (const scene of scenes) {
+            const startUrl = _getSceneCopyReferenceImageUrl(scene, false);
+            if (startUrl) {
+                appendUrl(startUrl);
+                break;
+            }
+        }
+    }
+    if (urls.length < 2) {
+        for (let index = scenes.length - 1; index >= 0; index -= 1) {
+            const endUrl = _getSceneCopyReferenceImageUrl(scenes[index], true)
+                || _getSceneCopyReferenceImageUrl(scenes[index], false);
+            if (endUrl) {
+                appendUrl(endUrl);
+                if (urls.length >= 2) break;
+            }
+        }
+    }
+
+    return urls.slice(0, 2);
+}
+
 async function _downloadScriptSourceImageFile(imageUrl, index = 0) {
     const response = await fetch(String(imageUrl || "").trim(), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
-        cache: "no-store",
     });
 
     if (response.status === 401) {
@@ -5384,14 +5480,9 @@ async function _downloadScriptSourceImageFile(imageUrl, index = 0) {
     });
 }
 
-async function _restoreScriptSourceImages(projectDetail) {
-    const sourceImageUrls = Array.isArray(projectDetail?.source_image_urls)
-        ? projectDetail.source_image_urls
-            .map((url) => String(url || "").trim())
-            .filter(Boolean)
-        : [];
-    const uniqueImageUrls = Array.from(new Set(sourceImageUrls)).slice(0, MAX_PHOTOS);
-    if (!uniqueImageUrls.length) {
+async function _restoreScriptSourceImages(projectDetail, tagsData = {}) {
+    const sourceImageUrls = _getProjectCopySourceImageUrls(projectDetail, tagsData);
+    if (!sourceImageUrls.length) {
         return { restored: 0, failed: 0 };
     }
 
@@ -5401,16 +5492,19 @@ async function _restoreScriptSourceImages(projectDetail) {
         togglePhotoUpload();
     }
 
-    const restoredFiles = [];
-    let failedCount = 0;
-    for (const [index, imageUrl] of uniqueImageUrls.entries()) {
+    const restoreResults = await Promise.all(sourceImageUrls.map(async (imageUrl, index) => {
         try {
-            restoredFiles.push(await _downloadScriptSourceImageFile(imageUrl, index));
+            return { imageUrl, file: await _downloadScriptSourceImageFile(imageUrl, index) };
         } catch (error) {
-            failedCount += 1;
             console.warn("[createSimilar] Falha ao restaurar imagem do projeto:", imageUrl, error?.message || error);
+            return { imageUrl, error };
         }
-    }
+    }));
+
+    const restoredFiles = restoreResults
+        .filter((result) => !!result?.file)
+        .map((result) => result.file);
+    const failedCount = restoreResults.length - restoredFiles.length;
 
     if (restoredFiles.length) {
         addPhotos(restoredFiles);
@@ -5422,7 +5516,7 @@ async function _restoreScriptSourceImages(projectDetail) {
     return { restored: restoredFiles.length, failed: failedCount };
 }
 
-async function createSimilar(projectId) {
+async function _createSimilarWithCurrentState(projectId) {
     const project = _projectsCache.find(p => p.id === projectId);
     if (!project) {
         alert("Projeto não encontrado.");
@@ -5555,7 +5649,7 @@ async function createSimilar(projectId) {
         ? (typeof tagsData.prompt_optimized === "boolean" ? tagsData.prompt_optimized : true)
         : false;
 
-    const restoredImages = await _restoreScriptSourceImages(projectDetail);
+    const restoredImages = await _restoreScriptSourceImages(projectDetail, tagsData);
     if (restoredImages.failed > 0) {
         showToast(
             restoredImages.restored > 0
@@ -5723,6 +5817,27 @@ async function createSimilar(projectId) {
         }
     } else if (narrationCopyState) {
         await _restoreScriptInlineNarrationState(narrationCopyState, "script");
+    }
+}
+
+async function createSimilar(projectId) {
+    const normalizedProjectId = parseInt(projectId || "0", 10) || 0;
+    if (!normalizedProjectId) {
+        alert("Projeto nao encontrado.");
+        return;
+    }
+    if (_projectCopyLoadingIds.has(normalizedProjectId)) {
+        return;
+    }
+
+    _setProjectCopyLoading(normalizedProjectId, true);
+    try {
+        await _createSimilarWithCurrentState(normalizedProjectId);
+    } catch (error) {
+        console.error("[createSimilar] Falha ao abrir copia:", error);
+        alert(`Erro ao abrir copia: ${error?.message || error}`);
+    } finally {
+        _setProjectCopyLoading(normalizedProjectId, false);
     }
 }
 
