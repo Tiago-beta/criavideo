@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v555 loaded");
+console.log("[CriaVideo] app.js v556 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -27942,6 +27942,13 @@ function openScriptTevoxiComposer() {
     openModal("modal-script-tevoxi-composer");
 }
 
+function _ensureScriptTevoxiSectionNearTop() {
+    const section = document.getElementById("script-tevoxi-section");
+    const videoSection = document.getElementById("script-video-upload-section");
+    if (!section || !videoSection || !videoSection.parentNode) return;
+    videoSection.parentNode.insertBefore(section, videoSection);
+}
+
 function closeScriptTevoxiComposer() {
     if (_scriptTevoxiComposerState.creating) return;
     closeModal("modal-script-tevoxi-composer");
@@ -28050,17 +28057,16 @@ async function toggleScriptTevoxiSongs() {
     const checked = !!tevoxiCb?.checked;
     const panel = document.getElementById("script-tevoxi-panel");
 
-    if (checked && scriptData.videoType !== "realista") {
-        const allowed = await _ensureTevoxiAccountOrPrompt("script");
-        if (!allowed) {
-            _disableScriptTevoxiMode();
-            return;
-        }
+    if (checked) {
+        _ensureScriptTevoxiSectionNearTop();
     }
 
     if (panel) panel.hidden = !checked;
     if (checked) {
         await _loadScriptTevoxiSongsIfNeeded();
+        requestAnimationFrame(() => {
+            document.getElementById("script-tevoxi-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+        });
     }
     if (checked) {
         const musicCb = document.getElementById("script-realistic-music");
@@ -28077,14 +28083,6 @@ async function toggleWizardTevoxiSongs() {
     const tevoxiCb = document.getElementById("wizard-realistic-tevoxi");
     const checked = !!tevoxiCb?.checked;
     const panel = document.getElementById("wizard-tevoxi-panel");
-
-    if (checked) {
-        const allowed = await _ensureTevoxiAccountOrPrompt("wizard");
-        if (!allowed) {
-            _disableWizardTevoxiMode();
-            return;
-        }
-    }
 
     if (panel) panel.hidden = !checked;
     if (checked) {
@@ -28632,14 +28630,6 @@ async function toggleAutoTevoxiSongs() {
     const tevoxiCb = document.getElementById("auto-realistic-tevoxi");
     const checked = !!tevoxiCb?.checked;
     const panel = document.getElementById("auto-tevoxi-panel");
-
-    if (checked) {
-        const allowed = await _ensureTevoxiAccountOrPrompt("auto");
-        if (!allowed) {
-            _disableAutoTevoxiMode();
-            return;
-        }
-    }
 
     if (panel) panel.hidden = !checked;
     if (checked) await _loadTevoxiSongsIfNeeded();

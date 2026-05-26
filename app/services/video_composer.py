@@ -344,6 +344,31 @@ def _get_duration(file_path: str) -> float:
         return 0.0
 
 
+def _has_audio_stream(file_path: str) -> bool:
+    """Return whether the file has a first audio stream available."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return result.returncode == 0 and "audio" in (result.stdout or "").lower()
+    except Exception:
+        return False
+
+
 def _render_static_fallback(
     valid_scenes: list[dict],
     audio_path: str,
@@ -456,6 +481,7 @@ def compose_overlay_video(
     video_path: str,
     subtitle_path: str = "",
     narration_path: str = "",
+    music_path: str = "",
     aspect_ratio: str = "16:9",
     output_dir: str = "",
 ) -> dict:
@@ -498,23 +524,47 @@ def compose_overlay_video(
     else:
         video_output = "[scaled]"
 
-    # Audio handling: mix narration with original video audio
-    if narration_path and os.path.exists(narration_path):
+    has_video_audio = _has_audio_stream(video_path)
+    has_narration = bool(narration_path and os.path.exists(narration_path))
+    has_music = bool(music_path and os.path.exists(music_path))
+    audio_filters = []
+    mix_inputs = []
+
+    if has_narration:
         input_args.extend(["-i", narration_path])
         narr_idx = input_idx
         input_idx += 1
-        # Lower original audio volume and mix with narration
-        fade_start = max(video_duration - 4, 0)
-        vf += (
-            f";\n[0:a]volume=0.15[origaudio];"
-            f"[{narr_idx}:a]volume=1.0[narration];"
-            f"[narration][origaudio]amix=inputs=2:duration=first:dropout_transition=3:normalize=0,"
-            f"afade=t=out:st={fade_start}:d=4[audioout]"
+        audio_filters.append(f"[{narr_idx}:a]aresample=44100,volume=1.0[narration]")
+        mix_inputs.append("[narration]")
+
+    if has_music:
+        input_args.extend(["-stream_loop", "-1", "-i", music_path])
+        music_idx = input_idx
+        input_idx += 1
+        fade_start = max(video_duration - 3, 0)
+        audio_filters.append(
+            f"[{music_idx}:a]aresample=44100,volume=0.4,afade=t=out:st={fade_start}:d=3[music]"
         )
+        mix_inputs.append("[music]")
+
+    if has_video_audio:
+        original_volume = "0.15" if has_narration else "1.0"
+        audio_filters.append(f"[0:a]aresample=44100,volume={original_volume}[origaudio]")
+        mix_inputs.append("[origaudio]")
+
+    if audio_filters:
+        if len(mix_inputs) > 1:
+            joined_filters = ";".join(audio_filters)
+            joined_inputs = "".join(mix_inputs)
+            vf += (
+                f";\n{joined_filters};{joined_inputs}"
+                f"amix=inputs={len(mix_inputs)}:duration=first:dropout_transition=3:normalize=0[audioout]"
+            )
+        else:
+            vf += f";\n{audio_filters[0].replace(mix_inputs[0], '[audioout]')}"
         audio_output = "[audioout]"
     else:
-        # Keep original audio as-is
-        audio_output = "0:a"
+        audio_output = "0:a" if has_video_audio else ""
 
     timeout = max(600, min(int(video_duration * 4), 7200))
 
@@ -523,16 +573,19 @@ def compose_overlay_video(
         *input_args,
         "-filter_complex", vf,
         "-map", video_output,
-        "-map", audio_output,
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "22",
-        "-c:a", "aac",
-        "-b:a", "192k",
         "-movflags", "+faststart",
         "-shortest",
         output_path,
     ]
+
+    if audio_output:
+        cmd[cmd.index("-c:v"):cmd.index("-c:v")] = ["-map", audio_output]
+        cmd[cmd.index("-movflags"):cmd.index("-movflags")] = ["-c:a", "aac", "-b:a", "192k"]
+    else:
+        cmd[cmd.index("-movflags"):cmd.index("-movflags")] = ["-an"]
 
     logger.info(f"Composing overlay video for project {project_id} ({video_duration:.1f}s)...")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
