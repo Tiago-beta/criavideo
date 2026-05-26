@@ -18,6 +18,7 @@ settings = get_settings()
 ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
 WAN_T2V_MODEL = (settings.atlascloud_wan_t2v_model or "alibaba/wan-2.7/text-to-video").strip()
 WAN_I2V_MODEL = (settings.atlascloud_wan_i2v_model or "alibaba/wan-2.6/image-to-video").strip()
+WAN_I2V_FLASH_MODEL = (settings.atlascloud_wan_i2v_flash_model or "alibaba/wan-2.6/image-to-video-flash").strip()
 WAN_DEFAULT_RESOLUTION = "720p"
 WAN_I2V_ALLOWED_DURATIONS = (5, 10, 15)
 _ALLOWED_ASPECT_RATIOS = {"16:9", "9:16", "1:1", "4:3", "3:4"}
@@ -323,6 +324,7 @@ async def generate_wan_video(
     generate_audio: bool = True,
     timeout_seconds: int = 900,
     on_progress=None,
+    model_id_override: str | None = None,
 ) -> str:
     """Generate a realistic video using Wan via Atlas Cloud.
 
@@ -330,6 +332,7 @@ async def generate_wan_video(
     Otherwise, uses text-to-video.
 
     For I2V, defaults to Wan 2.6 model and Atlas duration presets (5/10/15).
+    A custom I2V model id can be passed through model_id_override.
 
     Returns the local path to the downloaded MP4 video.
     """
@@ -347,7 +350,8 @@ async def generate_wan_video(
 
     # Choose model based on whether we have a reference image.
     use_i2v = bool(image_path and os.path.exists(image_path))
-    model_id = WAN_I2V_MODEL if use_i2v else WAN_T2V_MODEL
+    resolved_i2v_model = str(model_id_override or "").strip() or WAN_I2V_MODEL
+    model_id = resolved_i2v_model if use_i2v else WAN_T2V_MODEL
     wan_duration = _resolve_i2v_duration(duration) if use_i2v else max(2, min(int(duration or 5), 15))
 
     payload = {

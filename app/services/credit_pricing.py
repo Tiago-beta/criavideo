@@ -225,6 +225,7 @@ PAID_PLAN_CODES = {plan["code"] for plan in CREDIT_SUBSCRIPTION_PLANS if plan["c
 REALISTIC_BASE_CREDITS_8S = {
     "wan2": 100,
     "grok": 90,
+    "avatar25": 24,
     "lite2": 24,
     "mega15": 112,
     "seedance": 170,
@@ -236,6 +237,7 @@ REALISTIC_BASE_CREDITS_8S = {
 REALISTIC_ENGINE_USD_PER_SEC = {
     "wan2": 0.060,
     "grok": 0.050,
+    "avatar25": 0.018,
     "lite2": 0.018,
     "mega15": 0.076,
     "seedance": 0.085,
@@ -381,6 +383,13 @@ VIDEO_COMPARISON_MODELS = [
         "label": "Mega 1.5 Real",
         "kind": "video",
         "engine": "lite2",
+        "featured": True,
+    },
+    {
+        "key": "avatar25-video",
+        "label": "Avatar 2.5 Pro",
+        "kind": "video",
+        "engine": "avatar25",
         "featured": True,
     },
     {

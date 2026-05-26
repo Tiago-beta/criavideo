@@ -2457,6 +2457,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         image_path=scene_reference_path,
                         generate_audio=generate_audio,
                         on_progress=_on_progress,
+                        model_id_override=(settings.atlascloud_wan_i2v_flash_model or "").strip() or None if engine == "avatar25" else None,
                     )
 
                 if shadow_audio_from_grok:

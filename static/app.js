@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v557 loaded");
+console.log("[CriaVideo] app.js v558 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -208,6 +208,7 @@ const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 const SIMILAR_ENGINE_OPTIONS = ["lite2", "mega15", "viduq3", "grok", "wan2", "seedance"];
 const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "mega15", "lite2", "viduq3"]);
 const REALISTIC_ENGINE_CREDITS_PER_SECOND = Object.freeze({
+    avatar25: 3,
     lite2: 3,
     viduq3: 7,
     grok: 8,
