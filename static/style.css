@@ -6061,8 +6061,15 @@ th {
 #wizard-realistic-engine,
 #script-realistic-engine {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
+}
+
+#wizard-realistic-engine-group,
+#script-realistic-engine-group {
+    width: min(100%, 920px);
+    margin-left: auto;
+    margin-right: auto;
 }
 
 #auto-realistic-engine {
