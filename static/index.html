@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260525-12">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260526-03">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 556;
+        var REQUIRED_VER = 559;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1519,6 +1519,10 @@
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
                                 </button>
+                                <button class="engine-option" data-value="avatar25" type="button">
+                                    <strong>Avatar 2.5 Pro</strong>
+                                    <small class="engine-option-desc">Avatar com foto mais áudio, focado em lip sync e fala.</small>
+                                </button>
                                 <button class="engine-option selected" data-value="viduq3" type="button">
                                     <strong>Pro 3.1 Start</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo, duração de 1 a 16 segundos.</small>
@@ -2277,6 +2281,10 @@
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
                                 </button>
+                                <button class="engine-option" data-value="avatar25" type="button">
+                                    <strong>Avatar 2.5 Pro</strong>
+                                    <small class="engine-option-desc">Avatar com foto mais áudio, focado em lip sync e fala.</small>
+                                </button>
                                 <button class="engine-option selected" data-value="viduq3" type="button">
                                     <strong>Pro 3.1 Start</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo, duração de 1 a 16 segundos.</small>
@@ -2694,6 +2702,7 @@
                                     <label>Motor de IA</label>
                                     <select id="workflow-engine" class="input workflow-input">
                                         <option value="wan2" selected>Ultra High 1.0</option>
+                                        <option value="avatar25">Avatar 2.5 Pro</option>
                                         <option value="viduq3">Pro 3.1 Start</option>
                                         <option value="grok">Cria 3.0 speed</option>
                                         <option value="lite2">Mega 1.5 Real</option>
@@ -3492,6 +3501,10 @@
                                 <button class="engine-option selected" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
                                     <small class="engine-option-desc">Cria vídeo com áudio nativo e sem restrição.</small>
+                                </button>
+                                <button class="engine-option" data-value="avatar25" type="button">
+                                    <strong>Avatar 2.5 Pro</strong>
+                                    <small class="engine-option-desc">Avatar com foto mais áudio, focado em lip sync e fala.</small>
                                 </button>
                                 <button class="engine-option" data-value="viduq3" type="button">
                                     <strong>Pro 3.1 Start</strong>
@@ -4559,8 +4572,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260525-12"></script>
-    <script src="/video/static/pwa.js?v=20260525-12"></script>
+    <script src="/video/static/app.js?v=20260526-03"></script>
+    <script src="/video/static/pwa.js?v=20260526-03"></script>
 </body>
 </html>
 

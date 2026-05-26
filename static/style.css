@@ -3053,6 +3053,44 @@ a {
     position: relative;
 }
 
+.card-media.is-copy-loading .card-thumb,
+.card-media.is-copy-loading .card-thumb-placeholder {
+    filter: brightness(0.48) saturate(0.82);
+}
+
+.card-media.is-copy-loading .card-media-actions {
+    opacity: 0.25;
+}
+
+.card-copy-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    background: linear-gradient(180deg, rgba(4, 18, 31, 0.18), rgba(4, 18, 31, 0.76));
+    backdrop-filter: blur(2px);
+    color: #f4fbff;
+    z-index: 2;
+}
+
+.card-copy-loading-spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 3px solid rgba(255, 255, 255, 0.22);
+    border-top-color: #7edfff;
+    animation: spin 0.85s linear infinite;
+}
+
+.card-copy-loading-text {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #f4fbff;
+}
+
 .card-body {
     padding: 1rem 1.1rem 0.6rem;
     flex: 1;
@@ -3202,8 +3240,20 @@ a {
     border-color: rgba(122, 221, 171, 0.3);
 }
 
+.card-btn-similar:disabled {
+    opacity: 0.62;
+    cursor: wait;
+    transform: none;
+    pointer-events: none;
+}
+
 .card-btn-similar:hover {
     background: rgba(122, 221, 171, 0.18);
+    color: var(--success);
+}
+
+.card-btn-similar:disabled:hover {
+    background: rgba(96, 129, 162, 0.08);
     color: var(--success);
 }
 

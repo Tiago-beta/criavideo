@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     atlascloud_seedance_lite_i2v_model: str = "bytedance/seedance-v1.5-pro/image-to-video-fast"
     atlascloud_wan_t2v_model: str = "alibaba/wan-2.7/text-to-video"
     atlascloud_wan_i2v_model: str = "alibaba/wan-2.6/image-to-video"
+    atlascloud_wan_i2v_flash_model: str = "alibaba/wan-2.6/image-to-video-flash"
     atlascloud_vidu_q3_start_end_model: str = "vidu/q3-pro/start-end-to-video"
     atlascloud_avatar_model: str = "kwaivgi/kling-v2.6-std/avatar"
     mp_access_token: str = ""

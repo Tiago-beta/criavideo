@@ -1632,10 +1632,10 @@ async def run_realistic_video_pipeline(project_id: int):
 
             # Determine engine from audio_path field (used to store engine choice)
             engine = (project.audio_path or "").strip()
-            if engine not in ("seedance", "mega15", "lite2", "viduq3", "wan2", "grok", "avatar31"):
+            if engine not in ("seedance", "mega15", "lite2", "viduq3", "wan2", "avatar25", "grok", "avatar31"):
                 engine = "wan2"
             seedance_family_engine = engine in {"seedance", "mega15", "lite2", "viduq3"}
-            engine_labels = {"wan2": "Wan 2.6", "seedance": "Seedance 2.0", "mega15": "Lite 2.0 Fast", "lite2": "Mega 1.5 Real", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
+            engine_labels = {"wan2": "Wan 2.6", "avatar25": "Avatar 2.5 Pro", "seedance": "Seedance 2.0", "mega15": "Lite 2.0 Fast", "lite2": "Mega 1.5 Real", "viduq3": "Pro 3.1 Start", "grok": "Cria 3.0 speed", "avatar31": "Avatar 3.1 Plus"}
             engine_label = engine_labels.get(engine, "Wan 2.6")
             logger.info(f"Realistic video pipeline for project {project_id} using engine: {engine}")
 
@@ -1831,7 +1831,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 duration = max(1, min(duration, 60))
             elif engine == "viduq3":
                 duration = max(1, min(duration, 16))
-            elif engine == "wan2":
+            elif engine in {"wan2", "avatar25"}:
                 duration = _resolve_wan_effective_duration(duration)
             elif engine == "mega15":
                 duration = max(1, min(duration, 15))
@@ -1871,7 +1871,7 @@ async def run_realistic_video_pipeline(project_id: int):
             # Wan now runs video-only (no legacy Grok shadow audio).
             shadow_audio_from_grok = False
             shadow_grok_retry_limit = max(0, int(tags_data.get("wan_shadow_grok_retry_limit", 2) or 2))
-            wan_effective_duration = _resolve_wan_effective_duration(duration) if engine == "wan2" else duration
+            wan_effective_duration = _resolve_wan_effective_duration(duration) if engine in {"wan2", "avatar25"} else duration
             grok_shadow_prompt = ""
             grok_shadow_video_path = ""
             grok_shadow_audio_path = ""
@@ -1930,7 +1930,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     reference_count=len(upload_reference_paths_for_prompt),
                 )
 
-            if engine == "wan2":
+            if engine in {"wan2", "avatar25"}:
                 tags_data["wan_shadow_grok_audio"] = False
                 tags_data["wan_effective_duration"] = wan_effective_duration
                 project.tags = tags_data
@@ -2031,7 +2031,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         "Seedance upload reference mode active for project %s: skipping prompt rewrite to preserve uploaded scene fidelity",
                         project_id,
                     )
-                elif dialogue_enabled and engine == "wan2":
+                elif dialogue_enabled and engine in {"wan2", "avatar25"}:
                     # Keep explicit dialogue timeline cues for Wan instead of Seedance-style rewrite.
                     optimized_prompt = user_prompt
                     logger.info("Dialogue mode active: using direct prompt for %s to preserve sync timeline", engine)
@@ -2046,7 +2046,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     )
                     logger.info(f"Grok prompt optimized: {optimized_prompt[:200]}...")
                 else:
-                    seedance_optimizer_temperature = 0.2 if engine == "wan2" else None
+                    seedance_optimizer_temperature = 0.2 if engine in {"wan2", "avatar25"} else None
                     optimized_prompt = await optimize_prompt_for_seedance(
                         user_description=user_prompt,
                         duration=duration,
@@ -2449,7 +2449,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     on_progress=_on_progress,
                 )
 
-            elif engine == "wan2":
+            elif engine in {"wan2", "avatar25"}:
                 # ── Wan via Atlas Cloud ──
                 from app.services.runpod_video import generate_wan_video
                 from app.services.multi_clip import concatenate_clips, extract_last_frame
@@ -2466,6 +2466,7 @@ async def run_realistic_video_pipeline(project_id: int):
                         image_path=scene_reference_path,
                         generate_audio=generate_audio,
                         on_progress=_on_progress,
+                        model_id_override=(settings.atlascloud_wan_i2v_flash_model or "").strip() or None if engine == "avatar25" else None,
                     )
 
                 if shadow_audio_from_grok:
@@ -2696,7 +2697,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 except Exception as e:
                     logger.warning(f"Grok shadow aspect normalization skipped: {e}")
 
-            if engine == "wan2":
+            if engine in {"wan2", "avatar25"}:
                 try:
                     wan_target_duration = float(wan_effective_duration or duration)
                     wan_current_duration = get_duration(output_path) if os.path.exists(output_path) else 0.0
@@ -2750,7 +2751,7 @@ async def run_realistic_video_pipeline(project_id: int):
                 project.tags = tags
                 project.no_background_music = True
                 await db.commit()
-            if engine == "wan2" and add_music and not explicit_audio_source and not add_narration and not dialogue_enabled:
+            if engine in {"wan2", "avatar25"} and add_music and not explicit_audio_source and not add_narration and not dialogue_enabled:
                 logger.info(
                     "Preserving Atlas native audio for Ultra High 1.0 project %s without extra music overlay.",
                     project_id,
@@ -2819,7 +2820,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     grok_shadow_audio_path,
                 )
 
-            elif engine in ("wan2", "grok", "seedance", "mega15", "lite2") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
+            elif engine in ("wan2", "avatar25", "grok", "seedance", "mega15", "lite2") and (add_narration or add_music or dialogue_enabled or seedance_missing_audio):
                 audio_dir = Path(settings.media_dir) / "audio" / str(project_id)
                 audio_dir.mkdir(parents=True, exist_ok=True)
 
