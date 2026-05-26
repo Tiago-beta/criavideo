@@ -1460,7 +1460,7 @@ async def _combine_realistic_audio(
     audio_index = 1
     has_narr = bool(narration_path and os.path.exists(narration_path))
     has_music = bool(music_path and os.path.exists(music_path))
-    video_has_audio = await _video_has_audio_stream(video_path) if has_narr else False
+    video_has_audio = await _video_has_audio_stream(video_path)
 
     if has_narr:
         inputs.extend(["-i", narration_path])
@@ -1470,12 +1470,16 @@ async def _combine_realistic_audio(
         audio_index += 1
 
     if video_has_audio:
-        filter_parts.append("[0:a]aresample=44100,volume=0.2[videoorig]")
+        video_audio_volume = "0.2" if has_narr else "1.0"
+        filter_parts.append(f"[0:a]aresample=44100,volume={video_audio_volume}[videoorig]")
         mix_inputs.append("[videoorig]")
 
     if has_music:
         inputs.extend(["-stream_loop", "-1", "-i", music_path])
-        music_vol = "0.12" if has_narr and video_has_audio else ("0.15" if has_narr else "0.5")
+        if video_has_audio and not has_narr:
+            music_vol = "0.30"
+        else:
+            music_vol = "0.12" if has_narr and video_has_audio else ("0.15" if has_narr else "0.5")
         fade_start = max(0, video_duration - 3)
         filter_parts.append(
             f"[{audio_index}:a]aresample=44100,volume={music_vol},"
@@ -1939,6 +1943,7 @@ async def run_realistic_video_pipeline(project_id: int):
             prebuilt_dialogue_result = None
             prebuilt_narration_path = ""
             prebuilt_music_path = ""
+            avatar25_input_audio_path = ""
             seedance_expect_native_audio = (
                 engine in {"seedance", "mega15"}
                 and provider_generate_audio_requested
@@ -1946,6 +1951,17 @@ async def run_realistic_video_pipeline(project_id: int):
                 and not external_audio_url_for_prompt
                 and not dialogue_enabled
             )
+
+            if engine == "avatar25" and external_audio_url_for_prompt:
+                avatar25_input_audio_path = await materialize_audio_source(
+                    external_audio_url_for_prompt,
+                    project_id,
+                    clip_start=float(tags_data.get("clip_start", 0) or 0),
+                    clip_duration=float(tags_data.get("clip_duration", 0) or 0),
+                    output_filename="avatar25_source.mp3",
+                )
+                if not avatar25_input_audio_path or not os.path.exists(avatar25_input_audio_path):
+                    raise RuntimeError("Avatar 2.5 Pro nao conseguiu preparar o audio enviado.")
 
             if dialogue_enabled and not shadow_audio_from_grok:
                 project.progress = 7
@@ -2464,9 +2480,10 @@ async def run_realistic_video_pipeline(project_id: int):
                         aspect_ratio=aspect_ratio,
                         output_path=output_path,
                         image_path=scene_reference_path,
-                        generate_audio=generate_audio,
+                        generate_audio=False if avatar25_input_audio_path else generate_audio,
                         on_progress=_on_progress,
                         model_id_override=(settings.atlascloud_wan_i2v_flash_model or "").strip() or None if engine == "avatar25" else None,
+                        input_audio_path=avatar25_input_audio_path or None,
                     )
 
                 if shadow_audio_from_grok:
@@ -2905,13 +2922,18 @@ async def run_realistic_video_pipeline(project_id: int):
                     await db.commit()
                     logger.info(f"Downloading external audio for realistic video {project_id}: {external_audio_url[:100]}")
                     try:
-                        ext_audio_path = await materialize_audio_source(
-                            external_audio_url,
-                            project_id,
-                            clip_start=float(tags.get("clip_start", 0) or 0),
-                            clip_duration=float(tags.get("clip_duration", 0) or 0),
-                            output_filename="external_clip.mp3",
-                        )
+                        ext_audio_path = ""
+                        if engine == "avatar25" and avatar25_input_audio_path and os.path.exists(avatar25_input_audio_path):
+                            ext_audio_path = avatar25_input_audio_path
+                            logger.info("Reusing Avatar 2.5 Pro input audio as the selected background clip for project %s", project_id)
+                        else:
+                            ext_audio_path = await materialize_audio_source(
+                                external_audio_url,
+                                project_id,
+                                clip_start=float(tags.get("clip_start", 0) or 0),
+                                clip_duration=float(tags.get("clip_duration", 0) or 0),
+                                output_filename="external_clip.mp3",
+                            )
                         if ext_audio_path and os.path.exists(ext_audio_path):
                             music_path = ext_audio_path
                             logger.info(f"External audio downloaded: {music_path}")

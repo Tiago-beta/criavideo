@@ -325,6 +325,7 @@ async def generate_wan_video(
     timeout_seconds: int = 900,
     on_progress=None,
     model_id_override: str | None = None,
+    input_audio_path: str | None = None,
 ) -> str:
     """Generate a realistic video using Wan via Atlas Cloud.
 
@@ -333,6 +334,7 @@ async def generate_wan_video(
 
     For I2V, defaults to Wan 2.6 model and Atlas duration presets (5/10/15).
     A custom I2V model id can be passed through model_id_override.
+    When input_audio_path is provided, Atlas receives that audio and native audio generation is disabled.
 
     Returns the local path to the downloaded MP4 video.
     """
@@ -350,9 +352,11 @@ async def generate_wan_video(
 
     # Choose model based on whether we have a reference image.
     use_i2v = bool(image_path and os.path.exists(image_path))
+    use_audio_input = bool(input_audio_path and os.path.exists(input_audio_path))
     resolved_i2v_model = str(model_id_override or "").strip() or WAN_I2V_MODEL
     model_id = resolved_i2v_model if use_i2v else WAN_T2V_MODEL
     wan_duration = _resolve_i2v_duration(duration) if use_i2v else max(2, min(int(duration or 5), 15))
+    resolved_generate_audio = bool(generate_audio) and not use_audio_input
 
     payload = {
         "model": model_id,
@@ -361,7 +365,7 @@ async def generate_wan_video(
         "ratio": resolved_aspect,
         "resolution": WAN_DEFAULT_RESOLUTION,
         "prompt_extend": False,
-        "generate_audio": bool(generate_audio),
+        "generate_audio": resolved_generate_audio,
     }
 
     # Add reference image URL for image-to-video.
@@ -369,6 +373,11 @@ async def generate_wan_video(
         uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
         payload["image"] = uploaded_image_ref
         logger.info("Wan image-to-video: uploaded %s", image_path)
+
+    if use_audio_input:
+        uploaded_audio_ref = await _upload_media_to_atlas(input_audio_path, api_key)
+        payload["audio"] = uploaded_audio_ref
+        logger.info("Wan audio input: uploaded %s", input_audio_path)
 
     # Step 1: Submit async job.
     prediction_id = ""
@@ -542,7 +551,7 @@ async def generate_wan_video(
             if not downloaded:
                 continue
 
-            if generate_audio and not _file_has_audio_stream(output_path):
+            if (resolved_generate_audio or use_audio_input) and not _file_has_audio_stream(output_path):
                 downloaded_without_audio = True
                 logger.warning(
                     "Wan candidate URL %d/%d has no audio stream. Trying next candidate.",
