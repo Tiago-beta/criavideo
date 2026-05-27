@@ -6518,6 +6518,13 @@ th {
     white-space: nowrap;
 }
 
+.btn-create-video-credit--compact {
+    min-width: 28px;
+    height: 28px;
+    padding: 0 7px;
+    font-size: 0.72rem;
+}
+
 .btn-create-video-credit.is-warning {
     background: rgba(134, 74, 0, 0.18);
     border-color: rgba(134, 74, 0, 0.24);

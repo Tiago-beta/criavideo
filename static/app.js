@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v576 loaded");
+console.log("[CriaVideo] app.js v577 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4755,9 +4755,10 @@ function _setCreateButtonCreditElement(creditElOrId, message = "", kind = "ready
     if (!creditEl) return;
 
     const value = hidden ? "" : _extractCreateButtonCreditLabel(message);
+    const baseClass = String(creditEl.dataset.creditClass || "btn-create-video-credit").trim() || "btn-create-video-credit";
     creditEl.hidden = !value;
     creditEl.textContent = value;
-    creditEl.className = `btn-create-video-credit is-${kind}`;
+    creditEl.className = `${baseClass} is-${kind}`;
 }
 
 function _setCreateButtonCredit(targetId, message = "", kind = "ready", hidden = false) {
@@ -5840,14 +5841,22 @@ async function updateSimilarSceneActionCreditEstimate(sceneId) {
 
     const scene = _getSimilarProjectScene(targetId);
     const imageButton = document.getElementById(`similar-scene-generate-image-${targetId}`);
+    const imagePrimaryCreditEl = document.getElementById(`similar-scene-create-image-primary-credit-${targetId}`);
     const videoButtons = [
         document.getElementById(`similar-scene-generate-video-${targetId}`),
         document.getElementById(`similar-scene-generate-video-image-${targetId}`),
         document.getElementById(`similar-scene-generate-video-text-${targetId}`),
     ].filter(Boolean);
+    const videoCreditEls = [
+        document.getElementById(`similar-scene-generate-video-credit-${targetId}`),
+        document.getElementById(`similar-scene-generate-video-image-credit-${targetId}`),
+        document.getElementById(`similar-scene-generate-video-text-credit-${targetId}`),
+    ].filter(Boolean);
     if (!scene) {
         _setInlineButtonCredit(imageButton, "");
+        _setCreateButtonCreditElement(imagePrimaryCreditEl, "", "ready", true);
         videoButtons.forEach((button) => _setInlineButtonCredit(button, ""));
+        videoCreditEls.forEach((creditEl) => _setCreateButtonCreditElement(creditEl, "", "ready", true));
         return;
     }
 
@@ -5862,12 +5871,22 @@ async function updateSimilarSceneActionCreditEstimate(sceneId) {
         ),
     ]);
 
+    _setInlineButtonCredit(imageButton, "");
+    videoButtons.forEach((button) => _setInlineButtonCredit(button, ""));
+
     if (imageEstimate) {
-        _setInlineButtonCredit(imageButton, imageEstimate.label, imageEstimate.kind);
+        _setCreateButtonCreditElement(imagePrimaryCreditEl, imageEstimate.label, imageEstimate.kind);
+    } else {
+        _setCreateButtonCreditElement(imagePrimaryCreditEl, "", "ready", true);
     }
+
     if (videoEstimate) {
-        videoButtons.forEach((button) => {
-            _setInlineButtonCredit(button, videoEstimate.label, videoEstimate.kind);
+        videoCreditEls.forEach((creditEl) => {
+            _setCreateButtonCreditElement(creditEl, videoEstimate.label, videoEstimate.kind);
+        });
+    } else {
+        videoCreditEls.forEach((creditEl) => {
+            _setCreateButtonCreditElement(creditEl, "", "ready", true);
         });
     }
 }
@@ -11777,7 +11796,7 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${frameUploadsMarkup}
                         <div id="similar-frame-create-action-${sceneId}" class="similar-reference-frame-editor-actions similar-reference-frame-create-actions" ${showFrameCreateAction ? "" : "hidden"}>
-                            <button class="similar-frame-create-btn" type="button" onclick="${framePrimaryAction}" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>${isEditingEndFrame ? "Aplicar" : "Criar imagem"}</span></button>
+                            <button id="similar-scene-create-image-primary-${sceneId}" class="similar-frame-create-btn similar-scene-create-image-primary-btn" type="button" onclick="${framePrimaryAction}" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span class="btn-create-video-label">${isEditingEndFrame ? "Aplicar" : "Criar imagem"}</span><span class="btn-create-video-credit btn-create-video-credit--compact" id="similar-scene-create-image-primary-credit-${sceneId}" data-credit-class="btn-create-video-credit btn-create-video-credit--compact" hidden></span></button>
                         </div>
                     </div>
                 </section>
@@ -11869,7 +11888,7 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button id="similar-scene-generate-image-${sceneId}" class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Criar imagem" aria-label="Criar imagem">${similarActionIcons.image}</button>
                     <div class="similar-scene-video-actions">
-                        <button id="similar-scene-generate-video-${sceneId}" class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>Gerar vídeo</span></button>
+                        <button id="similar-scene-generate-video-${sceneId}" class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.wand}<span class="btn-create-video-label">Gerar vídeo</span><span class="btn-create-video-credit" id="similar-scene-generate-video-credit-${sceneId}" hidden></span></button>
                     </div>
                 </div>
             </article>
