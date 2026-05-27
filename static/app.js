@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v569 loaded");
+console.log("[CriaVideo] app.js v570 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4602,6 +4602,7 @@ const _createCreditButtonByBadge = {
 const _createCreditRowByBadge = {
     "wizard-credit-estimate": "wizard-credit-actions",
     "script-credit-estimate": "script-credit-actions",
+};
 const _inlineCreditButtonByEstimateTarget = {
     "wizard-credit-estimate": "wizard-create-btn",
     "script-credit-estimate": "script-create-btn",
