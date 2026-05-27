@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v567 loaded");
+console.log("[CriaVideo] app.js v568 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -32372,6 +32372,7 @@ const _EDITOR_PREVIEW_SEEK_THRESHOLD = 0.05;
 const _editor = {
     projectId: 0,
     videoUrl: "",
+    _serverVideoUrl: "",
     sourceProjectTitle: "",
     editProjectName: "",
     duration: 0,
@@ -32422,6 +32423,9 @@ const _editor = {
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
     _playbackFollowRaf: 0,
+    _projectSyncToken: 0,
+    pendingProjectSync: null,
+    _localObjectUrls: [],
 };
 
 let _editorClipboard = {
@@ -33092,7 +33096,16 @@ function _editorRenderSavedDraftsModal() {
 
 function _editorHandleEditorPageEntry() {
     const workspace = document.getElementById("editor-workspace");
-    if (workspace && !workspace.hidden && Number(_editor.projectId || 0) > 0) {
+    if (
+        workspace
+        && !workspace.hidden
+        && (
+            Number(_editor.projectId || 0) > 0
+            || _editorHasPendingProjectSync()
+            || String(_editor.videoUrl || "").trim()
+            || (_editor.mediaLayers || []).length
+        )
+    ) {
         return;
     }
 
@@ -33306,10 +33319,11 @@ function _editorInferNextIdFromState() {
 }
 
 function _editorBuildDraftSnapshot() {
-    if (!_editor.projectId || !_editor.videoUrl) return null;
+    const draftVideoUrl = String(_editor._serverVideoUrl || _editor.videoUrl || "").trim();
+    if (!_editor.projectId || !draftVideoUrl) return null;
     return {
         projectId: Number(_editor.projectId || 0),
-        videoUrl: String(_editor.videoUrl || ""),
+        videoUrl: draftVideoUrl,
         sourceProjectTitle: String(_editor.sourceProjectTitle || ""),
         editProjectName: String(_editor.editProjectName || ""),
         sourceAspectRatio: String(_editor.sourceAspectRatio || "9:16"),
@@ -33326,7 +33340,10 @@ function _editorBuildDraftSnapshot() {
         subtitles: _editor.subtitles || [],
         stickers: _editor.stickers || [],
         transitions: _editor.transitions || [],
-        mediaLayers: _editor.mediaLayers || [],
+        mediaLayers: (_editor.mediaLayers || []).map((layer) => ({
+            ...layer,
+            url: String(layer?.serverUrl || layer?.server_url || layer?.url || "").trim(),
+        })),
         videoSegments: _editor.videoSegments || [],
         audioSegments: _editor.audioSegments || [],
         selectedTracks: _editor.selectedTracks || ["video"],
@@ -36071,6 +36088,327 @@ function _editorCreateImportProgressOptions({ title = "", fileName = "", uploadM
     };
 }
 
+function _editorRevokeObjectUrl(url) {
+    const raw = String(url || "").trim();
+    if (!raw.startsWith("blob:")) return;
+    try {
+        URL.revokeObjectURL(raw);
+    } catch {
+        // Ignore local preview cleanup failures.
+    }
+}
+
+function _editorReleaseLocalObjectUrls() {
+    (_editor._localObjectUrls || []).forEach((url) => {
+        _editorRevokeObjectUrl(url);
+    });
+    _editor._localObjectUrls = [];
+}
+
+function _editorSetLocalObjectUrls(urls = []) {
+    _editorReleaseLocalObjectUrls();
+    _editor._localObjectUrls = (Array.isArray(urls) ? urls : [])
+        .map((url) => String(url || "").trim())
+        .filter((url) => url.startsWith("blob:"));
+}
+
+function _editorHasPendingProjectSync() {
+    return Boolean(_editor.pendingProjectSync);
+}
+
+function _editorRefreshProjectSyncUi() {
+    const exportBtn = document.getElementById("editor-export-btn");
+    if (!exportBtn) return;
+
+    const hasPendingSync = _editorHasPendingProjectSync();
+    const hasExportableProject = Boolean(Number(_editor.projectId || 0) > 0 && String(_editor._serverVideoUrl || _editor.videoUrl || "").trim());
+    exportBtn.disabled = hasPendingSync || !hasExportableProject;
+    exportBtn.title = hasPendingSync
+        ? "Aguarde o upload inicial terminar para exportar."
+        : "Exportar vídeo";
+}
+
+function _editorCancelPendingProjectSync() {
+    _editor._projectSyncToken = Number(_editor._projectSyncToken || 0) + 1;
+    _editor.pendingProjectSync = null;
+    _editorRefreshProjectSyncUi();
+}
+
+function _editorBeginPendingProjectSync(message = "") {
+    const token = Number(_editor._projectSyncToken || 0) + 1;
+    _editor._projectSyncToken = token;
+    _editor.pendingProjectSync = {
+        token,
+        message: String(message || "").trim(),
+    };
+    _editorRefreshProjectSyncUi();
+    return token;
+}
+
+function _editorPendingProjectSyncMatches(token) {
+    return Boolean(token)
+        && Boolean(_editor.pendingProjectSync)
+        && Number(_editor._projectSyncToken || 0) === Number(token)
+        && Number(_editor.pendingProjectSync?.token || 0) === Number(token);
+}
+
+function _editorFinishPendingProjectSync(token) {
+    if (!_editorPendingProjectSyncMatches(token)) return false;
+    _editor.pendingProjectSync = null;
+    _editorRefreshProjectSyncUi();
+    return true;
+}
+
+function _editorDetectLocalMediaHasAudio(mediaEl) {
+    if (!mediaEl) return false;
+    try {
+        if (typeof mediaEl.mozHasAudio === "boolean") {
+            return mediaEl.mozHasAudio;
+        }
+        if (Number(mediaEl.webkitAudioDecodedByteCount || 0) > 0) {
+            return true;
+        }
+        if (mediaEl.audioTracks && Number(mediaEl.audioTracks.length || 0) > 0) {
+            return true;
+        }
+    } catch {
+        // Ignore feature-detection failures.
+    }
+    return false;
+}
+
+function _editorCreateLocalImportSessionKey() {
+    const randomPart = Math.random().toString(36).slice(2, 8) || "local";
+    return `editor-local-${Date.now().toString(36)}-${randomPart}`;
+}
+
+function _editorCreateLocalImportPath(sessionKey, index, kind) {
+    const safeSessionKey = String(sessionKey || "local").trim() || "local";
+    const safeIndex = Math.max(0, Number(index || 0));
+    const safeKind = String(kind || "media").trim() || "media";
+    return `__editor_local__/${safeSessionKey}/${safeIndex}-${safeKind}`;
+}
+
+function _editorCreateLocalProjectDetail({ title = "", aspectRatio = "9:16", duration = 0, videoUrl = "" } = {}) {
+    const safeTitle = String(title || "Mídia local").trim() || "Mídia local";
+    const safeAspectRatio = _normalizeSimilarAspectRatio(aspectRatio) || "9:16";
+    const safeDuration = Math.max(0.1, Number(duration || 0.1));
+    const safeVideoUrl = String(videoUrl || "").trim();
+    const renders = safeVideoUrl
+        ? [{ id: 0, video_url: safeVideoUrl, duration: safeDuration }]
+        : [];
+    return {
+        id: 0,
+        title: safeTitle,
+        aspect_ratio: safeAspectRatio,
+        track_duration: safeDuration,
+        renders,
+        scenes: [],
+    };
+}
+
+function _editorBuildLocalSyncedLayers(syncedLayers = [], localLayers = []) {
+    return (Array.isArray(syncedLayers) ? syncedLayers : []).map((layer, index) => ({
+        ...layer,
+        sync_key: String(localLayers[index]?.syncKey || localLayers[index]?.sync_key || "").trim(),
+    }));
+}
+
+function _editorApplySyncedLayerPayloads(syncedLayers = []) {
+    const syncedByKey = new Map(
+        (Array.isArray(syncedLayers) ? syncedLayers : [])
+            .map((layer) => [String(layer?.sync_key || layer?.syncKey || "").trim(), layer])
+            .filter(([key]) => key)
+    );
+    if (!syncedByKey.size) return;
+
+    _editor.mediaLayers = (_editor.mediaLayers || []).map((layer) => {
+        const syncKey = String(layer?.syncKey || layer?.sync_key || "").trim();
+        if (!syncKey || !syncedByKey.has(syncKey)) {
+            return layer;
+        }
+
+        const syncedLayer = syncedByKey.get(syncKey) || {};
+        const liveUrl = String(layer?.url || "").trim();
+        const serverUrl = String(syncedLayer?.media_url || layer?.serverUrl || layer?.server_url || "").trim();
+        return {
+            ...layer,
+            path: String(syncedLayer?.path || layer?.path || "").trim(),
+            serverUrl,
+            url: liveUrl.startsWith("blob:") ? liveUrl : (serverUrl || liveUrl),
+            name: String(syncedLayer?.name || layer?.name || "").trim(),
+            duration: Math.max(0, Number(layer?.duration || syncedLayer?.duration || 0)),
+            hasAudio: Boolean(syncedLayer?.has_audio ?? syncedLayer?.hasAudio ?? layer?.hasAudio),
+        };
+    });
+}
+
+function _editorFinalizePendingImportedProject(syncToken, payload, options = {}) {
+    if (!_editorPendingProjectSyncMatches(syncToken)) {
+        return false;
+    }
+
+    const nextProjectId = Number(payload?.project_id || 0);
+    const nextServerVideoUrl = String(payload?.video_url || "").trim();
+    if (nextProjectId > 0) {
+        _editor.projectId = nextProjectId;
+    }
+    if (nextServerVideoUrl) {
+        _editor._serverVideoUrl = nextServerVideoUrl;
+        if (!String(_editor.videoUrl || "").trim()) {
+            _editor.videoUrl = nextServerVideoUrl;
+        }
+    }
+
+    if (Array.isArray(options.syncedLayers) && options.syncedLayers.length) {
+        _editorApplySyncedLayerPayloads(options.syncedLayers);
+    }
+
+    _editorFinishPendingProjectSync(syncToken);
+    _editorScheduleDraftPersist(80);
+    _editorRefreshQuickActions();
+    _editorRefreshTrackSelectionUI();
+    return true;
+}
+
+function _editorHandlePendingImportedProjectError(syncToken, err) {
+    if (!_editorPendingProjectSyncMatches(syncToken)) {
+        return false;
+    }
+
+    _editor.pendingProjectSync = null;
+    _editorRefreshProjectSyncUi();
+    showToast(
+        "O upload inicial falhou. Continue a edição localmente e tente importar de novo antes de exportar. " + (err?.message || "erro desconhecido"),
+        "error"
+    );
+    return true;
+}
+
+async function _editorLoadLocalImportPayload(entry, sessionKey, index) {
+    const kind = String(entry?.kind || "").trim().toLowerCase();
+    const file = entry?.file;
+    if (!file || !kind) {
+        throw new Error("Arquivo local inválido para o editor.");
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    const tempPath = _editorCreateLocalImportPath(sessionKey, index, kind);
+    const syncKey = `${sessionKey}:${index}`;
+
+    try {
+        if (kind === "image") {
+            const imageMeta = await new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: Number(img.naturalWidth || 1), height: Number(img.naturalHeight || 1) });
+                img.onerror = () => reject(new Error(`Não foi possível ler a imagem local: ${file.name || "imagem"}`));
+                img.src = objectUrl;
+            });
+            return {
+                kind: "image",
+                path: tempPath,
+                media_url: objectUrl,
+                width: Math.max(1, Number(imageMeta?.width || 1)),
+                height: Math.max(1, Number(imageMeta?.height || 1)),
+                duration: 0,
+                has_audio: false,
+                name: String(file.name || `Imagem ${index + 1}`),
+                sync_key: syncKey,
+                serverUrl: "",
+            };
+        }
+
+        const elementTag = kind === "audio" ? "audio" : "video";
+        const mediaMeta = await new Promise((resolve, reject) => {
+            const mediaEl = document.createElement(elementTag);
+            const finish = () => {
+                resolve({
+                    duration: Math.max(0.1, Number(mediaEl.duration || 0.1)),
+                    width: elementTag === "video" ? Math.max(1, Number(mediaEl.videoWidth || 1)) : 1,
+                    height: elementTag === "video" ? Math.max(1, Number(mediaEl.videoHeight || 1)) : 1,
+                    hasAudio: kind === "audio" ? true : _editorDetectLocalMediaHasAudio(mediaEl),
+                });
+            };
+            mediaEl.preload = "metadata";
+            mediaEl.muted = true;
+            mediaEl.playsInline = true;
+            mediaEl.onloadedmetadata = finish;
+            mediaEl.onerror = () => reject(new Error(`Não foi possível ler a mídia local: ${file.name || "arquivo"}`));
+            mediaEl.src = objectUrl;
+            mediaEl.load();
+        });
+
+        return {
+            kind: kind === "audio" ? "audio" : "video",
+            path: tempPath,
+            media_url: objectUrl,
+            width: Math.max(1, Number(mediaMeta?.width || 1)),
+            height: Math.max(1, Number(mediaMeta?.height || 1)),
+            duration: Math.max(0.1, Number(mediaMeta?.duration || 0.1)),
+            has_audio: Boolean(mediaMeta?.hasAudio),
+            name: String(file.name || (kind === "audio" ? `Áudio ${index + 1}` : `Vídeo ${index + 1}`)),
+            sync_key: syncKey,
+            serverUrl: "",
+        };
+    } catch (err) {
+        _editorRevokeObjectUrl(objectUrl);
+        throw err;
+    }
+}
+
+async function _editorBuildLocalSingleVideoImportSession(file) {
+    const sessionKey = _editorCreateLocalImportSessionKey();
+    const payload = await _editorLoadLocalImportPayload({ kind: "video", file }, sessionKey, 0);
+    const aspectRatio = _resolveSimilarAspectRatioFromDimensions(payload.width, payload.height) || "9:16";
+    return {
+        detail: _editorCreateLocalProjectDetail({
+            title: String(file?.name || "Vídeo local"),
+            aspectRatio,
+            duration: Number(payload.duration || 0),
+            videoUrl: String(payload.media_url || ""),
+        }),
+        videoUrl: String(payload.media_url || ""),
+        objectUrls: [String(payload.media_url || "")],
+    };
+}
+
+async function _editorBuildLocalSequenceImportSession(entries = []) {
+    const orderedEntries = Array.isArray(entries) ? entries.filter((entry) => entry?.file && entry?.kind) : [];
+    if (!orderedEntries.length) {
+        throw new Error("Nenhuma mídia válida foi enviada para a timeline local.");
+    }
+
+    const sessionKey = _editorCreateLocalImportSessionKey();
+    const layers = [];
+    const objectUrls = [];
+    let totalDuration = 0;
+    let firstVisualLayer = null;
+
+    for (let index = 0; index < orderedEntries.length; index += 1) {
+        const payload = await _editorLoadLocalImportPayload(orderedEntries[index], sessionKey, index);
+        layers.push(payload);
+        objectUrls.push(String(payload.media_url || ""));
+        if (!firstVisualLayer && payload.kind !== "audio") {
+            firstVisualLayer = payload;
+        }
+        totalDuration += payload.kind === "video" || payload.kind === "audio"
+            ? Math.max(0.1, Number(payload.duration || 0.1))
+            : _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS;
+    }
+
+    const aspectRatio = _resolveSimilarAspectRatioFromDimensions(firstVisualLayer?.width || 0, firstVisualLayer?.height || 0) || "9:16";
+    return {
+        detail: _editorCreateLocalProjectDetail({
+            title: orderedEntries.length > 1 ? "Sequência de mídias" : String(orderedEntries[0]?.file?.name || "Mídia local"),
+            aspectRatio,
+            duration: totalDuration,
+            videoUrl: "",
+        }),
+        layers,
+        objectUrls,
+    };
+}
+
 async function _editorUploadSingleVideoProject(file, options = {}) {
     const formData = new FormData();
     formData.append("file", file);
@@ -36194,41 +36532,54 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
 
     try {
         if (orderedEntries.length > 1 && orderedEntries.some((entry) => entry.kind === "video")) {
-            const payload = await _editorUploadMediaSequenceProject(
-                orderedEntries,
-                _editorCreateImportProgressOptions({
-                    title: progressTitle,
-                    fileName: progressFileName,
-                    uploadMessage: "Enviando mídias para o editor...",
-                    processingMessage: "Upload concluído. Decodificando e organizando mídias...",
-                })
-            );
-            await loadEditorVideosList();
-            if (!payload?.project_id) {
-                throw new Error("Projeto do editor não foi criado para a sequência de mídias.");
-            }
             _setEditorImportProgress({
                 active: true,
-                progress: 97,
+                progress: 14,
                 title: progressTitle,
-                message: "Montando timeline e abrindo o editor...",
+                message: "Preparando a timeline local...",
+                fileName: progressFileName,
+            });
+            const localSession = await _editorBuildLocalSequenceImportSession(orderedEntries);
+            const uploadPromise = _editorUploadMediaSequenceProject(orderedEntries);
+            _setEditorImportProgress({
+                active: true,
+                progress: 62,
+                title: progressTitle,
+                message: "Abrindo o editor com mídia local...",
                 fileName: progressFileName,
                 processing: true,
             });
-            await openEditor(payload.project_id, {
+            await openEditor(0, {
                 restoreDraft: false,
-                initialMediaLayers: payload.layers || [],
-                initialImageDurationSeconds: Number(payload.image_duration_seconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS),
+                projectDetail: localSession.detail,
+                initialMediaLayers: localSession.layers,
+                initialImageDurationSeconds: _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS,
                 hideBaseVideoTrack: true,
+                allowVirtualBase: true,
+                localObjectUrls: localSession.objectUrls,
             });
+            const syncToken = _editorBeginPendingProjectSync("upload-media-sequence");
+            uploadPromise
+                .then(async (payload) => {
+                    const applied = _editorFinalizePendingImportedProject(syncToken, payload, {
+                        syncedLayers: _editorBuildLocalSyncedLayers(payload?.layers || [], localSession.layers),
+                    });
+                    await loadEditorVideosList();
+                    if (applied) {
+                        showToast("Upload concluído. Exportação liberada.", "success");
+                    }
+                })
+                .catch((err) => {
+                    _editorHandlePendingImportedProjectError(syncToken, err);
+                });
             _setEditorImportProgress({
                 active: true,
                 progress: 100,
                 title: progressTitle,
-                message: "Mídias prontas no editor.",
+                message: "Editor aberto. O upload continua em segundo plano.",
                 fileName: progressFileName,
             });
-            showToast(`${orderedEntries.length} mídia(s) importada(s) na ordem selecionada.`, "success");
+            showToast("Editor aberto com mídia local. O upload continua em segundo plano.", "info");
             return;
         }
 
@@ -36238,38 +36589,51 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
             return;
         }
 
-        const payload = await _editorUploadSingleVideoProject(
-            firstEntry.file,
-            _editorCreateImportProgressOptions({
-                title: progressTitle,
-                fileName: progressFileName,
-                uploadMessage: "Enviando vídeo para o editor...",
-                processingMessage: "Upload concluído. Decodificando vídeo...",
-            })
-        );
-        await loadEditorVideosList();
-        if (!payload?.project_id) {
-            throw new Error("Projeto do editor não foi criado para o primeiro vídeo.");
-        }
         _setEditorImportProgress({
             active: true,
-            progress: 97,
+            progress: 14,
             title: progressTitle,
-            message: "Montando timeline e abrindo o editor...",
+            message: "Preparando o vídeo local...",
+            fileName: progressFileName,
+        });
+        const localSession = await _editorBuildLocalSingleVideoImportSession(firstEntry.file);
+        const uploadPromise = _editorUploadSingleVideoProject(firstEntry.file);
+        _setEditorImportProgress({
+            active: true,
+            progress: 62,
+            title: progressTitle,
+            message: "Abrindo o editor com o vídeo local...",
             fileName: progressFileName,
             processing: true,
         });
-        await openEditor(payload.project_id, { restoreDraft: false });
+        await openEditor(0, {
+            restoreDraft: false,
+            projectDetail: localSession.detail,
+            baseVideoUrl: localSession.videoUrl,
+            localObjectUrls: localSession.objectUrls,
+        });
+        const syncToken = _editorBeginPendingProjectSync("upload-video");
+        uploadPromise
+            .then(async (payload) => {
+                const applied = _editorFinalizePendingImportedProject(syncToken, payload);
+                await loadEditorVideosList();
+                if (applied) {
+                    showToast("Upload concluído. Exportação liberada.", "success");
+                }
+            })
+            .catch((err) => {
+                _editorHandlePendingImportedProjectError(syncToken, err);
+            });
 
         if (!restEntries.length) {
             _setEditorImportProgress({
                 active: true,
                 progress: 100,
                 title: progressTitle,
-                message: "Vídeo pronto no editor.",
+                message: "Editor aberto. O upload continua em segundo plano.",
                 fileName: progressFileName,
             });
-            showToast("Mídia enviada com sucesso.", "success");
+            showToast("Editor aberto com o vídeo local. O upload continua em segundo plano.", "info");
             return;
         }
 
@@ -38964,6 +39328,8 @@ function _editorPushMediaLayer(kind, payload, options = {}) {
         aspectRatio,
         volume: 100,
         audioOnly: false,
+        syncKey: String(payload?.sync_key || payload?.syncKey || "").trim(),
+        serverUrl: String(payload?.server_url || payload?.serverUrl || payload?.media_url || "").trim(),
         hasAudio: safeKind === "audio"
             ? true
             : Boolean(payload?.hasAudio ?? payload?.has_audio ?? (safeKind === "video")),
@@ -39270,15 +39636,22 @@ async function openEditor(projectId, options = {}) {
         const initialMediaLayers = Array.isArray(options?.initialMediaLayers) ? options.initialMediaLayers : [];
         const initialImageDurationSeconds = Math.max(0.5, Number(options?.initialImageDurationSeconds || _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS));
         const hideBaseVideoTrack = Boolean(options?.hideBaseVideoTrack);
-        const detail = await api(`/video/projects/${projectId}`);
+        const detail = options?.projectDetail && typeof options.projectDetail === "object"
+            ? options.projectDetail
+            : await api(`/video/projects/${projectId}`);
         const render = _pickLatestAvailableRender(detail.renders || []);
-        if (!render || !render.video_url) {
+        const baseVideoUrl = String(options?.baseVideoUrl || render?.video_url || "").trim();
+        const allowVirtualBase = Boolean(options?.allowVirtualBase || (!baseVideoUrl && hideBaseVideoTrack));
+        if (!baseVideoUrl && !allowVirtualBase) {
             showToast("Este vídeo não tem arquivo disponível.", "error");
             return;
         }
+        _editorCancelPendingProjectSync();
+        _editorReleaseLocalObjectUrls();
         // Reset editor state
-        _editor.projectId = projectId;
-        _editor.videoUrl = render.video_url;
+        _editor.projectId = Number(projectId || 0);
+        _editor.videoUrl = baseVideoUrl;
+        _editor._serverVideoUrl = String(options?.serverVideoUrl || render?.video_url || "").trim();
         _editor.sourceProjectTitle = String(detail.title || "").trim();
         _editor.editProjectName = "";
         _editorProjectNameEditState.active = false;
@@ -39326,6 +39699,7 @@ async function openEditor(projectId, options = {}) {
         _editor.mobileControlMode = "tools";
         _editor._virtualPlaybackActive = false;
         _editorStopPlaybackFollowLoop();
+        _editorSetLocalObjectUrls(options?.localObjectUrls || []);
         _editorInlineTextEditId = "";
         _editorInlineTextEditPendingFocus = "";
         _editorMobileTrackVolumeOpen = "";
@@ -39346,7 +39720,11 @@ async function openEditor(projectId, options = {}) {
         video.playsInline = true;
         video.setAttribute("playsinline", "true");
         video.setAttribute("webkit-playsinline", "true");
-        video.src = _editor.videoUrl;
+        video.pause();
+        video.removeAttribute("src");
+        if (_editor.videoUrl) {
+            video.src = _editor.videoUrl;
+        }
         video.load();
         let editorReady = false;
         let resolveOpen;
@@ -39403,6 +39781,7 @@ async function openEditor(projectId, options = {}) {
             _editorApplyPlaybackRate(_editor.playbackRate, { announce: false });
             _editorApplyTimelineFrame(Number(_editor.timelineTime || 0), false);
             _editorRefreshQuickActions();
+            _editorRefreshProjectSyncUi();
             _editorRenderTimeline();
             _editorCenterTimelineOnTime(Number(_editor.timelineTime || 0));
             _editorSelectTool(_editorResolveInitialActiveTool(restored ? _editor.activeTool : "trim", _editor.selectedClip));
@@ -39412,16 +39791,24 @@ async function openEditor(projectId, options = {}) {
             refreshEditorPreviewFrame();
             resolveOpen?.();
         };
-        video.onloadedmetadata = finalizeEditorOpen;
-        video.onloadeddata = () => {
-            if (!editorReady) {
-                finalizeEditorOpen();
-            }
-            refreshEditorPreviewFrame();
-        };
-        video.oncanplay = refreshEditorPreviewFrame;
-        video.onerror = finalizeEditorOpen;
-        setTimeout(finalizeEditorOpen, 1500);
+        if (_editor.videoUrl) {
+            video.onloadedmetadata = finalizeEditorOpen;
+            video.onloadeddata = () => {
+                if (!editorReady) {
+                    finalizeEditorOpen();
+                }
+                refreshEditorPreviewFrame();
+            };
+            video.oncanplay = refreshEditorPreviewFrame;
+            video.onerror = finalizeEditorOpen;
+            setTimeout(finalizeEditorOpen, 1500);
+        } else {
+            video.onloadedmetadata = null;
+            video.onloadeddata = null;
+            video.oncanplay = null;
+            video.onerror = null;
+            setTimeout(finalizeEditorOpen, 0);
+        }
         _updateUndoRedoBtns();
         await readyPromise;
     } catch (err) {
@@ -39452,6 +39839,9 @@ function closeEditor() {
         clearTimeout(_editorDraftPersistTimer);
         _editorDraftPersistTimer = 0;
     }
+    _editorCancelPendingProjectSync();
+    _editorReleaseLocalObjectUrls();
+    _editor._serverVideoUrl = "";
     document.getElementById("editor-select-view").hidden = false;
     document.getElementById("editor-workspace").hidden = true;
     document.getElementById("page-editor")?.classList.remove("editor-fullscreen");
@@ -39487,6 +39877,7 @@ function closeEditor() {
     _editor.mobileControlMode = "tools";
     _editorResetSourceWaveformState();
     _editorApplyMobileControlMode();
+    _editorRefreshProjectSyncUi();
 }
 
 // ---------- Format time ----------
@@ -39682,7 +40073,11 @@ function _editorCyclePlaybackRate() {
 // ---------- Play/Pause ----------
 function _editorTogglePlay() {
     const video = document.getElementById("editor-video");
-    if (!video.src) return;
+    if (!video) return;
+    const hasVideoSource = Boolean(String(video.src || "").trim());
+    if (!hasVideoSource && _editorGetTimelineDuration() <= 0.05) {
+        return;
+    }
     _editorApplyPlaybackRate(_editor.playbackRate, { announce: false });
 
     if (_editor.playing) {
@@ -39722,7 +40117,7 @@ function _editorTogglePlay() {
     _editorSyncBaseVideoPreviewVolume(startTime, true);
 
     const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
-    if (_editorShouldUseVirtualVideoPlayback() || startTime > videoPlaybackEnd + 0.01) {
+    if (!hasVideoSource || _editorShouldUseVirtualVideoPlayback() || startTime > videoPlaybackEnd + 0.01) {
         _editorStartVirtualTimelinePlayback(startTime);
     } else {
         _editor._virtualPlaybackActive = false;
@@ -45077,7 +45472,14 @@ function _editorHandleTimelineWheel(event) {
 
 // ---------- Export ----------
 async function _editorExport() {
-    if (!_editor.projectId || !_editor.videoUrl) return;
+    if (_editorHasPendingProjectSync()) {
+        showToast("O upload inicial ainda está sincronizando. Aguarde mais alguns segundos para exportar.", "info");
+        return;
+    }
+    if (!_editor.projectId || !String(_editor._serverVideoUrl || _editor.videoUrl || "").trim()) {
+        showToast("O projeto ainda não terminou de sincronizar com o servidor.", "error");
+        return;
+    }
 
     const normalizedTimeline = _editorCollapseVisibleTimelineDeadZones();
     if (normalizedTimeline) {
@@ -45530,6 +45932,7 @@ function _bindEditorEvents() {
         _editorPersistDraftNow();
     });
 
+    _editorRefreshProjectSyncUi();
     _editorRefreshQuickActions();
     _editorRefreshTrackSelectionUI();
     _editorApplyMobileControlMode();
