@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260527-07">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260527-08">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 574;
+        var REQUIRED_VER = 575;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2509,7 +2509,7 @@
                                 <p id="similar-unified-prompt-meta" class="similar-unified-prompt-meta">Transforme as partes analisadas em um prompt continuo.</p>
                             </div>
                             <div class="similar-unified-prompt-actions">
-                                <button class="btn btn-secondary btn-sm" id="similar-copy-unified-prompt" type="button">Copiar prompt</button>
+                                <button class="btn btn-secondary btn-sm" id="similar-optimize-unified-prompt" type="button">Otimizar</button>
                             </div>
                         </div>
                         <textarea id="similar-unified-prompt-text" class="input similar-unified-prompt-text" rows="8" spellcheck="false" placeholder="Use o botao A+ para transformar a analise em um prompt unico."></textarea>
@@ -3006,6 +3006,45 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('modal-copy-format')" type="button">Cancelar</button>
                 <button class="btn btn-primary" onclick="createFormatCopy()" type="button">Criar cópia</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-similar-unified-optimize" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Otimizar prompt em roteiro</h3>
+                <button id="similar-optimize-unified-prompt-close" class="modal-close" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="muted">O roteiro final vai substituir o Prompt unico atual com um script cena a cena.</p>
+                <div class="form-group">
+                    <label for="similar-optimize-unified-prompt-aspect">Formato</label>
+                    <select id="similar-optimize-unified-prompt-aspect" class="input">
+                        <option value="9:16">9:16 (Reels / TikTok)</option>
+                        <option value="16:9">16:9 (YouTube)</option>
+                        <option value="1:1">1:1 (Feed)</option>
+                        <option value="4:5">4:5 (Feed vertical)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="similar-optimize-unified-prompt-total">Duracao total</label>
+                    <input id="similar-optimize-unified-prompt-total" class="input" type="number" min="5" max="180" step="5" value="30">
+                </div>
+                <div class="form-group">
+                    <label for="similar-optimize-unified-prompt-scene">Tempo por cena</label>
+                    <select id="similar-optimize-unified-prompt-scene" class="input">
+                        <option value="5">5 segundos</option>
+                        <option value="10">10 segundos</option>
+                        <option value="15">15 segundos</option>
+                    </select>
+                </div>
+                <p id="similar-optimize-unified-prompt-summary" class="field-hint">Defina o formato e o ritmo para montar o roteiro.</p>
+                <p id="similar-optimize-unified-prompt-status" class="muted" hidden></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="similar-optimize-unified-prompt-cancel" type="button">Cancelar</button>
+                <button class="btn btn-primary" id="similar-optimize-unified-prompt-submit" type="button">Gerar roteiro</button>
             </div>
         </div>
     </div>
@@ -4580,8 +4619,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260527-07"></script>
-    <script src="/video/static/pwa.js?v=20260527-07"></script>
+    <script src="/video/static/app.js?v=20260527-08"></script>
+    <script src="/video/static/pwa.js?v=20260527-08"></script>
 </body>
 </html>
 

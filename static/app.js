@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v574 loaded");
+console.log("[CriaVideo] app.js v575 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4365,6 +4365,7 @@ let similarState = {
     unifiedFramePendingImageUploads: [],
     unifiedAutoImageKey: "",
     unifiedAutoImageStatus: "idle",
+    unifiedOptimizeBusy: false,
 };
 
 function _createLiveSessionDefaultState() {
@@ -6663,9 +6664,44 @@ function initCreateWizard() {
         similarBuildUnifiedPromptBtn.addEventListener("click", similarBuildUnifiedPrompt);
     }
 
-    const similarCopyUnifiedPromptBtn = document.getElementById("similar-copy-unified-prompt");
-    if (similarCopyUnifiedPromptBtn) {
-        similarCopyUnifiedPromptBtn.addEventListener("click", similarCopyUnifiedPrompt);
+    const similarOptimizeUnifiedPromptBtn = document.getElementById("similar-optimize-unified-prompt");
+    if (similarOptimizeUnifiedPromptBtn) {
+        similarOptimizeUnifiedPromptBtn.addEventListener("click", openSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptAspect = document.getElementById("similar-optimize-unified-prompt-aspect");
+    if (similarOptimizeUnifiedPromptAspect) {
+        similarOptimizeUnifiedPromptAspect.addEventListener("change", _syncSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptTotal = document.getElementById("similar-optimize-unified-prompt-total");
+    if (similarOptimizeUnifiedPromptTotal) {
+        similarOptimizeUnifiedPromptTotal.addEventListener("input", _syncSimilarOptimizeUnifiedPromptModal);
+        similarOptimizeUnifiedPromptTotal.addEventListener("change", _syncSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptScene = document.getElementById("similar-optimize-unified-prompt-scene");
+    if (similarOptimizeUnifiedPromptScene) {
+        similarOptimizeUnifiedPromptScene.addEventListener("change", _syncSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptCloseBtn = document.getElementById("similar-optimize-unified-prompt-close");
+    if (similarOptimizeUnifiedPromptCloseBtn) {
+        similarOptimizeUnifiedPromptCloseBtn.addEventListener("click", () => {
+            closeSimilarOptimizeUnifiedPromptModal();
+        });
+    }
+
+    const similarOptimizeUnifiedPromptCancelBtn = document.getElementById("similar-optimize-unified-prompt-cancel");
+    if (similarOptimizeUnifiedPromptCancelBtn) {
+        similarOptimizeUnifiedPromptCancelBtn.addEventListener("click", () => {
+            closeSimilarOptimizeUnifiedPromptModal();
+        });
+    }
+
+    const similarOptimizeUnifiedPromptSubmitBtn = document.getElementById("similar-optimize-unified-prompt-submit");
+    if (similarOptimizeUnifiedPromptSubmitBtn) {
+        similarOptimizeUnifiedPromptSubmitBtn.addEventListener("click", similarOptimizeUnifiedPrompt);
     }
 
     const similarGenerateUnifiedSceneBtn = document.getElementById("similar-generate-unified-scene");
@@ -8811,9 +8847,172 @@ function _clearSimilarUnifiedPrompt() {
     _clearSimilarUnifiedFramePendingUploads();
     similarState.unifiedAutoImageKey = "";
     similarState.unifiedAutoImageStatus = "idle";
+    similarState.unifiedOptimizeBusy = false;
     _setSimilarUnifiedUploadStatus("");
+    _setSimilarOptimizeUnifiedPromptModalBusy(false);
+    closeSimilarOptimizeUnifiedPromptModal(true);
     _syncSimilarUnifiedUploadUi();
     if (wrapEl) wrapEl.hidden = true;
+}
+
+function _setSimilarOptimizeUnifiedPromptModalBusy(isBusy, message = "") {
+    similarState.unifiedOptimizeBusy = !!isBusy;
+
+    const submitBtn = document.getElementById("similar-optimize-unified-prompt-submit");
+    const closeBtn = document.getElementById("similar-optimize-unified-prompt-close");
+    const cancelBtn = document.getElementById("similar-optimize-unified-prompt-cancel");
+    const aspectEl = document.getElementById("similar-optimize-unified-prompt-aspect");
+    const totalEl = document.getElementById("similar-optimize-unified-prompt-total");
+    const sceneEl = document.getElementById("similar-optimize-unified-prompt-scene");
+    const statusEl = document.getElementById("similar-optimize-unified-prompt-status");
+
+    [closeBtn, cancelBtn, aspectEl, totalEl, sceneEl].forEach((el) => {
+        if (el) el.disabled = !!isBusy;
+    });
+
+    if (submitBtn) {
+        submitBtn.textContent = isBusy ? "Otimizando..." : "Gerar roteiro";
+        submitBtn.disabled = !!isBusy || submitBtn.dataset.invalid === "true";
+    }
+
+    const nextMessage = String(message || "").trim();
+    if (statusEl) {
+        if (nextMessage) {
+            statusEl.hidden = false;
+            statusEl.textContent = nextMessage;
+        } else if (!isBusy) {
+            statusEl.hidden = true;
+            statusEl.textContent = "";
+        }
+    }
+}
+
+function _getSimilarOptimizeUnifiedPromptDefaults(project) {
+    const tags = _safeSimilarTags(project?.tags);
+    const rawAspectRatio = String(
+        tags.similar_unified_prompt_story_aspect_ratio
+        || project?.aspect_ratio
+        || document.getElementById("similar-aspect")?.value
+        || "9:16",
+    ).trim();
+    const aspectRatio = ["9:16", "16:9", "1:1", "4:5"].includes(rawAspectRatio) ? rawAspectRatio : "9:16";
+
+    const rawSceneDuration = parseInt(tags.similar_unified_prompt_story_scene_duration || 5, 10) || 5;
+    const sceneDuration = [5, 10, 15].includes(rawSceneDuration) ? rawSceneDuration : 5;
+
+    const durationSeed = Number(
+        tags.similar_unified_prompt_story_total_duration
+        || tags.similar_total_duration
+        || project?.track_duration
+        || similarState.sourceVideoDurationSeconds
+        || 30,
+    ) || 30;
+    const roundedDuration = Math.max(sceneDuration, Math.ceil(durationSeed / 5) * 5 || 30);
+    const maxDuration = Math.min(180, sceneDuration * 12);
+    const totalDuration = Math.max(sceneDuration, Math.min(roundedDuration, maxDuration));
+
+    return { aspectRatio, totalDuration, sceneDuration };
+}
+
+function _syncSimilarOptimizeUnifiedPromptModal() {
+    const aspectEl = document.getElementById("similar-optimize-unified-prompt-aspect");
+    const totalEl = document.getElementById("similar-optimize-unified-prompt-total");
+    const sceneEl = document.getElementById("similar-optimize-unified-prompt-scene");
+    const summaryEl = document.getElementById("similar-optimize-unified-prompt-summary");
+    const submitBtn = document.getElementById("similar-optimize-unified-prompt-submit");
+
+    const aspectRatio = String(aspectEl?.value || "9:16").trim() || "9:16";
+    const totalDuration = parseInt(totalEl?.value || "0", 10) || 0;
+    const sceneDuration = parseInt(sceneEl?.value || "0", 10) || 0;
+
+    let invalidMessage = "";
+    let summaryText = "Defina o formato e o ritmo para montar o roteiro.";
+    let sceneCount = 0;
+
+    if (![5, 10, 15].includes(sceneDuration)) {
+        invalidMessage = "Escolha 5, 10 ou 15 segundos por cena.";
+    } else if (totalDuration < sceneDuration) {
+        invalidMessage = "A duracao total precisa ser maior ou igual ao tempo por cena.";
+    } else {
+        sceneCount = Math.ceil(totalDuration / sceneDuration);
+        if (sceneCount > 12) {
+            invalidMessage = "Use no maximo 12 cenas por roteiro.";
+        } else {
+            const lastSceneDuration = totalDuration - ((sceneCount - 1) * sceneDuration);
+            summaryText = `Serao ${sceneCount} cena(s) em ${aspectRatio}. Cada bloco seguira ${sceneDuration}s`;
+            if (lastSceneDuration !== sceneDuration) {
+                summaryText += `, com a ultima cena em ${lastSceneDuration}s.`;
+            } else {
+                summaryText += ".";
+            }
+        }
+    }
+
+    if (summaryEl) {
+        summaryEl.textContent = invalidMessage || summaryText;
+    }
+    if (submitBtn) {
+        submitBtn.dataset.invalid = invalidMessage ? "true" : "false";
+        submitBtn.disabled = similarState.unifiedOptimizeBusy || !!invalidMessage;
+    }
+
+    return {
+        aspectRatio,
+        totalDuration,
+        sceneDuration,
+        sceneCount,
+        invalidMessage,
+    };
+}
+
+function openSimilarOptimizeUnifiedPromptModal() {
+    const projectId = Number(similarState.projectId || 0);
+    const project = similarState.lastProjectSnapshot;
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptText = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+
+    if (!projectId || !promptText) {
+        showToast("Gere o prompt unico antes de otimizar.", "error");
+        return;
+    }
+
+    const aspectEl = document.getElementById("similar-optimize-unified-prompt-aspect");
+    const totalEl = document.getElementById("similar-optimize-unified-prompt-total");
+    const sceneEl = document.getElementById("similar-optimize-unified-prompt-scene");
+    const statusEl = document.getElementById("similar-optimize-unified-prompt-status");
+    const defaults = _getSimilarOptimizeUnifiedPromptDefaults(project);
+
+    if (aspectEl) aspectEl.value = defaults.aspectRatio;
+    if (totalEl) totalEl.value = String(defaults.totalDuration);
+    if (sceneEl) sceneEl.value = String(defaults.sceneDuration);
+    if (statusEl) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+    }
+
+    _setSimilarOptimizeUnifiedPromptModalBusy(false);
+    _syncSimilarOptimizeUnifiedPromptModal();
+    openModal("modal-similar-unified-optimize");
+    setTimeout(() => {
+        document.getElementById("similar-optimize-unified-prompt-total")?.focus();
+    }, 0);
+}
+
+function closeSimilarOptimizeUnifiedPromptModal(force = false) {
+    if (similarState.unifiedOptimizeBusy && !force) {
+        return;
+    }
+
+    const statusEl = document.getElementById("similar-optimize-unified-prompt-status");
+    if (statusEl) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+    }
+
+    closeModal("modal-similar-unified-optimize");
+    if (force || !similarState.unifiedOptimizeBusy) {
+        _setSimilarOptimizeUnifiedPromptModalBusy(false);
+    }
 }
 
 function _setSimilarUnifiedUploadStatus(message = "", kind = "running") {
@@ -9134,12 +9333,20 @@ function _renderSimilarUnifiedReferencePanel(project) {
 }
 
 function _buildSimilarUnifiedPromptTags(baseTags, response) {
-    const promptText = String(response?.prompt || "").trim();
-    const promptSource = String(response?.source || "").trim();
-    const generatedAt = String(response?.generated_at || "").trim();
-    const startFrameUrl = String(response?.start_frame_url || "").trim();
-    const endFrameUrl = String(response?.end_frame_url || "").trim();
-    const referenceFrameCount = Number(response?.reference_frame_count || 0) || 0;
+    const responseData = response && typeof response === "object" ? response : {};
+    const hasResponseKey = (key) => Object.prototype.hasOwnProperty.call(responseData, key);
+    const promptText = String(responseData.prompt || "").trim();
+    const promptSource = String(responseData.source || "").trim();
+    const generatedAt = String(responseData.generated_at || "").trim();
+    const startFrameUrl = String(responseData.start_frame_url || "").trim();
+    const endFrameUrl = String(responseData.end_frame_url || "").trim();
+    const referenceFrameCount = Number(responseData.reference_frame_count || 0) || 0;
+    const promptSeed = String(responseData.prompt_seed || "").trim();
+    const promptSeedSource = String(responseData.prompt_seed_source || "").trim();
+    const optimizedAspectRatio = String(responseData.aspect_ratio || "").trim();
+    const optimizedTotalDuration = Number(responseData.total_duration_seconds || 0) || 0;
+    const optimizedSceneDuration = Number(responseData.scene_duration_seconds || 0) || 0;
+    const optimizedSceneCount = Number(responseData.scene_count || 0) || 0;
     const nextTags = {
         ..._safeSimilarTags(baseTags),
         similar_unified_prompt: promptText,
@@ -9159,22 +9366,56 @@ function _buildSimilarUnifiedPromptTags(baseTags, response) {
         delete nextTags[key];
     });
 
-    if (startFrameUrl) {
-        nextTags.similar_unified_start_frame_url = startFrameUrl;
+    if (promptSource.startsWith("optimized")) {
+        if (optimizedAspectRatio) {
+            nextTags.similar_unified_prompt_story_aspect_ratio = optimizedAspectRatio;
+        }
+        if (optimizedTotalDuration > 0) {
+            nextTags.similar_unified_prompt_story_total_duration = optimizedTotalDuration;
+        }
+        if (optimizedSceneDuration > 0) {
+            nextTags.similar_unified_prompt_story_scene_duration = optimizedSceneDuration;
+        }
+        if (optimizedSceneCount > 0) {
+            nextTags.similar_unified_prompt_story_scene_count = optimizedSceneCount;
+        }
+        if (promptSeed) {
+            nextTags.similar_unified_prompt_seed = promptSeed;
+        }
+        if (promptSeedSource) {
+            nextTags.similar_unified_prompt_seed_source = promptSeedSource;
+        }
     } else {
-        delete nextTags.similar_unified_start_frame_url;
+        delete nextTags.similar_unified_prompt_seed;
+        delete nextTags.similar_unified_prompt_seed_source;
+        delete nextTags.similar_unified_prompt_story_aspect_ratio;
+        delete nextTags.similar_unified_prompt_story_total_duration;
+        delete nextTags.similar_unified_prompt_story_scene_duration;
+        delete nextTags.similar_unified_prompt_story_scene_count;
     }
 
-    if (endFrameUrl) {
-        nextTags.similar_unified_end_frame_url = endFrameUrl;
-    } else {
-        delete nextTags.similar_unified_end_frame_url;
+    if (hasResponseKey("start_frame_url")) {
+        if (startFrameUrl) {
+            nextTags.similar_unified_start_frame_url = startFrameUrl;
+        } else {
+            delete nextTags.similar_unified_start_frame_url;
+        }
     }
 
-    if (referenceFrameCount > 0) {
-        nextTags.similar_unified_reference_frame_count = referenceFrameCount;
-    } else {
-        delete nextTags.similar_unified_reference_frame_count;
+    if (hasResponseKey("end_frame_url")) {
+        if (endFrameUrl) {
+            nextTags.similar_unified_end_frame_url = endFrameUrl;
+        } else {
+            delete nextTags.similar_unified_end_frame_url;
+        }
+    }
+
+    if (hasResponseKey("reference_frame_count")) {
+        if (referenceFrameCount > 0) {
+            nextTags.similar_unified_reference_frame_count = referenceFrameCount;
+        } else {
+            delete nextTags.similar_unified_reference_frame_count;
+        }
     }
 
     return nextTags;
@@ -9209,6 +9450,34 @@ function _mergeSimilarUnifiedPromptTags(rawTags, fallbackTags) {
 
     if ((canMergePrompt || currentPrompt === fallbackPrompt) && !String(nextTags.similar_unified_prompt_generated_at || "").trim() && fallbackGeneratedAt) {
         nextTags.similar_unified_prompt_generated_at = fallbackGeneratedAt;
+    }
+
+    if (canMergePrompt || currentPrompt === fallbackPrompt) {
+        const fallbackSeed = String(fallback.similar_unified_prompt_seed || "").trim();
+        const fallbackSeedSource = String(fallback.similar_unified_prompt_seed_source || "").trim();
+        const fallbackAspectRatio = String(fallback.similar_unified_prompt_story_aspect_ratio || "").trim();
+        const fallbackTotalDuration = Number(fallback.similar_unified_prompt_story_total_duration || 0) || 0;
+        const fallbackSceneDuration = Number(fallback.similar_unified_prompt_story_scene_duration || 0) || 0;
+        const fallbackSceneCount = Number(fallback.similar_unified_prompt_story_scene_count || 0) || 0;
+
+        if (!String(nextTags.similar_unified_prompt_seed || "").trim() && fallbackSeed) {
+            nextTags.similar_unified_prompt_seed = fallbackSeed;
+        }
+        if (!String(nextTags.similar_unified_prompt_seed_source || "").trim() && fallbackSeedSource) {
+            nextTags.similar_unified_prompt_seed_source = fallbackSeedSource;
+        }
+        if (!String(nextTags.similar_unified_prompt_story_aspect_ratio || "").trim() && fallbackAspectRatio) {
+            nextTags.similar_unified_prompt_story_aspect_ratio = fallbackAspectRatio;
+        }
+        if (!(Number(nextTags.similar_unified_prompt_story_total_duration || 0) > 0) && fallbackTotalDuration > 0) {
+            nextTags.similar_unified_prompt_story_total_duration = fallbackTotalDuration;
+        }
+        if (!(Number(nextTags.similar_unified_prompt_story_scene_duration || 0) > 0) && fallbackSceneDuration > 0) {
+            nextTags.similar_unified_prompt_story_scene_duration = fallbackSceneDuration;
+        }
+        if (!(Number(nextTags.similar_unified_prompt_story_scene_count || 0) > 0) && fallbackSceneCount > 0) {
+            nextTags.similar_unified_prompt_story_scene_count = fallbackSceneCount;
+        }
     }
 
     if (canMergeFrames) {
@@ -9251,17 +9520,37 @@ function _renderSimilarUnifiedPrompt(project) {
 
     const source = String(tags.similar_unified_prompt_source || "").trim();
     const generatedAt = _formatSimilarUnifiedPromptGeneratedAt(tags.similar_unified_prompt_generated_at);
-    let metaText = analysisMode === "general"
-        ? source === "ai"
-            ? "Prompt geral sintetizado pela IA a partir do video inteiro."
-            : source === "fallback"
-                ? "Prompt geral montado com o fallback local a partir da analise salva."
-                : "Prompt geral derivado da analise atual."
-        : source === "ai"
-            ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
-            : source === "fallback"
-                ? "Prompt unico montado com o fallback local a partir da analise salva."
-                : "Prompt unico derivado da analise atual.";
+    const optimizedAspectRatio = String(tags.similar_unified_prompt_story_aspect_ratio || "").trim();
+    const optimizedTotalDuration = Number(tags.similar_unified_prompt_story_total_duration || 0) || 0;
+    const optimizedSceneDuration = Number(tags.similar_unified_prompt_story_scene_duration || 0) || 0;
+    const optimizedSceneCount = Number(tags.similar_unified_prompt_story_scene_count || 0) || 0;
+    let metaText = "";
+
+    if (source.startsWith("optimized")) {
+        metaText = source === "optimized_ai"
+            ? "Roteiro otimizado pela IA a partir do prompt atual."
+            : "Roteiro otimizado com fallback local a partir do prompt atual.";
+        const timingBits = [];
+        if (optimizedAspectRatio) timingBits.push(`formato ${optimizedAspectRatio}`);
+        if (optimizedTotalDuration > 0) timingBits.push(`${optimizedTotalDuration}s totais`);
+        if (optimizedSceneDuration > 0) timingBits.push(`cenas de ${optimizedSceneDuration}s`);
+        if (optimizedSceneCount > 0) timingBits.push(`${optimizedSceneCount} cenas`);
+        if (timingBits.length) {
+            metaText = `${metaText} ${timingBits.join(", ")}.`;
+        }
+    } else {
+        metaText = analysisMode === "general"
+            ? source === "ai"
+                ? "Prompt geral sintetizado pela IA a partir do video inteiro."
+                : source === "fallback"
+                    ? "Prompt geral montado com o fallback local a partir da analise salva."
+                    : "Prompt geral derivado da analise atual."
+            : source === "ai"
+                ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
+                : source === "fallback"
+                    ? "Prompt unico montado com o fallback local a partir da analise salva."
+                    : "Prompt unico derivado da analise atual.";
+    }
     if (generatedAt) {
         metaText = `${metaText} Atualizado em ${generatedAt}.`;
     }
@@ -11535,6 +11824,7 @@ function _refreshSimilarButtonsDisabled(disabled) {
         "similar-start-analysis-general",
         "similar-start-analysis-scenes",
         "similar-build-unified-prompt",
+        "similar-optimize-unified-prompt",
         "similar-unified-create-image-button",
         "similar-generate-unified-scene",
         "similar-generate-all",
@@ -15243,31 +15533,69 @@ async function similarBuildUnifiedPrompt() {
     }
 }
 
-async function similarCopyUnifiedPrompt() {
-    const textEl = document.getElementById("similar-unified-prompt-text");
-    const promptText = String(textEl?.value || "").trim();
+async function similarOptimizeUnifiedPrompt() {
+    const projectId = Number(similarState.projectId || 0);
+    const project = similarState.lastProjectSnapshot;
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptText = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+
+    if (!projectId) {
+        alert("Analise o video antes de otimizar o prompt unico.");
+        return;
+    }
     if (!promptText) {
-        showToast("Gere o prompt unico antes de copiar.", "error");
+        showToast("Gere o prompt unico antes de otimizar.", "error");
         return;
     }
 
+    const config = _syncSimilarOptimizeUnifiedPromptModal();
+    if (config.invalidMessage) {
+        showToast(config.invalidMessage, "error");
+        return;
+    }
+
+    _refreshSimilarButtonsDisabled(true);
+    _setSimilarOptimizeUnifiedPromptModalBusy(true, "A IA esta montando um roteiro completo com base no prompt atual...");
+    _setSimilarStatus("Otimizando o prompt em roteiro...", "running");
+    _queueSimilarScroll({ preferUnified: true, preferStatus: true });
+
     try {
-        if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(promptText);
-        } else if (textEl) {
-            textEl.focus();
-            textEl.select();
-            textEl.setSelectionRange(0, textEl.value.length);
-            const copied = document.execCommand("copy");
-            if (!copied) {
-                throw new Error("Falha ao copiar");
-            }
-        } else {
-            throw new Error("Campo indisponivel");
+        const response = await api(`/video/projects/${projectId}/similar/unified-prompt/optimize`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                aspect_ratio: config.aspectRatio,
+                total_duration_seconds: config.totalDuration,
+                scene_duration_seconds: config.sceneDuration,
+                prompt_override: promptText,
+            }),
+        });
+
+        const optimizedPrompt = String(response?.prompt || "").trim();
+        if (!optimizedPrompt) {
+            throw new Error("Resposta invalida ao otimizar prompt unico");
         }
-        showToast("Prompt unico copiado.", "success");
+
+        const nextTags = _buildSimilarUnifiedPromptTags(project?.tags, response);
+        const nextProject = {
+            ...(project || {}),
+            tags: nextTags,
+        };
+
+        similarState.lastProjectSnapshot = nextProject;
+        _renderSimilarUnifiedPrompt(nextProject);
+        await _refreshSimilarProject({ silent: true, preserveUnifiedTags: nextTags });
+        closeSimilarOptimizeUnifiedPromptModal(true);
+        _setSimilarStatus("", "running");
+        showToast("Roteiro otimizado aplicado ao prompt unico.", "success");
     } catch (error) {
-        showToast(`Erro ao copiar prompt unico: ${error.message || error}`, "error");
+        _setSimilarStatus(`Erro ao otimizar prompt unico: ${error.message}`, "error");
+        showToast(`Erro ao otimizar prompt unico: ${error.message}`, "error");
+    } finally {
+        _setSimilarOptimizeUnifiedPromptModalBusy(false);
+        _refreshSimilarButtonsDisabled(false);
     }
 }
 
