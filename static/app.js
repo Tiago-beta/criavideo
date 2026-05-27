@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v577 loaded");
+console.log("[CriaVideo] app.js v578 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -4644,6 +4644,7 @@ const _creditEstimateAddButtonByBadge = {
 const _createCreditButtonByBadge = {
     "wizard-credit-estimate": "wizard-create-btn-credit",
     "script-credit-estimate": "script-create-btn-credit",
+    "publish-scene-analysis-estimate": "btn-publish-analyze-credit",
 };
 const _createCreditRowByBadge = {
     "wizard-credit-estimate": "wizard-credit-actions",
@@ -4652,7 +4653,6 @@ const _createCreditRowByBadge = {
 const _inlineCreditButtonByEstimateTarget = {
     "auto-credit-estimate": "auto-btn-create",
     "workflow-credit-estimate": "workflow-run",
-    "publish-scene-analysis-estimate": "btn-publish-analyze",
 };
 
 function _formatCreditsInt(value) {

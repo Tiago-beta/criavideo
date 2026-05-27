@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260527-10">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260527-11">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 577;
+        var REQUIRED_VER = 578;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -551,11 +551,11 @@
                                     </div>
                                     <div id="pub-analysis-card" class="publish-analysis-card" hidden>
                                         <div class="publish-analysis-actions">
-                                            <button class="btn btn-primary" id="btn-publish-analyze" type="button">
+                                            <button class="btn btn-primary btn-create-video" id="btn-publish-analyze" type="button">
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
-                                                <span id="btn-publish-analyze-label">Analisar</span>
+                                                <span class="btn-create-video-label" id="btn-publish-analyze-label">Analisar</span>
+                                                <span class="btn-create-video-credit" id="btn-publish-analyze-credit" hidden></span>
                                             </button>
-                                            <div class="credit-estimate-pill similar-analysis-estimate" id="publish-scene-analysis-estimate" hidden>Calculando custo...</div>
                                         </div>
                                         <div id="publish-analysis-status" class="publish-analysis-status" hidden></div>
                                         <button id="btn-publish-analysis-details" class="publish-analysis-details-toggle" type="button" aria-expanded="false" hidden>
@@ -4619,8 +4619,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260527-10"></script>
-    <script src="/video/static/pwa.js?v=20260527-10"></script>
+    <script src="/video/static/app.js?v=20260527-11"></script>
+    <script src="/video/static/pwa.js?v=20260527-11"></script>
 </body>
 </html>
 
