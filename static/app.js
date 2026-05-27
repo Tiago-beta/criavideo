@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v575 loaded");
+console.log("[CriaVideo] app.js v576 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -206,6 +206,7 @@ const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
 const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 const SIMILAR_ENGINE_OPTIONS = ["lite2", "mega15", "viduq3", "grok", "wan2", "seedance"];
+const SIMILAR_UNIFIED_ENGINE_CARD_OPTIONS = ["lite2", "viduq3", "grok", "wan2", "mega15", "seedance"];
 const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "mega15", "lite2", "viduq3"]);
 const REALISTIC_ENGINE_CREDITS_PER_SECOND = Object.freeze({
     avatar25: 3,
@@ -217,6 +218,38 @@ const REALISTIC_ENGINE_CREDITS_PER_SECOND = Object.freeze({
     mega15: 12,
     seedance: 15,
 });
+const SIMILAR_ENGINE_META = Object.freeze({
+    lite2: {
+        label: "Mega 1.5 Real",
+        shortLabel: "Mega 1.5",
+        description: "Cria vídeo realista com áudio nativo.",
+    },
+    mega15: {
+        label: "Lite 2.0 Fast",
+        shortLabel: "Lite 2.0",
+        description: "Versão mais leve do Mega 2.0 Ultra, com áudio nativo.",
+    },
+    viduq3: {
+        label: "Pro 3.1 Start",
+        shortLabel: "Pro 3.1",
+        description: "Cria vídeo com áudio nativo, duração de 1 a 16 segundos.",
+    },
+    grok: {
+        label: "Cria 3.0 speed",
+        shortLabel: "Cria 3.0",
+        description: "Cria vídeo com velocidade rápida.",
+    },
+    wan2: {
+        label: "Ultra High 1.0",
+        shortLabel: "Ultra High",
+        description: "Cria vídeo com áudio nativo e sem restrição.",
+    },
+    seedance: {
+        label: "Mega 2.0 Ultra",
+        shortLabel: "Mega 2.0",
+        description: "Cria vídeo realista com áudio nativo.",
+    },
+});
 
 function _isSeedanceFamilyEngine(engineValue) {
     return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
@@ -225,6 +258,17 @@ function _isSeedanceFamilyEngine(engineValue) {
 function _getRealisticEngineCreditsPerSecond(engineValue) {
     const normalized = String(engineValue || "").trim().toLowerCase();
     return REALISTIC_ENGINE_CREDITS_PER_SECOND[normalized] || 0;
+}
+
+function _getSimilarEngineMeta(engineValue) {
+    const normalized = _normalizeSimilarEngine(engineValue);
+    const meta = SIMILAR_ENGINE_META[normalized];
+    if (meta) return meta;
+    return {
+        label: normalized || "Motor",
+        shortLabel: normalized || "Motor",
+        description: "",
+    };
 }
 
 function _syncRealisticEngineOptionCards(containerId) {
@@ -8821,6 +8865,7 @@ function _clearSimilarUnifiedPrompt() {
     const previewMetaEl = document.getElementById("similar-unified-preview-meta");
     const previewStageEl = document.getElementById("similar-unified-preview-stage");
     const generateBtn = document.getElementById("similar-generate-unified-scene");
+    const generateCreditEl = document.getElementById("similar-generate-unified-scene-credit");
     const createImageBtn = document.getElementById("similar-unified-create-image-button");
     if (textEl) textEl.value = "";
     if (metaEl) metaEl.textContent = "Transforme as partes analisadas em um prompt continuo.";
@@ -8833,7 +8878,8 @@ function _clearSimilarUnifiedPrompt() {
     if (previewMetaEl) previewMetaEl.textContent = "";
     if (previewStageEl) previewStageEl.innerHTML = "";
     if (previewWrapEl) previewWrapEl.hidden = true;
-    if (generateBtn) generateBtn.textContent = "Gerar vídeo";
+    _setSimilarUnifiedGenerateButtonLabel("Gerar vídeo");
+    _setCreateButtonCreditElement(generateCreditEl, "", "ready", true);
     if (createImageBtn) createImageBtn.hidden = true;
     _setInlineButtonCredit(generateBtn, "");
     _setInlineButtonCredit(createImageBtn, "");
@@ -8853,6 +8899,43 @@ function _clearSimilarUnifiedPrompt() {
     closeSimilarOptimizeUnifiedPromptModal(true);
     _syncSimilarUnifiedUploadUi();
     if (wrapEl) wrapEl.hidden = true;
+}
+
+function _setSimilarUnifiedGenerateButtonLabel(label = "Gerar vídeo") {
+    const generateBtn = document.getElementById("similar-generate-unified-scene");
+    if (!generateBtn) return;
+
+    const labelEl = generateBtn.querySelector(".btn-create-video-label");
+    const nextLabel = String(label || "Gerar vídeo").trim() || "Gerar vídeo";
+    if (labelEl) {
+        labelEl.textContent = nextLabel;
+        return;
+    }
+
+    generateBtn.textContent = nextLabel;
+}
+
+function _renderSimilarUnifiedEngineCards(enginePickerEl, selectedEngine) {
+    if (!enginePickerEl) return;
+
+    enginePickerEl.innerHTML = SIMILAR_UNIFIED_ENGINE_CARD_OPTIONS.map((engineValue) => {
+        const meta = _getSimilarEngineMeta(engineValue);
+        const rate = _getRealisticEngineCreditsPerSecond(engineValue);
+        return `
+            <button
+                class="engine-option${selectedEngine === engineValue ? " selected" : ""}"
+                data-value="${engineValue}"
+                type="button"
+                onclick="similarSelectUnifiedEngine('${engineValue}')"
+                title="Usar ${meta.label} na cena unica"
+                aria-label="Usar ${meta.label} na cena unica"
+            >
+                <strong>${meta.label}</strong>
+                <small class="engine-option-desc">${meta.description}</small>
+                <span class="engine-option-footer">${rate > 0 ? `<span class="engine-option-rate">${rate}/s</span>` : ""}</span>
+            </button>
+        `;
+    }).join("");
 }
 
 function _setSimilarOptimizeUnifiedPromptModalBusy(isBusy, message = "") {
@@ -9560,15 +9643,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
-        <button
-            class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
-            type="button"
-            onclick="similarSelectUnifiedEngine('${engineValue}')"
-            title="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
-            aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
-        >${_similarSceneEngineLabel(engineValue)}</button>
-    `).join("");
+    _renderSimilarUnifiedEngineCards(enginePickerEl, selectedEngine);
     _renderDurationButtons("similar-unified-duration-options", _similarUnifiedDurationOptions(selectedEngine), selectedDuration);
     previewMetaEl.textContent = "";
     previewStageEl.innerHTML = "";
@@ -9576,9 +9651,7 @@ function _renderSimilarUnifiedPrompt(project) {
 
     textEl.value = promptText;
     metaEl.textContent = metaText;
-    if (generateBtn) {
-        generateBtn.textContent = String(tags.similar_unified_clip_url || "").trim() ? "Gerar novamente o vídeo" : "Gerar vídeo";
-    }
+    _setSimilarUnifiedGenerateButtonLabel(String(tags.similar_unified_clip_url || "").trim() ? "Gerar novamente" : "Gerar vídeo");
     _renderSimilarUnifiedReferencePanel(project);
     _syncSimilarUnifiedUploadUi(project);
     wrapEl.hidden = false;
@@ -10132,23 +10205,11 @@ function _normalizeSimilarEngine(rawValue) {
 }
 
 function _similarSceneEngineLabel(engineValue) {
-    const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1";
-    if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Mega 1.5";
-    if (normalized === "mega15") return "Lite 2.0";
-    if (normalized === "seedance") return "Mega 2.0";
-    return "Cria 2.5";
+    return _getSimilarEngineMeta(engineValue).shortLabel;
 }
 
 function _similarEngineDisplayLabel(engineValue) {
-    const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1";
-    if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Mega 1.5";
-    if (normalized === "mega15") return "Lite 2.0";
-    if (normalized === "seedance") return "Mega 2.0";
-    return "Cria 2.5";
+    return _getSimilarEngineMeta(engineValue).label;
 }
 
 function _getSimilarSceneSelectedEngine(sceneId) {

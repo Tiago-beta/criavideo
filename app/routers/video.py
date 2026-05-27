@@ -279,6 +279,42 @@ def _normalize_lite2_duration_seconds(value: int) -> int:
     return max(5, min(int(value or 5), 12))
 
 
+def _sanitize_narration_state(raw_state: Any) -> dict[str, Any]:
+    candidate = raw_state
+
+    if isinstance(candidate, str):
+        raw_text = candidate.strip()
+        if not raw_text or raw_text.lower() in {"null", "undefined"}:
+            return {}
+        try:
+            candidate = json.loads(raw_text)
+        except Exception:
+            return {}
+
+    if not isinstance(candidate, dict):
+        return {}
+
+    voice_profile_id = int(candidate.get("voice_profile_id") or candidate.get("voiceProfileId") or 0)
+    normalized = {
+        "text": str(candidate.get("text") or "").strip(),
+        "voice": str(candidate.get("voice") or "").strip(),
+        "voice_type": str(candidate.get("voice_type") or candidate.get("voiceType") or "").strip().lower(),
+        "voice_profile_id": voice_profile_id,
+        "tone": str(candidate.get("tone") or "").strip(),
+        "pause_level": str(candidate.get("pause_level") or candidate.get("pauseLevel") or "").strip(),
+        "style": str(candidate.get("style") or "").strip(),
+        "pace": str(candidate.get("pace") or "").strip(),
+        "accent": str(candidate.get("accent") or "").strip(),
+        "notes": str(candidate.get("notes") or "").strip(),
+    }
+
+    if not normalized["voice_type"] and voice_profile_id > 0:
+        normalized["voice_type"] = "profile"
+
+    compact = {key: value for key, value in normalized.items() if value not in ("", 0, None)}
+    return compact if compact else {}
+
+
 _REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "mega15", "lite2", "viduq3", "avatar25", "avatar31"}
 _SIMILAR_ENGINES = {"grok", "wan2", "minimax", "seedance", "mega15", "lite2", "viduq3"}
 _SEEDANCE_FAMILY_ENGINES = {"seedance", "mega15", "lite2", "viduq3"}

@@ -6116,6 +6116,18 @@ th {
     --engine-accent-rgb: 90, 218, 255;
 }
 
+.engine-option[data-value="avatar25"] {
+    --engine-accent-rgb: 68, 177, 255;
+}
+
+.engine-option[data-value="lite2"] {
+    --engine-accent-rgb: 72, 188, 255;
+}
+
+.engine-option[data-value="viduq3"] {
+    --engine-accent-rgb: 73, 163, 255;
+}
+
 .engine-option[data-value="grok"] {
     --engine-accent-rgb: 52, 233, 173;
 }
@@ -12725,6 +12737,10 @@ th,
 }
 
 @media (max-width: 720px) {
+    .similar-unified-engine-picker {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .similar-source-meta-row {
         grid-template-columns: 1fr;
     }
@@ -13030,6 +13046,24 @@ th,
 
 .similar-unified-engine-picker {
     margin-top: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.similar-unified-engine-picker .engine-option {
+    min-height: 108px;
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.similar-unified-engine-picker .engine-option strong {
+    font-size: 1.02rem;
+    line-height: 1.18;
 }
 
 .similar-unified-duration-options {
