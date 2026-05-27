@@ -4358,6 +4358,7 @@ let similarState = {
     bulkFrameTextRemovalBusy: false,
     activeUploadSceneId: 0,
     activeUploadSceneFrameTarget: "",
+    activeUploadSceneOpenEditor: false,
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
     sourceVideoName: "",
@@ -10384,6 +10385,7 @@ function _patchSimilarSceneBoundaryFrameSnapshot(sceneId, frameTarget, frameUrl)
 function _resetSimilarSceneUploadIntent() {
     similarState.activeUploadSceneId = 0;
     similarState.activeUploadSceneFrameTarget = "";
+    similarState.activeUploadSceneOpenEditor = false;
     const input = document.getElementById("similar-scene-image-input");
     if (input) {
         input.multiple = true;
@@ -11678,6 +11680,7 @@ function _renderSimilarScenes(project, options = {}) {
                     alt: startFrameAltRaw,
                     badge: "Entrada",
                     downloadName: startFrameDownloadName,
+                    active: frameEditorOpen && activeFrameTarget === "start",
                     isBase: true,
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
@@ -11687,7 +11690,8 @@ function _renderSimilarScenes(project, options = {}) {
                         ${referenceTextDetected ? `<button class="similar-frame-inline-remove-btn" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>` : ""}
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(renderedStartFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
-                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                            <button class="similar-frame-image-action" type="button" onclick="similarReplaceFrameReference(${sceneId}, 'start')" title="Substituir frame inicial" aria-label="Substituir frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
+                            <button class="similar-frame-image-action${frameEditorOpen && activeFrameTarget === "start" ? " is-active" : ""}" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 }),
@@ -11700,6 +11704,7 @@ function _renderSimilarScenes(project, options = {}) {
                     alt: endFrameAltRaw,
                     badge: "Saida",
                     downloadName: endFrameDownloadName,
+                    active: frameEditorOpen && activeFrameTarget === "end",
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
                     frameBusy: frameBusyTarget === "end",
@@ -11707,7 +11712,8 @@ function _renderSimilarScenes(project, options = {}) {
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(renderedEndFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
-                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'end')" title="Editar frame final" aria-label="Editar frame final" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                            <button class="similar-frame-image-action" type="button" onclick="similarReplaceFrameReference(${sceneId}, 'end')" title="Substituir frame final" aria-label="Substituir frame final" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
+                            <button class="similar-frame-image-action${frameEditorOpen && activeFrameTarget === "end" ? " is-active" : ""}" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'end')" title="Editar frame final" aria-label="Editar frame final" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 })
@@ -11784,7 +11790,7 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="btn btn-secondary" type="button" onclick="similarCloseNarrationEdit(${sceneId})">Cancelar</button>
                         </div>
                     </div>
-                    <div class="similar-reference-frame-editor is-open">
+                    <div class="similar-reference-frame-editor${frameEditorOpen ? " is-open" : ""}" ${frameEditorOpen ? "" : "hidden"}>
                         <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar no ${activeFrameLabelLower}? (opcional)</label>
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
                         <p class="field-hint">${isEditingEndFrame ? "A nova imagem passa a valer como frame final desta cena e continuidade da próxima." : "A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto."}</p>
@@ -11861,18 +11867,11 @@ function _renderSimilarScenes(project, options = {}) {
                 ${uploadsSectionMarkup}
 
                 <div class="similar-scene-pickers">
-                    <div class="similar-scene-duration-picker" aria-label="Duracao da cena ${idx + 1}">
-                        <span class="similar-scene-picker-label">Tempo</span>
-                        <div id="similar-scene-duration-options-${sceneId}" class="duration-options" role="group" aria-label="Selecionar a duracao da cena ${idx + 1}">
-                            ${durationButtonsMarkup}
-                        </div>
-                        <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
-                        <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
-                    </div>
                     <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
                         ${SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
                             <button
                                 class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
+                                data-value="${engineValue}"
                                 type="button"
                                 onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
                                 title="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
@@ -11888,6 +11887,14 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button id="similar-scene-generate-image-${sceneId}" class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Criar imagem" aria-label="Criar imagem">${similarActionIcons.image}</button>
                     <div class="similar-scene-video-actions">
+                        <div class="similar-scene-duration-picker" aria-label="Duracao da cena ${idx + 1}">
+                            <span class="similar-scene-picker-label">Tempo</span>
+                            <div id="similar-scene-duration-options-${sceneId}" class="duration-options" role="group" aria-label="Selecionar a duracao da cena ${idx + 1}">
+                                ${durationButtonsMarkup}
+                            </div>
+                            <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
+                            <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
+                        </div>
                         <button id="similar-scene-generate-video-${sceneId}" class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.wand}<span class="btn-create-video-label">Gerar vídeo</span><span class="btn-create-video-credit" id="similar-scene-generate-video-credit-${sceneId}" hidden></span></button>
                     </div>
                 </div>
@@ -15297,6 +15304,8 @@ function _resetSimilarModeState() {
     similarState.progress = 0;
     similarState.bulkFrameTextRemovalBusy = false;
     similarState.activeUploadSceneId = 0;
+    similarState.activeUploadSceneFrameTarget = "";
+    similarState.activeUploadSceneOpenEditor = false;
     _clearSimilarSourceFile();
     similarState.sourceVerificationStatus = "idle";
     similarState.sourceVerificationMessage = "";
@@ -16236,13 +16245,14 @@ async function similarSaveScene(sceneId, options = {}) {
     }
 }
 
-function similarUploadSceneImage(sceneId, { frameTarget = "" } = {}) {
+function similarUploadSceneImage(sceneId, { frameTarget = "", openEditor = false } = {}) {
     const input = document.getElementById("similar-scene-image-input");
     if (!input) return;
     similarState.activeUploadSceneId = Number(sceneId || 0);
     similarState.activeUploadSceneFrameTarget = frameTarget
         ? _normalizeSimilarSceneFrameTarget(frameTarget)
         : "";
+    similarState.activeUploadSceneOpenEditor = !!openEditor;
     input.multiple = !similarState.activeUploadSceneFrameTarget;
     input.value = "";
     input.click();
@@ -16255,12 +16265,17 @@ function similarUploadFrameReference(sceneId, frameTarget = "") {
             frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
         });
     }
-    similarUploadSceneImage(sceneId, { frameTarget });
+    similarUploadSceneImage(sceneId, { frameTarget, openEditor: true });
 }
 
-async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files) {
+function similarReplaceFrameReference(sceneId, frameTarget = "") {
+    similarUploadSceneImage(sceneId, { frameTarget, openEditor: false });
+}
+
+async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files, options = {}) {
     const projectId = Number(similarState.projectId || 0);
     const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const keepEditorOpen = !!options.openEditor;
     const selectedFiles = Array.from(files || []).slice(0, 1);
     const frameLabelLower = _getSimilarSceneFrameLabel(normalizedFrameTarget, { lower: true });
     if (!projectId || !sceneId || !selectedFiles.length) {
@@ -16278,7 +16293,7 @@ async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, fi
     const localPreviewUrl = URL.createObjectURL(file);
     _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, localPreviewUrl);
     _setSimilarSceneFrameEditorDraft(sceneId, {
-        open: true,
+        open: keepEditorOpen,
         frameTarget: normalizedFrameTarget,
         frameBusy: true,
         frameBusyLabel: normalizedFrameTarget === "end"
@@ -16312,7 +16327,7 @@ async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, fi
         _patchSimilarSceneBoundaryFrameSnapshot(sceneId, normalizedFrameTarget, response?.frame_url || "");
         _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
         _setSimilarSceneFrameEditorDraft(sceneId, {
-            open: true,
+            open: keepEditorOpen,
             frameTarget: normalizedFrameTarget,
             frameBusy: false,
             frameBusyLabel: "",
@@ -16362,6 +16377,7 @@ async function _handleSimilarSceneImageInput(event) {
     const projectId = Number(similarState.projectId || 0);
     const sceneId = Number(similarState.activeUploadSceneId || 0);
     const frameTarget = String(similarState.activeUploadSceneFrameTarget || "").trim();
+    const openEditor = !!similarState.activeUploadSceneOpenEditor;
     const files = Array.from(event.target?.files || []);
     event.target.value = "";
 
@@ -16375,7 +16391,7 @@ async function _handleSimilarSceneImageInput(event) {
             if (files.length > 1) {
                 showToast("Para substituir o frame, envie uma imagem por vez. So a primeira foi usada.", "info");
             }
-            await _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files);
+            await _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files, { openEditor });
             return;
         }
 
@@ -16510,18 +16526,25 @@ function similarToggleFrameEdit(sceneId, frameTarget = "start") {
     _syncSimilarDraftsFromDom();
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    const isOpen = !!draft.frameEditorOpen;
+    const currentFrameTarget = _normalizeSimilarSceneFrameTarget(draft.frameTarget || "start");
+    const nextOpen = !(isOpen && currentFrameTarget === normalizedFrameTarget);
     _setSimilarSceneFrameEditorDraft(sceneId, {
-        open: true,
-        frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
+        open: nextOpen,
+        frameTarget: normalizedFrameTarget,
     });
     if (similarState.lastProjectSnapshot) {
         _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
     }
-    setTimeout(() => {
-        const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
-        instructionEl?.focus();
-        instructionEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-    }, 0);
+    if (nextOpen) {
+        setTimeout(() => {
+            const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+            instructionEl?.focus();
+            instructionEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        }, 0);
+    }
 }
 
 function similarToggleNarrationEdit(sceneId) {
