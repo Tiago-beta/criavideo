@@ -4607,8 +4607,6 @@ const _inlineCreditButtonByEstimateTarget = {
     "auto-credit-estimate": "auto-btn-create",
     "workflow-credit-estimate": "workflow-run",
     "publish-scene-analysis-estimate": "btn-publish-analyze",
-    "similar-general-analysis-estimate": "similar-start-analysis-general",
-    "similar-scene-analysis-estimate": "similar-start-analysis-scenes",
 };
 
 function _formatCreditsInt(value) {
@@ -4705,16 +4703,22 @@ function _extractCreateButtonCreditLabel(message = "") {
     return match ? match[0] : "";
 }
 
-function _setCreateButtonCredit(targetId, message = "", kind = "ready", hidden = false) {
-    const creditId = _createCreditButtonByBadge[targetId];
-    if (!creditId) return;
-    const creditEl = document.getElementById(creditId);
+function _setCreateButtonCreditElement(creditElOrId, message = "", kind = "ready", hidden = false) {
+    const creditEl = typeof creditElOrId === "string"
+        ? document.getElementById(creditElOrId)
+        : creditElOrId;
     if (!creditEl) return;
 
     const value = hidden ? "" : _extractCreateButtonCreditLabel(message);
     creditEl.hidden = !value;
     creditEl.textContent = value;
     creditEl.className = `btn-create-video-credit is-${kind}`;
+}
+
+function _setCreateButtonCredit(targetId, message = "", kind = "ready", hidden = false) {
+    const creditId = _createCreditButtonByBadge[targetId];
+    if (!creditId) return;
+    _setCreateButtonCreditElement(creditId, message, kind, hidden);
 }
 
 function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden = false) {
@@ -5723,10 +5727,12 @@ async function updateSimilarUnifiedActionCreditEstimates() {
     const tags = _safeSimilarTags(project?.tags);
     const promptText = String(document.getElementById("similar-unified-prompt-text")?.value || tags?.similar_unified_prompt || "").trim();
     const generateBtn = document.getElementById("similar-generate-unified-scene");
+    const generateCreditEl = document.getElementById("similar-generate-unified-scene-credit");
     const createImageBtn = document.getElementById("similar-unified-create-image-button");
 
     if (!project || !promptText) {
         _setInlineButtonCredit(generateBtn, "");
+        _setCreateButtonCreditElement(generateCreditEl, "", "ready", true);
         _setInlineButtonCredit(createImageBtn, "");
         return;
     }
@@ -5744,7 +5750,10 @@ async function updateSimilarUnifiedActionCreditEstimates() {
     ]);
 
     if (videoEstimate) {
-        _setInlineButtonCredit(generateBtn, videoEstimate.label, videoEstimate.kind);
+        _setInlineButtonCredit(generateBtn, "");
+        _setCreateButtonCreditElement(generateCreditEl, videoEstimate.label, videoEstimate.kind);
+    } else {
+        _setCreateButtonCreditElement(generateCreditEl, "", "ready", true);
     }
     if (imageEstimate) {
         _setInlineButtonCredit(createImageBtn, imageEstimate.label, imageEstimate.kind);
