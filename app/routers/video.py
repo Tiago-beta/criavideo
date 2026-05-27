@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 from typing import Optional, Any
@@ -3087,11 +3087,11 @@ def _build_similar_optimized_unified_prompt_fallback(
         f"TOTAL DE CENAS: {scene_count}\n\n"
         + "\n\n".join(scene_blocks)
     )
-    return _normalize_similar_unified_prompt_text(script, limit=3900)
+    return _normalize_similar_unified_prompt_text(script, limit=9000)
 
 
 def _is_similar_optimized_unified_prompt_valid(raw: object, scene_count: int) -> bool:
-    text = _normalize_similar_unified_prompt_text(raw, limit=3900)
+    text = _normalize_similar_unified_prompt_text(raw, limit=9000)
     if len(text) < 260:
         return False
     required_parts = (
@@ -3106,6 +3106,118 @@ def _is_similar_optimized_unified_prompt_valid(raw: object, scene_count: int) ->
         return False
     scene_matches = re.findall(r"(?m)^CENA\s+\d+\s+\(", text)
     return len(scene_matches) >= max(scene_count, 1)
+
+
+_SIMILAR_OPTIMIZED_SCENE_BLOCK_RE = re.compile(
+    r"(?ms)^CENA\s+(?P<number>\d+)\s*\([^)]+\)\s*\n"
+    r"Objetivo dramatico:\s*(?P<objective>.*?)\s*\n"
+    r"Prompt completo:\s*(?P<prompt>.*?)(?=^\s*CENA\s+\d+\s*\(|\Z)"
+)
+
+
+def _extract_similar_optimized_scene_specs(
+    prompt_text: object,
+    total_duration_seconds: int,
+    scene_duration_seconds: int,
+) -> list[dict[str, Any]]:
+    text = _normalize_similar_unified_prompt_text(prompt_text, limit=9000)
+    if not text:
+        return []
+
+    total_duration = max(int(total_duration_seconds or 0), 1)
+    scene_duration = max(int(scene_duration_seconds or 0), 1)
+    scene_specs: list[dict[str, Any]] = []
+
+    for index, match in enumerate(_SIMILAR_OPTIMIZED_SCENE_BLOCK_RE.finditer(text)):
+        prompt = _normalize_similar_unified_prompt_text(match.group("prompt"), limit=2200)
+        if not prompt:
+            continue
+
+        start_second = float(index * scene_duration)
+        end_second = float(min(total_duration, (index + 1) * scene_duration))
+        if end_second <= start_second:
+            end_second = float(start_second + scene_duration)
+
+        scene_specs.append(
+            {
+                "scene_index": index,
+                "prompt": prompt,
+                "start_time": start_second,
+                "end_time": end_second,
+            }
+        )
+
+    return scene_specs
+
+
+def _build_similar_optimized_scene_reference_maps(
+    tags_data: dict[str, Any],
+    scene_count: int,
+) -> tuple[dict[str, str], dict[str, str]]:
+    if scene_count <= 0:
+        return {}, {}
+
+    start_path, end_path = _extract_similar_unified_boundary_frame_paths(tags_data)
+    reference_frame_map: dict[str, str] = {}
+    reference_end_map: dict[str, str] = {}
+
+    if start_path and os.path.exists(start_path):
+        reference_frame_map["0"] = start_path
+    if end_path and os.path.exists(end_path):
+        reference_end_map[str(max(scene_count - 1, 0))] = end_path
+
+    return reference_frame_map, reference_end_map
+
+
+async def _sync_similar_optimized_story_scenes(
+    db: AsyncSession,
+    project: VideoProject,
+    scene_specs: list[dict[str, Any]],
+    tags_data: dict[str, Any],
+) -> None:
+    project_id = int(getattr(project, "id", 0) or 0)
+    await db.execute(delete(VideoScene).where(VideoScene.project_id == project_id))
+    await db.flush()
+
+    for scene_spec in scene_specs:
+        db.add(
+            VideoScene(
+                project_id=project_id,
+                scene_index=int(scene_spec.get("scene_index", 0) or 0),
+                scene_type="image",
+                prompt=str(scene_spec.get("prompt") or "").strip(),
+                start_time=float(scene_spec.get("start_time", 0.0) or 0.0),
+                end_time=float(scene_spec.get("end_time", 0.0) or 0.0),
+                lyrics_segment="",
+                is_user_uploaded=False,
+            )
+        )
+
+    for stale_key in (
+        "similar_generated_frame_variants",
+        "similar_detected_scene_durations",
+        "similar_reference_frames",
+        "similar_reference_end_frames",
+        "similar_current_scene_id",
+        "similar_current_scene_index",
+        "similar_total_scenes",
+        "similar_regenerating_scene_id",
+        "similar_generation_mode",
+    ):
+        tags_data.pop(stale_key, None)
+
+    reference_frame_map, reference_end_map = _build_similar_optimized_scene_reference_maps(tags_data, len(scene_specs))
+    if reference_frame_map:
+        tags_data["similar_reference_frames"] = reference_frame_map
+    else:
+        tags_data.pop("similar_reference_frames", None)
+
+    if reference_end_map:
+        tags_data["similar_reference_end_frames"] = reference_end_map
+    else:
+        tags_data.pop("similar_reference_end_frames", None)
+
+    tags_data["similar_scene_count"] = len(scene_specs)
 
 
 async def _generate_similar_optimized_unified_prompt(
@@ -3174,7 +3286,7 @@ async def _generate_similar_optimized_unified_prompt(
         )
         candidate = _normalize_similar_unified_prompt_text(
             response.choices[0].message.content if response and response.choices else "",
-            limit=3900,
+            limit=9000,
         )
         if _is_similar_optimized_unified_prompt_valid(candidate, scene_count):
             return candidate, "optimized_ai"
@@ -3857,6 +3969,13 @@ async def optimize_similar_unified_prompt(
     if not source_prompt:
         raise HTTPException(status_code=400, detail="Gere o prompt unico antes de otimizar")
 
+    existing_scenes_result = await db.execute(
+        select(VideoScene)
+        .where(VideoScene.project_id == project_id)
+        .order_by(VideoScene.scene_index.asc())
+    )
+    existing_scenes = existing_scenes_result.scalars().all()
+
     prompt_text, prompt_source = await _generate_similar_optimized_unified_prompt(
         source_prompt,
         normalized_aspect_ratio,
@@ -3866,8 +3985,35 @@ async def optimize_similar_unified_prompt(
     if not prompt_text:
         raise HTTPException(status_code=500, detail="Nao foi possivel otimizar o prompt unico")
 
+    scene_specs = _extract_similar_optimized_scene_specs(
+        prompt_text,
+        total_duration_seconds,
+        scene_duration_seconds,
+    )
+    if len(scene_specs) != scene_count:
+        fallback_prompt = _build_similar_optimized_unified_prompt_fallback(
+            source_prompt,
+            normalized_aspect_ratio,
+            total_duration_seconds,
+            scene_duration_seconds,
+        )
+        fallback_scene_specs = _extract_similar_optimized_scene_specs(
+            fallback_prompt,
+            total_duration_seconds,
+            scene_duration_seconds,
+        )
+        if len(fallback_scene_specs) == scene_count:
+            prompt_text = fallback_prompt
+            prompt_source = "optimized_fallback"
+            scene_specs = fallback_scene_specs
+
+    if not scene_specs:
+        raise HTTPException(status_code=500, detail="Nao foi possivel dividir o roteiro em cenas")
+
+    scene_count = len(scene_specs)
+
     generated_at = datetime.utcnow().isoformat() + "Z"
-    start_frame_path, end_frame_path = _extract_similar_unified_boundary_frame_paths(tags_data)
+    start_frame_path, end_frame_path = await _ensure_similar_unified_boundary_frame_paths(project.id, existing_scenes, tags_data)
     reference_frame_count = len({path for path in (start_frame_path, end_frame_path) if path})
 
     for stale_key in (
@@ -3883,6 +4029,7 @@ async def optimize_similar_unified_prompt(
     tags_data.update(
         {
             "type": "similar",
+            "similar_stage": "analysis_general_ready",
             "similar_unified_prompt": prompt_text,
             "similar_unified_prompt_source": prompt_source,
             "similar_unified_prompt_generated_at": generated_at,
@@ -3894,6 +4041,22 @@ async def optimize_similar_unified_prompt(
             "similar_unified_prompt_story_scene_count": scene_count,
         }
     )
+    if start_frame_path:
+        tags_data["similar_unified_start_frame_path"] = start_frame_path
+    else:
+        tags_data.pop("similar_unified_start_frame_path", None)
+    if end_frame_path:
+        tags_data["similar_unified_end_frame_path"] = end_frame_path
+    else:
+        tags_data.pop("similar_unified_end_frame_path", None)
+    if reference_frame_count > 0:
+        tags_data["similar_unified_reference_frame_count"] = reference_frame_count
+    else:
+        tags_data.pop("similar_unified_reference_frame_count", None)
+
+    await _sync_similar_optimized_story_scenes(db, project, scene_specs, tags_data)
+
+    project.aspect_ratio = normalized_aspect_ratio
     project.tags = tags_data
     await db.commit()
 

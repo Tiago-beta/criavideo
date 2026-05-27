@@ -1319,6 +1319,122 @@ async def _extract_similar_scene_terminal_reference_frame(
     return str(target_path) if target_path.exists() and target_path.stat().st_size > 0 else ""
 
 
+async def _extract_generated_scene_terminal_frame(project_id: int, scene: VideoScene) -> str:
+    clip_path = str(getattr(scene, "clip_path", "") or "").strip()
+    if project_id <= 0 or not (clip_path and os.path.exists(clip_path)):
+        return ""
+
+    try:
+        scene_start = float(getattr(scene, "start_time", 0) or 0)
+    except Exception:
+        scene_start = 0.0
+    try:
+        scene_end = float(getattr(scene, "end_time", scene_start) or scene_start)
+    except Exception:
+        scene_end = scene_start
+
+    clip_duration = max(0.0, scene_end - scene_start)
+    safe_timestamp = max(0.0, clip_duration - 0.05)
+    target_path = Path(settings.media_dir) / "images" / str(project_id) / f"similar_scene_{int(scene.scene_index or 0):03d}_generated_end_frame.jpg"
+
+    try:
+        await _extract_frame(clip_path, safe_timestamp, str(target_path))
+    except Exception as exc:
+        logger.warning(
+            "Failed to extract generated terminal frame for project %s scene %s at %.3fs: %s",
+            project_id,
+            int(getattr(scene, "scene_index", 0) or 0),
+            safe_timestamp,
+            exc,
+        )
+        return ""
+
+    return str(target_path) if target_path.exists() and target_path.stat().st_size > 0 else ""
+
+
+def _promote_similar_generated_terminal_frame(
+    tags: dict | None,
+    *,
+    scene_index: int,
+    terminal_frame_path: object,
+    next_scene_index: int | None = None,
+) -> dict:
+    updated_tags = _safe_tags_dict(tags)
+    promoted_path = str(terminal_frame_path or "").strip()
+    if not (promoted_path and os.path.exists(promoted_path)):
+        return updated_tags
+
+    scene_key = str(int(scene_index or 0))
+    end_frame_map = _extract_similar_reference_end_frames(updated_tags)
+    end_frame_map[scene_key] = promoted_path
+    updated_tags["similar_reference_end_frames"] = end_frame_map
+
+    if next_scene_index is not None and int(next_scene_index) > int(scene_index or 0):
+        reference_frame_map = _extract_similar_reference_frames(updated_tags)
+        reference_frame_map[str(int(next_scene_index))] = promoted_path
+        updated_tags["similar_reference_frames"] = reference_frame_map
+
+    return updated_tags
+
+
+async def _advance_similar_scene_continuity(
+    project: VideoProject,
+    scene: VideoScene,
+    all_scenes: list[VideoScene] | None,
+    *,
+    aspect_ratio: str,
+    image_dir: Path,
+) -> dict:
+    tags = _safe_tags_dict(getattr(project, "tags", None))
+    ordered_scenes = sorted(all_scenes or [], key=lambda item: int(getattr(item, "scene_index", 0) or 0))
+    current_scene_index = int(getattr(scene, "scene_index", 0) or 0)
+    next_scene = next(
+        (
+            candidate
+            for candidate in ordered_scenes
+            if int(getattr(candidate, "scene_index", 0) or 0) == current_scene_index + 1
+        ),
+        None,
+    )
+
+    terminal_frame_path = await _extract_generated_scene_terminal_frame(int(getattr(project, "id", 0) or 0), scene)
+    if not terminal_frame_path:
+        return tags
+
+    tags = _promote_similar_generated_terminal_frame(
+        tags,
+        scene_index=current_scene_index,
+        terminal_frame_path=terminal_frame_path,
+        next_scene_index=int(getattr(next_scene, "scene_index", 0) or 0) if next_scene else None,
+    )
+
+    if next_scene is None:
+        return tags
+
+    existing_next_image = str(getattr(next_scene, "image_path", "") or "").strip()
+    if existing_next_image and os.path.exists(existing_next_image):
+        return tags
+
+    try:
+        reference_frames_by_scene_index = _extract_similar_reference_frames(tags)
+        await _ensure_scene_image(
+            next_scene,
+            aspect_ratio,
+            image_dir,
+            anchor_scene=scene,
+            reference_frames_by_scene_index=reference_frames_by_scene_index,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to auto-generate next scene image for project %s next scene %s: %s",
+            int(getattr(project, "id", 0) or 0),
+            int(getattr(next_scene, "scene_index", 0) or 0),
+            exc,
+        )
+
+    return tags
+
+
 async def _resolve_similar_scene_boundary_reference_paths(
     project_id: int,
     scene: VideoScene,
@@ -3410,6 +3526,15 @@ async def run_similar_generate_previews(project_id: int, engine: str, aspect_rat
                     anchor_scene=anchor_scene,
                     reference_frames_by_scene_index=reference_frames_by_scene_index,
                 )
+                generation_tags = await _advance_similar_scene_continuity(
+                    project,
+                    scene,
+                    scenes,
+                    aspect_ratio=aspect_ratio,
+                    image_dir=image_dir,
+                )
+                project.tags = generation_tags
+                reference_frames_by_scene_index = _extract_similar_reference_frames(generation_tags)
                 project.progress = 10 + int(80 * ((idx + 1) / max(len(scenes), 1)))
                 await db.commit()
 
@@ -3512,6 +3637,16 @@ async def run_similar_regenerate_scene(project_id: int, scene_id: int, engine: s
                 anchor_scene=anchor_scene,
                 reference_frames_by_scene_index=reference_frames_by_scene_index,
             )
+
+            tags = await _advance_similar_scene_continuity(
+                project,
+                scene,
+                all_scenes,
+                aspect_ratio=aspect_ratio,
+                image_dir=image_dir,
+            )
+            project.tags = tags
+            await db.commit()
 
             project = await _sync_similar_scene_generation_tracking(
                 db,

@@ -1,5 +1,8 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from app.tasks.similar_tasks import _promote_similar_generated_terminal_frame
 from app.services.scene_generator import (
     _build_frame_edit_prompt,
     _sanitize_frame_edit_scene_context,
@@ -8,6 +11,25 @@ from app.services.scene_generator import (
 
 
 class TestSimilarSceneContinuity(unittest.TestCase):
+    def test_generated_terminal_frame_promotes_next_scene_reference(self):
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            current_ref = temp_path / "scene0.jpg"
+            generated_end = temp_path / "scene0_end.jpg"
+            current_ref.write_bytes(b"scene0")
+            generated_end.write_bytes(b"scene0-end")
+
+            updated = _promote_similar_generated_terminal_frame(
+                {"similar_reference_frames": {"0": str(current_ref)}},
+                scene_index=0,
+                terminal_frame_path=str(generated_end),
+                next_scene_index=1,
+            )
+
+            self.assertEqual(updated["similar_reference_end_frames"]["0"], str(generated_end))
+            self.assertEqual(updated["similar_reference_frames"]["0"], str(current_ref))
+            self.assertEqual(updated["similar_reference_frames"]["1"], str(generated_end))
+
     def test_first_scene_keeps_original_prompt(self):
         prompt = "Mesa de madeira com caixa de ovos azul em close cinematografico."
 
