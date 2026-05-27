@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v572 loaded");
+console.log("[CriaVideo] app.js v573 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -33015,6 +33015,7 @@ const _EDITOR_TIMELINE_MOBILE_FOCUS_BIAS = -10;
 const _EDITOR_TIMELINE_RIGHT_GUTTER = 16;
 const _EDITOR_SEGMENT_SPEED_MIN = 0.25;
 const _EDITOR_SEGMENT_SPEED_MAX = 4;
+const _EDITOR_SHOW_TIMELINE_WAVEFORMS = false;
 
 function _editorIsMobileViewport() {
     return window.innerWidth <= 768;
@@ -35279,6 +35280,13 @@ async function _editorExtractMusicWaveformPeaks(url, options = {}) {
 }
 
 function _editorEnsureMusicWaveform() {
+    if (!_EDITOR_SHOW_TIMELINE_WAVEFORMS) {
+        if (_editorMusicWaveformState.key || _editorMusicWaveformState.loading) {
+            _editorResetMusicWaveformState();
+        }
+        return;
+    }
+
     if (!_editorShouldShowAudioTrack() || !_editor.musicUrl) {
         if (_editorMusicWaveformState.key || _editorMusicWaveformState.loading) {
             _editorResetMusicWaveformState();
@@ -35344,6 +35352,13 @@ function _editorEnsureMusicWaveform() {
 }
 
 function _editorEnsureSourceWaveform() {
+    if (!_EDITOR_SHOW_TIMELINE_WAVEFORMS) {
+        if (_editorSourceWaveformState.key || _editorSourceWaveformState.loading) {
+            _editorResetSourceWaveformState();
+        }
+        return;
+    }
+
     if (!_editor.videoUrl) {
         if (_editorSourceWaveformState.key || _editorSourceWaveformState.loading) {
             _editorResetSourceWaveformState();
@@ -35423,6 +35438,10 @@ function _editorEnsureSourceWaveform() {
 }
 
 function _editorGetSourceWaveformInlineStyle(kind = "video", timelineDuration = 0) {
+    if (!_EDITOR_SHOW_TIMELINE_WAVEFORMS) {
+        return "";
+    }
+
     const waveUrl = kind === "audio"
         ? String(_editorSourceWaveformState.audioSvgDataUrl || "")
         : String(_editorSourceWaveformState.videoSvgDataUrl || "");
@@ -35446,6 +35465,10 @@ function _editorGetSourceWaveformInlineStyle(kind = "video", timelineDuration = 
 }
 
 function _editorGetMusicWaveformInlineStyle(timelineDuration = 0) {
+    if (!_EDITOR_SHOW_TIMELINE_WAVEFORMS) {
+        return "";
+    }
+
     const waveUrl = String(_editorMusicWaveformState.svgDataUrl || "");
     if (!waveUrl) return "";
 
@@ -35508,6 +35531,11 @@ function _editorEnsureMediaLayerWaveform(layer) {
 
     const key = _editorGetMediaLayerWaveformKey(normalizedLayer);
     if (!key) {
+        return null;
+    }
+
+    if (!_EDITOR_SHOW_TIMELINE_WAVEFORMS) {
+        _editorLayerWaveformState.delete(key);
         return null;
     }
 
@@ -35583,6 +35611,10 @@ function _editorEnsureMediaLayerWaveform(layer) {
 }
 
 function _editorGetMediaLayerWaveformInlineStyle(layer) {
+    if (!_EDITOR_SHOW_TIMELINE_WAVEFORMS) {
+        return "";
+    }
+
     const waveState = _editorGetMediaLayerWaveformState(layer);
     const waveUrl = String(waveState?.svgDataUrl || "");
     if (!waveUrl) {
@@ -36948,14 +36980,7 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
                 .catch((err) => {
                     _editorHandlePendingImportedProjectError(syncToken, err);
                 });
-            _setEditorImportProgress({
-                active: true,
-                progress: 100,
-                title: progressTitle,
-                message: "Editor aberto. O upload continua em segundo plano.",
-                fileName: progressFileName,
-            });
-            showToast("Editor aberto com mídia local. O upload continua em segundo plano.", "info");
+            _setEditorImportProgress({ active: false });
             return;
         }
 
@@ -37002,14 +37027,7 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
             });
 
         if (!restEntries.length) {
-            _setEditorImportProgress({
-                active: true,
-                progress: 100,
-                title: progressTitle,
-                message: "Editor aberto. O upload continua em segundo plano.",
-                fileName: progressFileName,
-            });
-            showToast("Editor aberto com o vídeo local. O upload continua em segundo plano.", "info");
+            _setEditorImportProgress({ active: false });
             return;
         }
 
@@ -44309,10 +44327,13 @@ function _editorRenderTimeline() {
         });
     }
 
-    _editorEnsureSourceWaveform();
-    const sourceVideoWaveStyle = _editorGetSourceWaveformInlineStyle("video", dur);
-    const sourceAudioWaveStyle = _editorGetSourceWaveformInlineStyle("audio", dur);
-    const sourceWaveLoadingClass = _editorSourceWaveformState.loading ? " loading" : "";
+    const timelineWaveformsEnabled = _EDITOR_SHOW_TIMELINE_WAVEFORMS;
+    if (timelineWaveformsEnabled) {
+        _editorEnsureSourceWaveform();
+    }
+    const sourceVideoWaveStyle = timelineWaveformsEnabled ? _editorGetSourceWaveformInlineStyle("video", dur) : "";
+    const sourceAudioWaveStyle = timelineWaveformsEnabled ? _editorGetSourceWaveformInlineStyle("audio", dur) : "";
+    const sourceWaveLoadingClass = timelineWaveformsEnabled && _editorSourceWaveformState.loading ? " loading" : "";
 
     _editorSortSegments("video");
     const baseVideoClipsByTrack = new Map();
@@ -44374,7 +44395,7 @@ function _editorRenderTimeline() {
         const showResizeHandle = normalizedLayer.kind === "video";
         let waveformClass = "";
         const styleParts = [`left:${left}%`, `width:${width}%`];
-        if (_editorMediaLayerHasAudio(normalizedLayer)) {
+        if (timelineWaveformsEnabled && _editorMediaLayerHasAudio(normalizedLayer)) {
             const waveformState = _editorEnsureMediaLayerWaveform(normalizedLayer) || _editorGetMediaLayerWaveformState(normalizedLayer);
             const waveformStyle = _editorGetMediaLayerWaveformInlineStyle(normalizedLayer);
             if (waveformStyle) {
@@ -44419,7 +44440,9 @@ function _editorRenderTimeline() {
     const shouldRenderAnyAudioRows = shouldRenderBaseAudioTrack || audioLayerClipsByTrack.size > 0;
     if (shouldRenderAnyAudioRows) {
         if (shouldRenderBaseAudioTrack) {
-            _editorEnsureMusicWaveform();
+            if (timelineWaveformsEnabled) {
+                _editorEnsureMusicWaveform();
+            }
             _editorSortSegments("audio");
             let audioClips = _editor.audioSegments.map((seg, idx) => {
                 const segStart = Math.max(0, Math.min(Number(seg.start || 0), dur));
@@ -44441,8 +44464,8 @@ function _editorRenderTimeline() {
 
             if (_editorShouldRenderAudioMasterClip()) {
                 const musicSelected = selectedKind === "music" || trackRowSelection.includes("audio") ? " selected" : "";
-                const waveformStyle = _editorGetMusicWaveformInlineStyle(dur);
-                const masterClasses = `${musicSelected}${_editorMusicWaveformState.loading ? " loading" : ""}`;
+                const waveformStyle = timelineWaveformsEnabled ? _editorGetMusicWaveformInlineStyle(dur) : "";
+                const masterClasses = `${musicSelected}${timelineWaveformsEnabled && _editorMusicWaveformState.loading ? " loading" : ""}`;
                 const audioExtent = Math.max(0.1, Number(_editorGetAudioTrackEndTime() || 0.1));
                 const masterWidthPct = Math.max(0.5, Math.min(100, (audioExtent / dur) * 100));
                 const masterStyleParts = ["left:0", `width:${masterWidthPct}%`];

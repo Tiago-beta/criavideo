@@ -2844,6 +2844,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
         video_filter_chain = ",".join(vfilters)
 
         # Audio handling
+        output_has_audio = bool(source_has_audio or has_music)
+        audio_can_copy = False
         if has_music:
             orig_vol = max(0.0, min(2.0, float(req.original_volume or 100) / 100.0))
             music_vol = max(0.0, min(2.0, float(req.music_volume or 100) / 100.0))
@@ -2989,10 +2991,10 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                     afilters.append(f"aselect='{audio_select_expr}',asetpts=N/SR/TB")
                 if source_has_audio and orig_vol != 1.0:
                     afilters.append(f"volume={orig_vol}")
-                if source_has_audio and final_output_duration > 0:
-                    afilters.append(f"atrim=0:{final_output_duration:.6f}")
                 if afilters:
                     cmd += ["-af", ",".join(afilters)]
+                elif source_has_audio:
+                    audio_can_copy = True
 
         # Output settings
 
@@ -3000,8 +3002,15 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
             "-c:v", "libx264",
             "-preset", _EDITOR_EXPORT_PRESET,
             "-crf", _EDITOR_EXPORT_CRF,
-            "-c:a", "aac",
-            "-b:a", _EDITOR_EXPORT_AUDIO_BITRATE,
+        ]
+        if output_has_audio:
+            if audio_can_copy:
+                cmd += ["-c:a", "copy"]
+            else:
+                cmd += ["-c:a", "aac", "-b:a", _EDITOR_EXPORT_AUDIO_BITRATE]
+        else:
+            cmd += ["-an"]
+        cmd += [
             "-movflags", "+faststart",
             out_file,
         ]
