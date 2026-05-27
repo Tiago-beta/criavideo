@@ -5043,80 +5043,11 @@ class GenerateTTSRequest(BaseModel):
 
 
 class EstimateCreditsRequest(BaseModel):
-    mode: str = "standard"  # standard | realistic | quick-create | similar-analysis | image-generation
-
-
-def _sanitize_narration_state(raw_state: Any) -> dict[str, Any]:
-    if not raw_state:
-        return {}
-
-    candidate = raw_state
-    if isinstance(candidate, str):
-        payload = candidate.strip()
-        if not payload:
-            return {}
-        try:
-            candidate = json.loads(payload)
-        except Exception:
-            return {}
-
-    if not isinstance(candidate, dict):
-        return {}
-
-    def _clean_str(*keys: str, max_len: int = 240) -> str:
-        for key in keys:
-            value = str(candidate.get(key) or "").strip()
-            if value:
-                return value[:max_len]
-        return ""
-
-    def _clean_int(*keys: str) -> int:
-        for key in keys:
-            try:
-                value = int(candidate.get(key) or 0)
-            except Exception:
-                value = 0
-            if value > 0:
-                return value
-        return 0
-
-    state: dict[str, Any] = {}
-    text = _clean_str("text", max_len=20000)
-    voice = _clean_str("voice", max_len=255)
-    voice_type = _clean_str("voice_type", "voiceType", max_len=40).lower()
-    voice_profile_id = _clean_int("voice_profile_id", "voiceProfileId")
-    tone = _clean_str("tone", max_len=40)
-    pause_level = _clean_str("pause_level", "pauseLevel", max_len=40)
-    style = _clean_str("style", max_len=40)
-    pace = _clean_str("pace", max_len=40)
-    accent = _clean_str("accent", max_len=40)
-    notes = _clean_str("notes", max_len=240)
-
-    if text:
-        state["text"] = text
-    if voice:
-        state["voice"] = voice
-    if voice_type:
-        state["voice_type"] = voice_type
-    if voice_profile_id > 0:
-        state["voice_profile_id"] = voice_profile_id
-    if tone:
-        state["tone"] = tone
-    if pause_level:
-        state["pause_level"] = pause_level
-    if style:
-        state["style"] = style
-    if pace:
-        state["pace"] = pace
-    if accent:
-        state["accent"] = accent
-    if notes:
-        state["notes"] = notes
-
-    return state
+    mode: str = "standard"  # standard | realistic | quick-create | similar-analysis | similar-scene | similar-previews | image-generation
     duration_seconds: float = 0
     word_count: int = 0
     analysis_mode: str = "scene"
+    scene_durations: list[float] = Field(default_factory=list)
 
     # Standard mode
     has_ai_images: bool = True
@@ -5170,6 +5101,18 @@ async def estimate_credits_endpoint(
         return estimate_similar_analysis_credits(
             duration_seconds=req.duration_seconds,
             analysis_mode=req.analysis_mode,
+        )
+
+    if mode == "similar-scene":
+        return estimate_similar_scene_credits(
+            engine=req.engine,
+            duration_seconds=req.duration_seconds,
+        )
+
+    if mode == "similar-previews":
+        return estimate_similar_previews_credits(
+            engine=req.engine,
+            scene_durations=req.scene_durations,
         )
 
     if mode == "image-generation":

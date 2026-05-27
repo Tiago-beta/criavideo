@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v568 loaded");
+console.log("[CriaVideo] app.js v569 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -1358,6 +1358,7 @@ function bindDashboardEvents() {
             runAnalyzeChannel();
         });
     }
+    scheduleAuxImageActionCreditEstimates();
     const analyzeAddAccountBtn = document.getElementById("btn-add-analyze-account");
     if (analyzeAddAccountBtn) {
         analyzeAddAccountBtn.addEventListener("click", () => {
@@ -4601,6 +4602,14 @@ const _createCreditButtonByBadge = {
 const _createCreditRowByBadge = {
     "wizard-credit-estimate": "wizard-credit-actions",
     "script-credit-estimate": "script-credit-actions",
+const _inlineCreditButtonByEstimateTarget = {
+    "wizard-credit-estimate": "wizard-create-btn",
+    "script-credit-estimate": "script-create-btn",
+    "auto-credit-estimate": "auto-btn-create",
+    "workflow-credit-estimate": "workflow-run",
+    "publish-scene-analysis-estimate": "btn-publish-analyze",
+    "similar-general-analysis-estimate": "similar-start-analysis-general",
+    "similar-scene-analysis-estimate": "similar-start-analysis-scenes",
 };
 
 function _formatCreditsInt(value) {
@@ -4636,6 +4645,47 @@ function _extractEstimateCostBrl(estimate) {
         return billed;
     }
     return _creditsToBrl(_extractEstimateCredits(estimate));
+}
+
+function _extractInlineCreditLabel(message = "") {
+    const raw = String(message || "").trim();
+    if (!raw) return "";
+
+    const creditMatch = raw.match(/(\d[\d.]*)\s*cr(?:e|é)ditos?/i);
+    if (creditMatch) {
+        return creditMatch[0].replace(/\s+/g, " ").trim();
+    }
+
+    if (/gr[aá]tis/i.test(raw)) {
+        return "Gratis";
+    }
+
+    return "";
+}
+
+function _setInlineButtonCredit(buttonOrId, label = "", kind = "ready") {
+    const button = typeof buttonOrId === "string"
+        ? document.getElementById(buttonOrId)
+        : buttonOrId;
+    if (!button) return;
+
+    const nextLabel = String(label || "").trim();
+    if (!nextLabel) {
+        delete button.dataset.creditCost;
+        delete button.dataset.creditCostKind;
+        button.classList.remove("has-inline-credit");
+        return;
+    }
+
+    button.dataset.creditCost = nextLabel;
+    button.dataset.creditCostKind = String(kind || "ready").trim() || "ready";
+    button.classList.add("has-inline-credit");
+}
+
+function _syncInlineCreditButtonForEstimateTarget(targetId, message = "", kind = "ready", hidden = false) {
+    const buttonId = _inlineCreditButtonByEstimateTarget[targetId];
+    if (!buttonId) return;
+    _setInlineButtonCredit(buttonId, hidden ? "" : _extractInlineCreditLabel(message), kind);
 }
 
 function _setCreditEstimateAddButton(targetId, show = false) {
@@ -4678,12 +4728,14 @@ function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden 
     if (hidden) {
         el.hidden = true;
         _setCreditEstimateAddButton(targetId, false);
+        _syncInlineCreditButtonForEstimateTarget(targetId, "", kind, true);
         return;
     }
     el.hidden = false;
     el.className = `credit-estimate-pill is-${kind}`;
     el.textContent = message;
     _setCreditEstimateAddButton(targetId, kind === "warning");
+    _syncInlineCreditButtonForEstimateTarget(targetId, message, kind, false);
 }
 
 function _queueCreditEstimate(key, fn, delayMs = 260) {
@@ -5269,6 +5321,7 @@ function _setSimilarAnalysisCreditLabel(targetId, message = "", hidden = false) 
     if (!el) return;
     el.hidden = !!hidden || !String(message || "").trim();
     el.textContent = hidden ? "" : String(message || "").trim();
+    _syncInlineCreditButtonForEstimateTarget(targetId, message, hidden ? "ready" : "ready", hidden);
 }
 
 function _formatSimilarSourceDurationLabel(seconds) {
@@ -5528,6 +5581,297 @@ function scheduleSimilarAnalysisCreditEstimates() {
     _queueCreditEstimate(
         "similar-analysis-scene",
         () => updateSimilarAnalysisCreditEstimate("scene", "similar-scene-analysis-estimate"),
+        120,
+    );
+}
+
+function _formatInlineCreditAmount(creditsNeeded) {
+    const parsed = Math.max(0, parseInt(creditsNeeded || "0", 10) || 0);
+    if (!(parsed > 0)) {
+        return "";
+    }
+    return `${_formatCreditsInt(parsed)} ${parsed === 1 ? "crédito" : "créditos"}`;
+}
+
+async function _fetchInlineCreditEstimateData(key, payload) {
+    if (!payload) {
+        return { label: "", kind: "ready" };
+    }
+
+    const seq = (_creditEstimateSeq[key] || 0) + 1;
+    _creditEstimateSeq[key] = seq;
+
+    try {
+        const estimate = await _fetchCreditEstimate(payload);
+        if (_creditEstimateSeq[key] !== seq) {
+            return null;
+        }
+        _latestCreditEstimate[key] = estimate;
+    } catch {
+        if (_creditEstimateSeq[key] !== seq) {
+            return null;
+        }
+    }
+
+    const estimate = _latestCreditEstimate[key] || null;
+    const creditsNeeded = _extractEstimateCredits(estimate);
+    if (!(creditsNeeded > 0)) {
+        return { label: "", kind: "ready" };
+    }
+
+    return {
+        label: _formatInlineCreditAmount(creditsNeeded),
+        kind: _userCredits < creditsNeeded ? "warning" : "ready",
+    };
+}
+
+function _buildSimilarSceneCreditEstimatePayload(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    if (!scene) return null;
+
+    const sceneKey = _similarSceneStateKey(sceneId);
+    const draft = sceneKey ? (similarState.sceneDraftsBySceneId[sceneKey] || {}) : {};
+    const durationSelection = _resolveSimilarSceneDurationSelection(scene, draft);
+    const durationSeconds = durationSelection.selectedMode === "auto"
+        ? durationSelection.detectedDurationSeconds
+        : durationSelection.selectedDurationSeconds;
+
+    return {
+        mode: "similar-scene",
+        engine: _getSimilarSceneSelectedEngine(sceneId),
+        duration_seconds: durationSeconds,
+    };
+}
+
+function _buildSimilarPreviewsCreditEstimatePayload() {
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    if (!scenes.length) return null;
+
+    const sceneDurations = scenes.map((scene) => {
+        const sceneId = Number(scene?.id || 0);
+        const sceneKey = _similarSceneStateKey(sceneId);
+        const draft = sceneKey ? (similarState.sceneDraftsBySceneId[sceneKey] || {}) : {};
+        const selection = _resolveSimilarSceneDurationSelection(scene, draft);
+        return selection.selectedMode === "auto"
+            ? selection.detectedDurationSeconds
+            : selection.selectedDurationSeconds;
+    }).filter((value) => Number.isFinite(value) && value > 0.05);
+
+    if (!sceneDurations.length) return null;
+
+    return {
+        mode: "similar-previews",
+        engine: _getSimilarSelectedEngine(),
+        scene_durations: sceneDurations,
+    };
+}
+
+function _buildSimilarSceneImageEstimatePayload(sceneId) {
+    const scene = _getSimilarProjectScene(sceneId);
+    if (!scene) return null;
+
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    const currentSceneIndex = Number(scene?.scene_index || 0);
+    const previousScene = currentSceneIndex > 0
+        ? scenes.find((item) => Number(item?.scene_index || -1) === currentSceneIndex - 1) || null
+        : null;
+    const pendingUploads = _getSimilarScenePendingUploads(sceneId);
+
+    const hasReferenceSource = !!String(scene?.reference_frame_url || scene?.reference_frame_path || "").trim()
+        || (!!previousScene && !!String(previousScene?.image_url || previousScene?.image_path || "").trim())
+        || !!String(scene?.image_url || scene?.image_path || "").trim();
+    const referenceImageCount = Math.max(0, Math.min(4, pendingUploads.length + (hasReferenceSource ? 1 : 0)));
+    const useReferenceEdit = referenceImageCount > 0;
+
+    return {
+        mode: "image-generation",
+        image_model: useReferenceEdit ? "alibaba/wan-2.6/image-edit" : "alibaba/wan-2.6/text-to-image",
+        image_count: 1,
+        image_size: "2K",
+        reference_image_count: referenceImageCount,
+        image_thinking_mode: !useReferenceEdit,
+    };
+}
+
+function _buildSimilarUnifiedImageEstimatePayload(project = null) {
+    const tags = _safeSimilarTags(project?.tags);
+    const pendingUploads = _getSimilarUnifiedPendingUploads();
+    const uniqueReferenceSources = [
+        tags?.similar_unified_start_frame_url || tags?.similar_unified_start_frame_path,
+        tags?.similar_unified_end_frame_url || tags?.similar_unified_end_frame_path,
+        tags?.similar_unified_reference_image_url || tags?.similar_unified_reference_image_path,
+    ].map((value) => String(value || "").trim()).filter(Boolean)
+        .filter((value, index, values) => values.indexOf(value) === index);
+    const referenceImageCount = Math.max(0, Math.min(4, uniqueReferenceSources.length + pendingUploads.length));
+    const useReferenceEdit = referenceImageCount > 0;
+
+    return {
+        mode: "image-generation",
+        image_model: useReferenceEdit ? "alibaba/wan-2.6/image-edit" : "alibaba/wan-2.6/text-to-image",
+        image_count: 1,
+        image_size: "2K",
+        reference_image_count: referenceImageCount,
+        image_thinking_mode: !useReferenceEdit,
+    };
+}
+
+async function updateSimilarUnifiedActionCreditEstimates() {
+    const project = similarState.lastProjectSnapshot;
+    const tags = _safeSimilarTags(project?.tags);
+    const promptText = String(document.getElementById("similar-unified-prompt-text")?.value || tags?.similar_unified_prompt || "").trim();
+    const generateBtn = document.getElementById("similar-generate-unified-scene");
+    const createImageBtn = document.getElementById("similar-unified-create-image-button");
+
+    if (!project || !promptText) {
+        _setInlineButtonCredit(generateBtn, "");
+        _setInlineButtonCredit(createImageBtn, "");
+        return;
+    }
+
+    const [videoEstimate, imageEstimate] = await Promise.all([
+        _fetchInlineCreditEstimateData("similar-unified-scene-inline", {
+            mode: "similar-scene",
+            engine: _getSimilarUnifiedSelectedEngine(tags),
+            duration_seconds: _getSimilarUnifiedSelectedDuration(tags),
+        }),
+        _fetchInlineCreditEstimateData(
+            "similar-unified-image-inline",
+            _buildSimilarUnifiedImageEstimatePayload(project),
+        ),
+    ]);
+
+    if (videoEstimate) {
+        _setInlineButtonCredit(generateBtn, videoEstimate.label, videoEstimate.kind);
+    }
+    if (imageEstimate) {
+        _setInlineButtonCredit(createImageBtn, imageEstimate.label, imageEstimate.kind);
+    }
+}
+
+function scheduleSimilarUnifiedActionCreditEstimates() {
+    _queueCreditEstimate(
+        "similar-unified-actions-inline",
+        () => updateSimilarUnifiedActionCreditEstimates(),
+        120,
+    );
+}
+
+async function updateSimilarGenerateAllCreditEstimate() {
+    const button = document.getElementById("similar-generate-all");
+    const payload = _buildSimilarPreviewsCreditEstimatePayload();
+    if (!button || !payload) {
+        _setInlineButtonCredit(button, "");
+        return;
+    }
+
+    const estimateData = await _fetchInlineCreditEstimateData("similar-previews-inline", payload);
+    if (!estimateData) return;
+    _setInlineButtonCredit(button, estimateData.label, estimateData.kind);
+}
+
+function scheduleSimilarGenerateAllCreditEstimate() {
+    _queueCreditEstimate(
+        "similar-previews-inline-scheduler",
+        () => updateSimilarGenerateAllCreditEstimate(),
+        120,
+    );
+}
+
+async function updateSimilarSceneActionCreditEstimate(sceneId) {
+    const targetId = Number(sceneId || 0);
+    if (!targetId) return;
+
+    const scene = _getSimilarProjectScene(targetId);
+    const imageButton = document.getElementById(`similar-scene-generate-image-${targetId}`);
+    const videoButtons = [
+        document.getElementById(`similar-scene-generate-video-${targetId}`),
+        document.getElementById(`similar-scene-generate-video-image-${targetId}`),
+        document.getElementById(`similar-scene-generate-video-text-${targetId}`),
+    ].filter(Boolean);
+    if (!scene) {
+        _setInlineButtonCredit(imageButton, "");
+        videoButtons.forEach((button) => _setInlineButtonCredit(button, ""));
+        return;
+    }
+
+    const [imageEstimate, videoEstimate] = await Promise.all([
+        _fetchInlineCreditEstimateData(
+            `similar-scene-image-inline-${targetId}`,
+            _buildSimilarSceneImageEstimatePayload(targetId),
+        ),
+        _fetchInlineCreditEstimateData(
+            `similar-scene-video-inline-${targetId}`,
+            _buildSimilarSceneCreditEstimatePayload(targetId),
+        ),
+    ]);
+
+    if (imageEstimate) {
+        _setInlineButtonCredit(imageButton, imageEstimate.label, imageEstimate.kind);
+    }
+    if (videoEstimate) {
+        videoButtons.forEach((button) => {
+            _setInlineButtonCredit(button, videoEstimate.label, videoEstimate.kind);
+        });
+    }
+}
+
+function scheduleSimilarSceneActionCreditEstimates() {
+    const scenes = Array.isArray(similarState.lastProjectSnapshot?.scenes)
+        ? similarState.lastProjectSnapshot.scenes
+        : [];
+    scenes.forEach((scene) => {
+        const sceneId = Number(scene?.id || 0);
+        if (!(sceneId > 0)) return;
+        _queueCreditEstimate(
+            `similar-scene-actions-inline-${sceneId}`,
+            () => updateSimilarSceneActionCreditEstimate(sceneId),
+            120,
+        );
+    });
+}
+
+function scheduleSimilarActionCreditEstimates() {
+    scheduleSimilarUnifiedActionCreditEstimates();
+    scheduleSimilarGenerateAllCreditEstimate();
+    scheduleSimilarSceneActionCreditEstimates();
+}
+
+function _buildOpenAiImageEstimatePayload() {
+    return {
+        mode: "image-generation",
+        image_model: "openai/gpt-image-1/text-to-image",
+        image_count: 1,
+        image_size: "2K",
+        reference_image_count: 0,
+        image_thinking_mode: false,
+    };
+}
+
+async function updateAuxImageActionCreditEstimates() {
+    const workflowButton = document.getElementById("workflow-generate-image");
+    const aiSuggestButton = document.getElementById("ai-suggest-custom-image-generate-btn");
+    if (!workflowButton && !aiSuggestButton) {
+        return;
+    }
+
+    const estimateData = await _fetchInlineCreditEstimateData(
+        "aux-openai-image-inline",
+        _buildOpenAiImageEstimatePayload(),
+    );
+    if (!estimateData) return;
+
+    _setInlineButtonCredit(workflowButton, estimateData.label, estimateData.kind);
+    _setInlineButtonCredit(aiSuggestButton, estimateData.label, estimateData.kind);
+}
+
+function scheduleAuxImageActionCreditEstimates() {
+    _queueCreditEstimate(
+        "aux-openai-image-inline-scheduler",
+        () => updateAuxImageActionCreditEstimates(),
         120,
     );
 }
@@ -6622,6 +6966,7 @@ function initCreateWizard() {
                 scheduleAutoCreditEstimate();
             } else if (durationGroupId === "similar-unified-duration-options") {
                 similarState.unifiedDuration = parseInt(dur.dataset.value || "10", 10) || 10;
+                scheduleSimilarUnifiedActionCreditEstimates();
             } else if (durationGroupId.startsWith("similar-scene-duration-options-")) {
                 const sceneId = Number(durationGroupId.replace("similar-scene-duration-options-", ""));
                 if (sceneId > 0) {
@@ -6684,6 +7029,7 @@ function initCreateWizard() {
             } else if (engineGroupId === "similar-engine-options") {
                 similarState.engineManuallySelected = true;
                 similarState.selectedEngine = _normalizeSimilarEngine(engineVal);
+                scheduleSimilarGenerateAllCreditEstimate();
             }
         }
         const vbtn = e.target.closest(".voice-btn");
@@ -8445,6 +8791,8 @@ function _clearSimilarUnifiedPrompt() {
     if (previewWrapEl) previewWrapEl.hidden = true;
     if (generateBtn) generateBtn.textContent = "Gerar vídeo";
     if (createImageBtn) createImageBtn.hidden = true;
+    _setInlineButtonCredit(generateBtn, "");
+    _setInlineButtonCredit(createImageBtn, "");
     similarState.unifiedEngine = "";
     similarState.unifiedDuration = 10;
     similarState.unifiedFrameEditorOpen = false;
@@ -8937,6 +9285,7 @@ function _renderSimilarUnifiedPrompt(project) {
     _renderSimilarUnifiedReferencePanel(project);
     _syncSimilarUnifiedUploadUi(project);
     wrapEl.hidden = false;
+    scheduleSimilarUnifiedActionCreditEstimates();
 }
 
 function _normalizeSimilarSourceUrl(rawValue) {
@@ -9463,6 +9812,8 @@ function similarSelectSceneDuration(sceneId, rawValue) {
 
     _syncSimilarDraftsFromDom();
     _scheduleSimilarSceneAutoSave(targetId, { delay: 260 });
+    scheduleSimilarSceneActionCreditEstimates();
+    scheduleSimilarGenerateAllCreditEstimate();
 }
 
 function _normalizeSimilarEngine(rawValue) {
@@ -9522,6 +9873,7 @@ function similarSelectSceneEngine(sceneId, engineValue) {
     if (similarState.lastProjectSnapshot) {
         _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
     }
+    scheduleSimilarSceneActionCreditEstimates();
 }
 
 function _getSimilarUnifiedSelectedEngine(tags = null) {
@@ -9560,6 +9912,7 @@ function similarSelectUnifiedEngine(engineValue) {
     if (similarState.lastProjectSnapshot) {
         _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
     }
+    scheduleSimilarUnifiedActionCreditEstimates();
 }
 
 function _getSimilarProjectScene(sceneId) {
@@ -10037,6 +10390,7 @@ function _updateSimilarGenerationStep(project, tags) {
     const profileEl = document.getElementById("similar-detected-profile");
     const unifiedPromptBtn = document.getElementById("similar-build-unified-prompt");
     const mergePreviewEl = document.getElementById("similar-merge-preview-wrap");
+    const generateAllBtn = document.getElementById("similar-generate-all");
     if (!generationStepEl) return;
 
     const stage = String(tags?.similar_stage || "").trim();
@@ -10050,6 +10404,7 @@ function _updateSimilarGenerationStep(project, tags) {
         unifiedPromptBtn.hidden = analysisMode === "general" || !canConfigure;
     }
     if (!canConfigure) {
+        _setInlineButtonCredit(generateAllBtn, "");
         if (mergePreviewEl) {
             mergePreviewEl.hidden = true;
             mergePreviewEl.innerHTML = "";
@@ -10084,6 +10439,7 @@ function _updateSimilarGenerationStep(project, tags) {
     }
 
     _renderSimilarMergePreview(project, tags);
+    scheduleSimilarGenerateAllCreditEstimate();
 }
 
 function _renderSimilarMergePreview(project, tags = {}) {
@@ -11153,14 +11509,15 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarSaveScene(${sceneId})" title="Salvar cena" aria-label="Salvar cena">${similarActionIcons.save}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarUploadSceneImage(${sceneId})" title="Enviar imagens" aria-label="Enviar imagens">${similarActionIcons.upload}</button>
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
-                    <button class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Criar imagem" aria-label="Criar imagem">${similarActionIcons.image}</button>
+                    <button id="similar-scene-generate-image-${sceneId}" class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Criar imagem" aria-label="Criar imagem">${similarActionIcons.image}</button>
                     <div class="similar-scene-video-actions">
-                        <button class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>Gerar vídeo</span></button>
+                        <button id="similar-scene-generate-video-${sceneId}" class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>Gerar vídeo</span></button>
                     </div>
                 </div>
             </article>
         `;
     }).join("");
+    scheduleSimilarSceneActionCreditEstimates();
 }
 
 function _refreshSimilarButtonsDisabled(disabled) {
@@ -15020,6 +15377,7 @@ async function _handleSimilarUnifiedImageInput(event) {
             "running",
         );
         _syncSimilarUnifiedUploadUi(similarState.lastProjectSnapshot);
+        scheduleSimilarUnifiedActionCreditEstimates();
         showToast("Imagem(ns) enviada(s) para a cena unica.", "success");
     } catch (error) {
         _setSimilarUnifiedUploadStatus(`Erro ao enviar imagem: ${error.message}`, "error");
