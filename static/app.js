@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v566 loaded");
+console.log("[CriaVideo] app.js v567 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -33431,8 +33431,8 @@ function _editorRestoreDraft(projectId, expectedVideoUrl = "") {
         _editor.musicUrl = String(draft.musicUrl || "");
         _editor._musicServerPath = String(draft.musicServerPath || "");
         _editor._musicSource = String(draft.musicSource || "audio");
-        _editor.musicVolume = Math.max(0, Math.min(100, Number(draft.musicVolume ?? _editor.musicVolume ?? 80)));
-        _editor.originalVolume = Math.max(0, Math.min(100, Number(draft.originalVolume ?? _editor.originalVolume ?? 100)));
+        _editor.musicVolume = Math.max(0, Math.min(200, Number(draft.musicVolume ?? _editor.musicVolume ?? 80)));
+        _editor.originalVolume = Math.max(0, Math.min(200, Number(draft.originalVolume ?? _editor.originalVolume ?? 100)));
 
         _editor.filter = String(draft.filter || "none");
         _editor.quality = String(draft.quality || "original");
@@ -33802,9 +33802,9 @@ function _editorClampSegmentSpeed(value) {
 function _editorClampSegmentVolume(value, fallback = 100) {
     const parsed = Number(value ?? fallback);
     if (!Number.isFinite(parsed)) {
-        return Math.max(0, Math.min(100, Number(fallback || 100)));
+        return Math.max(0, Math.min(200, Number(fallback || 100)));
     }
-    return Math.max(0, Math.min(100, parsed));
+    return Math.max(0, Math.min(200, parsed));
 }
 
 function _editorSegmentPlaybackSpeed(seg) {
@@ -33818,10 +33818,10 @@ function _editorSegmentVolumePercent(seg, fallback = 100) {
 function _editorGetTrackMasterVolumePercent(track = "video") {
     if (_editorIsAudioTrack(track)) {
         return _editorShouldShowAudioTrack()
-            ? Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)))
-            : Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)));
+            ? Math.max(0, Math.min(200, Number(_editor.musicVolume || 0)))
+            : Math.max(0, Math.min(200, Number(_editor.originalVolume || 0)));
     }
-    return Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)));
+    return Math.max(0, Math.min(200, Number(_editor.originalVolume || 0)));
 }
 
 function _editorGetTrackEffectiveSegmentVolumeFactor(track = "video", seg = null) {
@@ -34033,7 +34033,7 @@ function _editorSyncSourcePreviewPlayback(timelineTime = 0, shouldPlay = false, 
     const segment = activeSegment || _editorGetTrackSegmentAtTimelineTime("video", Number(timelineTime || 0));
     const nextVolume = Number.isFinite(volumeOverride)
         ? Math.max(0, Math.min(1, Number(volumeOverride || 0)))
-        : _editorGetTrackEffectiveSegmentVolumeFactor("video", segment);
+        : Math.max(0, Math.min(1, _editorGetTrackEffectiveSegmentVolumeFactor("video", segment)));
     const nextRate = Math.max(0.25, Math.min(8, Number(_editor.playbackRate || 1) * _editorSegmentPlaybackSpeed(segment)));
     let targetTime = Math.max(0, _editorTimelineToSourceTime(timelineTime));
     const duration = Number(audio.duration || 0);
@@ -35404,7 +35404,7 @@ function _editorSyncMusicPreviewPlayback(videoTime, shouldPlay) {
         targetTime = Math.max(0, Math.min(targetTime, Math.max(0, duration - 0.02)));
     }
 
-    const seekTolerance = shouldPlay ? 0.45 : 0.25;
+    const seekTolerance = shouldPlay ? 0.45 : 0.18;
     if (Math.abs(Number(audio.currentTime || 0) - targetTime) > seekTolerance) {
         if (audio.readyState >= 1) {
             try {
@@ -41609,8 +41609,8 @@ function _editorRenderProps() {
         const volumeControlsHtml = selectedVolumeTracks.map((track) => {
             const isVideo = track === "video";
             const volumePct = isVideo
-                ? Math.max(0, Math.min(100, Number(_editor.originalVolume || 0)))
-                : Math.max(0, Math.min(100, Number(_editor.musicVolume || 0)));
+                ? Math.max(0, Math.min(200, Number(_editor.originalVolume || 0)))
+                : Math.max(0, Math.min(200, Number(_editor.musicVolume || 0)));
             const trackLabel = isVideo ? "Video original" : "Audio externo";
             return `
                 <div class="editor-track-props-volume-item">
@@ -41626,7 +41626,7 @@ function _editorRenderProps() {
                         class="editor-track-props-volume-slider"
                         type="range"
                         min="0"
-                        max="100"
+                        max="200"
                         value="${volumePct}"
                         oninput="_editorSetTrackVolumeFromTrim('${track}', this.value)"
                     >
@@ -41667,7 +41667,7 @@ function _editorRenderProps() {
                                 class="editor-track-props-volume-slider"
                                 type="range"
                                 min="0"
-                                max="100"
+                                max="200"
                                 value="${selectedSegVolume}"
                                 oninput="_editorSetSelectedSegmentVolume(this.value)"
                             >
@@ -41743,7 +41743,7 @@ function _editorRenderProps() {
                     <label>Volume do audio</label>
                     <div class="editor-volume-row">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                        <input type="range" min="0" max="100" value="${_editor.musicVolume}" oninput="_editorSetMusicVolume(this.value)">
+                        <input type="range" min="0" max="200" value="${_editor.musicVolume}" oninput="_editorSetMusicVolume(this.value)">
                         <span id="editor-music-vol-label">${_editor.musicVolume}%</span>
                     </div>
                 ` : ""}
@@ -43212,7 +43212,7 @@ function _editorRemoveMusic() {
 window._editorRemoveMusic = _editorRemoveMusic;
 
 function _editorSetMusicVolume(val) {
-    const next = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
+    const next = Math.max(0, Math.min(200, parseInt(val, 10) || 0));
     _editor.musicVolume = next;
     const label = document.getElementById("editor-music-vol-label");
     if (label) label.textContent = _editor.musicVolume + "%";
@@ -43225,7 +43225,7 @@ function _editorSetMusicVolume(val) {
 window._editorSetMusicVolume = _editorSetMusicVolume;
 
 function _editorSetOriginalVolume(val) {
-    const next = Math.max(0, Math.min(100, parseInt(val, 10) || 0));
+    const next = Math.max(0, Math.min(200, parseInt(val, 10) || 0));
     _editor.originalVolume = next;
     const video = document.getElementById("editor-video");
     const label = document.getElementById("editor-orig-vol-label");

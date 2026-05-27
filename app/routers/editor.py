@@ -892,7 +892,7 @@ def _clamp_trim_segment_volume_pct(value: float | None, fallback: float = 100.0)
         safe_volume = float(fallback)
     if not math.isfinite(safe_volume):
         safe_volume = float(fallback)
-    return max(0.0, min(100.0, safe_volume))
+    return max(0.0, min(200.0, safe_volume))
 
 
 def _normalize_trim_segment_entries(
@@ -2844,8 +2844,8 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         # Audio handling
         if has_music:
-            orig_vol = req.original_volume / 100
-            music_vol = req.music_volume / 100
+            orig_vol = max(0.0, min(2.0, float(req.original_volume or 100) / 100.0))
+            music_vol = max(0.0, min(2.0, float(req.music_volume or 100) / 100.0))
             filter_complex_parts: list[str] = []
             video_map = "0:v"
 
@@ -2892,7 +2892,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 filter_complex_parts.extend(music_audio_parts)
                 filter_complex_parts.append(f"{base_audio_label}volume={orig_vol}[a0]")
                 filter_complex_parts.append(f"{music_audio_label}volume={music_vol}[a1]")
-                filter_complex_parts.append("[a0][a1]amix=inputs=2:duration=longest[a_mix]")
+                filter_complex_parts.append("[a0][a1]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[a_mix]")
                 if final_output_duration > 0:
                     filter_complex_parts.append(f"[a_mix]atrim=0:{final_output_duration:.6f}[aout]")
                 else:
@@ -2922,7 +2922,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 ]
         else:
             # Simple path: no external music mixing required.
-            orig_vol = req.original_volume / 100
+            orig_vol = max(0.0, min(2.0, float(req.original_volume or 100) / 100.0))
             afilters: list[str] = []
             use_complex_segment_filters = (
                 video_has_reversed_segments
@@ -3218,7 +3218,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
                 if len(mix_inputs) > 1:
                     filter_parts.append(
-                        f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:dropout_transition=0[a_mix]"
+                        f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=longest:dropout_transition=0:normalize=0[a_mix]"
                     )
                     current_audio = "[a_mix]"
                 else:
