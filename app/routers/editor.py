@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import asyncio
+import tempfile
 import uuid
 from collections import Counter
 from pathlib import Path
@@ -3010,22 +3011,26 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         logger.info(f"[editor] Export cmd: {' '.join(cmd)}")
 
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        with tempfile.TemporaryFile() as ffmpeg_log:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=ffmpeg_log,
+                stderr=subprocess.STDOUT,
+            )
 
-        # Wait for completion with progress simulation
-        import time
-        progress = 30
-        while proc.poll() is None:
-            time.sleep(2)
-            progress = min(progress + 5, 90)
-            job["progress"] = progress
-            job["message"] = "Processando..."
+            # Wait for completion with progress simulation without blocking on filled pipes.
+            import time
+            progress = 30
+            while proc.poll() is None:
+                time.sleep(2)
+                progress = min(progress + 5, 90)
+                job["progress"] = progress
+                job["message"] = "Processando..."
 
-        stdout, stderr = proc.communicate()
+            ffmpeg_log.seek(0)
+            err_text = ffmpeg_log.read().decode(errors="ignore")
+
         if proc.returncode != 0:
-            err_text = stderr.decode(errors="ignore")
             logger.error("[editor] FFmpeg failed: %s", err_text[-1800:])
             job["status"] = "failed"
             job["error"] = "FFmpeg falhou ao processar o vídeo"
