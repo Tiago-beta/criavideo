@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v568 loaded");
+console.log("[CriaVideo] app.js v569 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -32543,6 +32543,25 @@ function _editorAttachPreviewSeekHandlers(videoEl) {
     videoEl.addEventListener("seeked", () => {
         videoEl._editorSeekInFlight = false;
         videoEl._editorLastSeekApplied = Number(videoEl.currentTime || 0);
+        _editorFlushPendingPreviewSeek(videoEl);
+    });
+}
+
+function _editorFlushPendingPreviewSeek(videoEl) {
+    if (!videoEl) return;
+
+    const pendingTime = Number(videoEl._editorPendingSeekTime);
+    if (!Number.isFinite(pendingTime)) return;
+
+    const threshold = Math.max(0.02, Number(_EDITOR_PREVIEW_SEEK_THRESHOLD || 0.05));
+    if (Math.abs(Number(videoEl.currentTime || 0) - pendingTime) <= threshold) {
+        return;
+    }
+
+    _editorPreviewSeekTo(videoEl, pendingTime, {
+        force: true,
+        threshold,
+        nowMs: performance.now(),
     });
 }
 
@@ -45361,17 +45380,27 @@ function _editorOnTimelineDragEnd() {
     const kind = _editorTimelineDrag.kind;
     const id = _editorTimelineDrag.id;
     const track = _editorTimelineDrag.track;
+    const mode = _editorTimelineDrag.mode;
     _editorTimelineDrag = null;
 
     if (moved) {
+        let shouldRefreshPreviewFrame = false;
         if (kind === "media-layer") {
             _editorFinalizeTrackSequenceMediaLayerEdit(id);
+            shouldRefreshPreviewFrame = true;
+        } else if (kind === "segment" && _editorIsVideoTrack(track) && mode !== "move") {
+            _editorCollapseVisibleTimelineDeadZones();
+            shouldRefreshPreviewFrame = true;
         }
         _editorRenderTimeline();
         if (kind === "media-layer") {
             _editorRenderMediaLayers();
         }
         _editorRenderProps();
+        _editorRefreshQuickActions();
+        if (shouldRefreshPreviewFrame) {
+            _editorApplyTimelineFrame(Number(_editor.timelineTime || 0), false);
+        }
     } else {
         _editorSelectTimelineClip(kind, id, true, track);
     }
