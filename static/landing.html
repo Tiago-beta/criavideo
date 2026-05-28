@@ -193,7 +193,7 @@
         .hero {
             width: var(--container);
             margin: 0 auto;
-            padding: 76px 0 36px;
+            padding: 64px 0 18px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -231,10 +231,10 @@
         }
 
         .hero-title {
-            font-size: clamp(3rem, 7vw, 6.6rem);
-            line-height: 0.98;
-            letter-spacing: -0.045em;
-            max-width: 22ch;
+            font-size: clamp(2.2rem, 4.4vw, 4rem);
+            line-height: 1.04;
+            letter-spacing: -0.035em;
+            max-width: 36ch;
             text-wrap: balance;
         }
 
@@ -1348,8 +1348,20 @@
 
         .showcase-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 26px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+        }
+
+        @media (max-width: 1100px) {
+            .showcase-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        @media (max-width: 820px) {
+            .showcase-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+        }
+
+        @media (max-width: 520px) {
+            .showcase-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
         }
 
         .showcase-card {
@@ -1875,19 +1887,6 @@
             </section>
 
             <section class="section showcase-section" id="showcase">
-                <div class="section-header">
-                    <div>
-                        <span class="section-kicker">Feitos no CriaVideo</span>
-                        <h2 class="section-title">Vídeos reais gerados na plataforma.</h2>
-                        <p class="section-copy">Sequências curtas para Reels, Shorts e TikTok criadas dentro do mesmo fluxo: roteiro, referência, geração, edição e publicação. Passe o mouse para ver melhor — todos rodam direto do navegador.</p>
-                    </div>
-                    <div class="showcase-stats" aria-label="Destaques da plataforma">
-                        <div class="showcase-stat"><strong>+8</strong><span>Engines de vídeo</span></div>
-                        <div class="showcase-stat"><strong>9:16</strong><span>Formato vertical pronto</span></div>
-                        <div class="showcase-stat"><strong>1 fluxo</strong><span>Do briefing ao upload</span></div>
-                    </div>
-                </div>
-
                 <div class="showcase-grid">
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>TikTok</span>
@@ -1926,6 +1925,16 @@
                             <span class="showcase-tag">E-commerce</span>
                             <strong>Produto em cena cinematográfica</strong>
                             <span class="showcase-desc">Texto, luz e câmera coerentes na mesma identidade.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Novela</span>
+                        <video src="/video/static/landing-media/showcase-novelas.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Storyline</span>
+                            <strong>Cena dramática com persona consistente</strong>
+                            <span class="showcase-desc">Avatar 2.5 Pro entregando expressão e lip sync estáveis.</span>
                         </div>
                     </article>
 
@@ -2016,16 +2025,6 @@
                             <span class="showcase-tag">Canal recorrente</span>
                             <strong>Série visual com identidade fixa</strong>
                             <span class="showcase-desc">Lite 2.0 Fast em fluxo contínuo de publicação.</span>
-                        </div>
-                    </article>
-
-                    <article class="showcase-card">
-                        <span class="showcase-badge"><span class="live-dot"></span>Novela</span>
-                        <video src="/video/static/landing-media/showcase-novelas.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video>
-                        <div class="showcase-meta">
-                            <span class="showcase-tag">Storyline</span>
-                            <strong>Cena dramática com persona consistente</strong>
-                            <span class="showcase-desc">Avatar 2.5 Pro entregando expressão e lip sync estáveis.</span>
                         </div>
                     </article>
 
