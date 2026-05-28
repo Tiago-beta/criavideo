@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v589 loaded");
+console.log("[CriaVideo] app.js v590 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -9443,11 +9443,15 @@ function _renderSimilarUnifiedReferencePanel(project) {
     const previewAspectClass = _similarPreviewAspectClass(project?.aspect_ratio || document.getElementById("similar-aspect")?.value || "16:9");
     const pendingUploads = _getSimilarUnifiedPendingUploads();
     const pendingCount = pendingUploads.length;
-    const activeFrameKind = frameEntries.some((entry) => entry.kind === similarState.unifiedFrameTarget)
-        ? similarState.unifiedFrameTarget
-        : frameEntries[0].kind;
+    const activeFrameKind = frameEntries.length
+        ? (frameEntries.some((entry) => entry.kind === similarState.unifiedFrameTarget)
+            ? similarState.unifiedFrameTarget
+            : frameEntries[0].kind)
+        : "";
     similarState.unifiedFrameTarget = activeFrameKind;
-    const activeFrameEntry = frameEntries.find((entry) => entry.kind === activeFrameKind) || frameEntries[0];
+    const activeFrameEntry = frameEntries.length
+        ? (frameEntries.find((entry) => entry.kind === activeFrameKind) || frameEntries[0])
+        : null;
     const framePendingUploads = _getSimilarUnifiedFramePendingUploads();
     const framePendingCount = framePendingUploads.length;
     const frameBusy = !!similarState.unifiedFrameBusy;

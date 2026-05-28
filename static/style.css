@@ -13066,7 +13066,7 @@ th,
 
 .similar-unified-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.9fr);
+    grid-template-columns: 1fr;
     gap: 14px;
     align-items: start;
 }
@@ -13080,33 +13080,62 @@ th,
 .similar-unified-engine-picker {
     margin-top: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     gap: 8px;
 }
 
 .similar-unified-engine-picker .engine-option {
-    min-height: 108px;
-    padding: 16px 12px;
+    min-height: 96px;
+    padding: 12px 10px;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .similar-unified-engine-picker .engine-option strong {
-    font-size: 1.02rem;
+    font-size: 0.95rem;
     line-height: 1.18;
 }
 
 .similar-unified-duration-options {
-    justify-content: flex-start;
+    justify-content: center;
+    flex: 0 1 auto;
+    margin: 0;
 }
 
-.similar-unified-generation-actions {
+.similar-unified-action-bar {
     display: flex;
-    justify-content: flex-end;
-    margin-top: 14px;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.similar-unified-action-bar .similar-upload-card-mini {
+    flex: 0 0 auto;
+}
+
+.similar-unified-action-bar .similar-unified-duration-options {
+    flex: 1 1 auto;
+    justify-content: center;
+}
+
+.similar-unified-action-bar .similar-unified-generate-btn {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.similar-unified-upload-extras {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.similar-unified-upload-extras:empty {
+    display: none;
 }
 
 .similar-upload-card-mini {
@@ -14722,16 +14751,22 @@ th,
         grid-template-columns: 1fr;
     }
 
-    .similar-unified-upload-controls {
-        align-items: flex-start;
+    .similar-unified-action-bar {
+        align-items: stretch;
     }
 
-    .similar-unified-upload-actions {
+    .similar-unified-action-bar .similar-unified-duration-options {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .similar-unified-action-bar .similar-unified-generate-btn {
+        margin-left: 0;
         width: 100%;
     }
 
-    .similar-unified-upload-actions .btn {
-        width: 100%;
+    .similar-unified-upload-extras .btn {
+        flex: 1 1 auto;
     }
 
     .similar-unified-preview-head {
@@ -14744,10 +14779,6 @@ th,
     }
 
     .similar-unified-prompt-actions .btn {
-        width: 100%;
-    }
-
-    .similar-unified-generation-actions .btn {
         width: 100%;
     }
 

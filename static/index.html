@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260528-10">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260528-11">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 589;
+        var REQUIRED_VER = 590;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2574,34 +2574,25 @@
                                     <span class="field-hint">Motor da cena unica</span>
                                     <div id="similar-unified-engine-picker" class="similar-scene-engine-picker similar-unified-engine-picker"></div>
                                 </div>
-                                <div class="similar-unified-toolbar-block similar-unified-duration-block">
-                                    <span class="field-hint">Duracao da cena unica</span>
-                                    <div id="similar-unified-duration-options" class="duration-options similar-unified-duration-options"></div>
-                                </div>
                             </div>
                             <div id="similar-unified-reference-frame-wrap" class="similar-unified-reference-frame-wrap" hidden></div>
-                            <div class="similar-unified-generation-actions">
-                                <button class="btn btn-primary btn-create-video" id="similar-generate-unified-scene" type="button">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 4 1.5 3L20 8.5l-3.5 1.5L15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m6 15 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/><path d="m3 21 9-9"/></svg>
-                                    <span class="btn-create-video-label">Gerar vídeo</span>
-                                    <span class="btn-create-video-credit" id="similar-generate-unified-scene-credit" hidden></span>
-                                </button>
-                            </div>
                             <div class="similar-unified-upload-section">
-                                <div class="similar-unified-upload-head">
-                                    <span class="field-hint">Imagens extras opcionais</span>
-                                </div>
-                                <div class="similar-unified-upload-controls">
-                                    <button id="similar-unified-upload-trigger" class="similar-upload-card similar-upload-card-mini" type="button" aria-label="Enviar imagens para a cena unica">
+                                <div class="similar-unified-action-bar">
+                                    <button id="similar-unified-upload-trigger" class="similar-upload-card similar-upload-card-mini" type="button" aria-label="Enviar imagens para a cena unica" title="Enviar imagens">
                                         <span class="similar-upload-card-icon" aria-hidden="true">
                                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                                         </span>
                                     </button>
-                                    <div class="similar-unified-upload-actions">
-                                        <button class="btn btn-secondary btn-sm" id="similar-unified-create-image-button" type="button" hidden>Criar imagem</button>
-                                        <button class="btn btn-secondary btn-sm" id="similar-unified-clear-button" type="button" hidden>Limpar</button>
-                                        <small class="field-hint">O primeiro e o último frame entram automaticamente. Use o + se quiser adicionar até 6 imagens extras como apoio visual.</small>
-                                    </div>
+                                    <div id="similar-unified-duration-options" class="duration-options similar-unified-duration-options"></div>
+                                    <button class="btn btn-primary btn-create-video similar-unified-generate-btn" id="similar-generate-unified-scene" type="button">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 4 1.5 3L20 8.5l-3.5 1.5L15 13l-1.5-3L10 8.5 13.5 7 15 4Z"/><path d="m6 15 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/><path d="m3 21 9-9"/></svg>
+                                        <span class="btn-create-video-label">Gerar vídeo</span>
+                                        <span class="btn-create-video-credit" id="similar-generate-unified-scene-credit" hidden></span>
+                                    </button>
+                                </div>
+                                <div class="similar-unified-upload-extras">
+                                    <button class="btn btn-secondary btn-sm" id="similar-unified-create-image-button" type="button" hidden>Criar imagem</button>
+                                    <button class="btn btn-secondary btn-sm" id="similar-unified-clear-button" type="button" hidden>Limpar</button>
                                 </div>
                                 <div id="similar-unified-upload-status" class="similar-status similar-unified-upload-status" hidden></div>
                                 <div id="similar-unified-upload-list" class="similar-scene-upload-panel" hidden>
@@ -4693,8 +4684,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260528-10"></script>
-    <script src="/video/static/pwa.js?v=20260528-10"></script>
+    <script src="/video/static/app.js?v=20260528-11"></script>
+    <script src="/video/static/pwa.js?v=20260528-11"></script>
 </body>
 </html>
 
