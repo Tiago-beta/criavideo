@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v573 loaded");
+console.log("[CriaVideo] app.js v574 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -36524,16 +36524,46 @@ function _editorHasPendingProjectSync() {
     return Boolean(_editor.pendingProjectSync);
 }
 
+function _editorHasExportableAudio() {
+    const baseVideoAvailable = !_editor.hideBaseVideoTrack
+        && Number(_editor.originalVolume || 0) > 0
+        && Boolean(String(_editor._serverVideoUrl || _editor.videoUrl || "").trim());
+    const musicTrackAvailable = _editorShouldShowAudioTrack()
+        && Boolean(String(_editor.musicUrl || "").trim() || String(_editor._musicServerPath || "").trim());
+    const layerAudioAvailable = (_editor.mediaLayers || []).some((layer) => {
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        return _editorMediaLayerHasAudio(normalizedLayer);
+    });
+
+    return baseVideoAvailable || musicTrackAvailable || layerAudioAvailable;
+}
+
 function _editorRefreshProjectSyncUi() {
     const exportBtn = document.getElementById("editor-export-btn");
-    if (!exportBtn) return;
+    const exportAudioBtn = document.getElementById("editor-export-audio-btn");
+    if (!exportBtn && !exportAudioBtn) return;
 
     const hasPendingSync = _editorHasPendingProjectSync();
     const hasExportableProject = Boolean(Number(_editor.projectId || 0) > 0 && String(_editor._serverVideoUrl || _editor.videoUrl || "").trim());
-    exportBtn.disabled = hasPendingSync || !hasExportableProject;
-    exportBtn.title = hasPendingSync
-        ? "Aguarde o upload inicial terminar para exportar."
-        : "Exportar vídeo";
+    const hasExportableAudio = hasExportableProject && _editorHasExportableAudio();
+
+    if (exportBtn) {
+        exportBtn.disabled = hasPendingSync || !hasExportableProject;
+        exportBtn.title = hasPendingSync
+            ? "Aguarde o upload inicial terminar para exportar."
+            : "Exportar vídeo";
+    }
+
+    if (exportAudioBtn) {
+        exportAudioBtn.disabled = hasPendingSync || !hasExportableAudio;
+        exportAudioBtn.title = hasPendingSync
+            ? "Aguarde o upload inicial terminar para exportar."
+            : (hasExportableAudio
+                ? "Exportar áudio em MP3"
+                : (!hasExportableProject
+                    ? "O projeto ainda não terminou de sincronizar com o servidor."
+                    : "Este projeto não possui áudio para exportar."));
+    }
 }
 
 function _editorCancelPendingProjectSync() {
@@ -45880,13 +45910,19 @@ function _editorHandleTimelineWheel(event) {
 }
 
 // ---------- Export ----------
-async function _editorExport() {
+async function _editorExport(exportKind = "video") {
+    const normalizedExportKind = String(exportKind || "video").trim().toLowerCase() === "audio" ? "audio" : "video";
+    const isAudioExport = normalizedExportKind === "audio";
     if (_editorHasPendingProjectSync()) {
         showToast("O upload inicial ainda está sincronizando. Aguarde mais alguns segundos para exportar.", "info");
         return;
     }
     if (!_editor.projectId || !String(_editor._serverVideoUrl || _editor.videoUrl || "").trim()) {
         showToast("O projeto ainda não terminou de sincronizar com o servidor.", "error");
+        return;
+    }
+    if (isAudioExport && !_editorHasExportableAudio()) {
+        showToast("Este projeto não possui áudio para exportar.", "error");
         return;
     }
 
@@ -45898,8 +45934,11 @@ async function _editorExport() {
         _editorApplyTimelineFrame(Number(_editor.timelineTime || 0), false);
     }
 
+    const approvedSmartCuts = isAudioExport ? [] : _editorGetApprovedSmartCuts();
+
     // Build edit specification
     const edits = {
+        export_kind: normalizedExportKind,
         project_id: _editor.projectId,
         aspect_ratio: _resolveAspectRatio(),
         trim_start: _editor.trimStart,
@@ -45978,19 +46017,19 @@ async function _editorExport() {
                 reversed: Boolean(normalizedLayer.reversed),
             };
         }),
-        smart_cuts: _editorGetApprovedSmartCuts().map((cut) => ({
+        smart_cuts: approvedSmartCuts.map((cut) => ({
             start: Number(cut.start || 0),
             end: Number(cut.end || 0),
             title: String(cut.title || ""),
             reason: String(cut.reason || ""),
             score: Math.round(Number(cut.score || 0)),
         })),
-        smart_cut_words: (_editor.smartCutWords || []).map((word) => ({
+        smart_cut_words: approvedSmartCuts.length ? (_editor.smartCutWords || []).map((word) => ({
             word: String(word?.word || ""),
             start: Number(word?.start || 0),
             end: Number(word?.end || word?.start || 0),
-        })),
-        smart_cut_subtitle_style: _editorGetApprovedSmartCuts().length ? _editorBuildSmartCutSubtitleCfg() : null,
+        })) : [],
+        smart_cut_subtitle_style: approvedSmartCuts.length ? _editorBuildSmartCutSubtitleCfg() : null,
     };
 
     // Show export overlay
@@ -45998,7 +46037,7 @@ async function _editorExport() {
     overlay.className = "editor-export-overlay";
     overlay.innerHTML = `
         <div class="editor-export-card">
-            <h3>${edits.smart_cuts.length ? "Exportando shorts" : "Exportando video"}</h3>
+            <h3>${isAudioExport ? "Exportando áudio" : (edits.smart_cuts.length ? "Exportando shorts" : "Exportando vídeo")}</h3>
             <div class="editor-export-progress"><div class="editor-export-progress-fill" id="editor-export-fill"></div></div>
             <p class="editor-export-status" id="editor-export-status">Enviando edicoes ao servidor...</p>
         </div>
@@ -46063,11 +46102,20 @@ async function _editorExport() {
                 if (poll.status === "completed") {
                     done = true;
                     const exportedShorts = Array.isArray(poll.output_urls) ? poll.output_urls : [];
-                    if (status) status.textContent = exportedShorts.length ? "Shorts exportados com sucesso!" : "Vídeo exportado com sucesso!";
+                    if (status) {
+                        status.textContent = isAudioExport
+                            ? "Áudio exportado com sucesso!"
+                            : (exportedShorts.length ? "Shorts exportados com sucesso!" : "Vídeo exportado com sucesso!");
+                    }
                     if (fill) fill.style.width = "100%";
                     await new Promise(r => setTimeout(r, 1500));
                     overlay.remove();
-                    showToast(exportedShorts.length ? `${exportedShorts.length} shorts exportados com sucesso!` : "Vídeo editado exportado com sucesso!", "success");
+                    showToast(
+                        isAudioExport
+                            ? "Áudio editado exportado com sucesso!"
+                            : (exportedShorts.length ? `${exportedShorts.length} shorts exportados com sucesso!` : "Vídeo editado exportado com sucesso!"),
+                        "success"
+                    );
 
                     if (exportedShorts.length) {
                         for (let idx = 0; idx < exportedShorts.length; idx += 1) {
@@ -46083,17 +46131,24 @@ async function _editorExport() {
                             await new Promise(r => setTimeout(r, 900));
                         }
                     } else if (poll.output_url) {
+                        const defaultBaseName = String(
+                            _editor.editProjectName
+                            || _editor.sourceProjectTitle
+                            || (isAudioExport ? "audio-editado" : "video-editado")
+                        ).trim() || (isAudioExport ? "audio-editado" : "video-editado");
                         const link = document.createElement("a");
                         link.href = poll.output_url;
-                        link.download = `${String(_editor.editProjectName || _editor.sourceProjectTitle || "video-editado").trim() || "video-editado"}.mp4`;
+                        link.download = `${defaultBaseName}.${isAudioExport ? "mp3" : "mp4"}`;
                         link.style.display = "none";
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
                     }
 
-                    loadEditorVideosList();
-                    loadProjects();
+                    if (!isAudioExport) {
+                        loadEditorVideosList();
+                        loadProjects();
+                    }
                 } else if (poll.status === "failed") {
                     done = true;
                     overlay.remove();
@@ -46137,7 +46192,8 @@ function _bindEditorEvents() {
     document.getElementById("editor-new-btn")?.addEventListener("click", _editorOpenStartModal);
     document.getElementById("editor-undo-btn")?.addEventListener("click", _editorUndo);
     document.getElementById("editor-redo-btn")?.addEventListener("click", _editorRedo);
-    document.getElementById("editor-export-btn")?.addEventListener("click", _editorExport);
+    document.getElementById("editor-export-btn")?.addEventListener("click", () => _editorExport("video"));
+    document.getElementById("editor-export-audio-btn")?.addEventListener("click", () => _editorExport("audio"));
     document.getElementById("editor-upload-btn")?.addEventListener("click", _editorOpenStartModal);
     document.getElementById("editor-side-upload-video-btn")?.addEventListener("click", () => {
         const layerVideoInput = document.getElementById("editor-layer-video-upload-input");

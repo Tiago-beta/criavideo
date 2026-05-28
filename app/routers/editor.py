@@ -39,6 +39,7 @@ _export_jobs: dict[str, dict] = {}
 _EDITOR_EXPORT_PRESET = "veryfast"
 _EDITOR_EXPORT_CRF = "23"
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
+_EDITOR_EXPORT_AUDIO_MP3_BITRATE = "192k"
 _SUBTITLE_PROPER_NAMES = ("Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai")
 _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5.0
 _EDITOR_IMAGE_SEQUENCE_MAX_FILES = 50
@@ -129,6 +130,10 @@ def _fallback_project_video_path(project_id: int) -> str | None:
 def _normalize_aspect_ratio(value: str | None) -> str:
     val = (value or "").strip()
     return val if val in {"16:9", "9:16", "1:1"} else ""
+
+
+def _normalize_editor_export_kind(value: str | None) -> str:
+    return "audio" if (value or "").strip().lower() == "audio" else "video"
 
 
 def _build_aspect_pad_filter(aspect_ratio: str | None) -> str | None:
@@ -1295,6 +1300,7 @@ class SmartCutsRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     project_id: int
+    export_kind: str = "video"
     aspect_ratio: str = ""
     trim_start: float = 0
     trim_end: float = 0
@@ -2290,6 +2296,7 @@ async def start_export(
     credits_needed = int(estimate.get("credits_needed", 0) or 0)
     await deduct_credits(db, user["id"], credits_needed)
 
+    export_kind = _normalize_editor_export_kind(req.export_kind)
     job_id = uuid.uuid4().hex[:12]
     _export_jobs[job_id] = {
         "status": "processing",
@@ -2298,6 +2305,7 @@ async def start_export(
         "error": None,
         "output_url": None,
         "output_urls": [],
+        "export_kind": export_kind,
     }
 
     main_loop = asyncio.get_running_loop()
@@ -2471,6 +2479,7 @@ def _run_smart_cuts_export(job: dict, project, render, req: ExportRequest, src_v
 def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, main_loop: asyncio.AbstractEventLoop):
     try:
         job = _export_jobs[job_id]
+        export_kind = _normalize_editor_export_kind(req.export_kind)
         job["progress"] = 5
         job["message"] = "Preparando arquivos..."
 
@@ -2484,7 +2493,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 job["error"] = "Arquivo de vídeo não encontrado no servidor"
                 return
 
-        if req.smart_cuts and _run_smart_cuts_export(job, project, render, req, src_video):
+        if export_kind == "video" and req.smart_cuts and _run_smart_cuts_export(job, project, render, req, src_video):
             return
 
         # Output directory
@@ -3289,6 +3298,43 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 final_out_file = layered_out_file
 
             final_out_file = _auto_fill_editor_export_frame(final_out_file, selected_aspect)
+
+        if export_kind == "audio":
+            if not _probe_has_audio_stream(final_out_file):
+                job["status"] = "failed"
+                job["error"] = "O projeto não possui áudio para exportar"
+                return
+
+            job["progress"] = 95
+            job["message"] = "Convertendo áudio em MP3..."
+            audio_out_file = os.path.join(out_dir, f"edited_audio_{uuid.uuid4().hex[:8]}.mp3")
+            audio_cmd = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                final_out_file,
+                "-vn",
+                "-map",
+                "0:a:0",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                _EDITOR_EXPORT_AUDIO_MP3_BITRATE,
+                audio_out_file,
+            ]
+            audio_proc = subprocess.run(audio_cmd, capture_output=True)
+            if audio_proc.returncode != 0:
+                logger.error("[editor] Audio export FFmpeg failed: %s", (audio_proc.stderr or b"").decode(errors="ignore")[-1200:])
+                job["status"] = "failed"
+                job["error"] = "Falha ao converter o áudio exportado"
+                return
+
+            job["progress"] = 100
+            job["status"] = "completed"
+            job["message"] = "Exportacao de áudio concluida!"
+            job["output_url"] = _to_media_url(audio_out_file)
+            logger.info("[editor] Audio export completed: %s", audio_out_file)
+            return
 
         job["progress"] = 95
         job["message"] = "Finalizando..."
