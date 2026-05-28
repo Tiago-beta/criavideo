@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v585 loaded");
+console.log("[CriaVideo] app.js v586 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -1173,6 +1173,7 @@ function openGalleryVideo(src) {
     const player = document.getElementById("gallery-video-player");
     if (!modal || !player || !src) return;
     player.src = src;
+    modal.dataset.gallerySrc = src;
     modal.classList.add("active");
     player.currentTime = 0;
     const playPromise = player.play();
@@ -1195,6 +1196,54 @@ function closeGalleryVideo(event) {
     }
 }
 window.closeGalleryVideo = closeGalleryVideo;
+
+async function galleryUseInSimilar(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const modal = document.getElementById("modal-gallery-video");
+    const copyBtn = document.getElementById("gallery-video-copy");
+    const src = modal?.dataset?.gallerySrc || "";
+    if (!src) return;
+    if (copyBtn) {
+        copyBtn.disabled = true;
+        copyBtn.classList.add("loading");
+    }
+    try {
+        const response = await fetch(src);
+        if (!response.ok) throw new Error("fetch failed");
+        const blob = await response.blob();
+        const rawName = (src.split("/").pop() || "galeria.mp4").split("?")[0] || "galeria.mp4";
+        const file = new File([blob], rawName, { type: blob.type || "video/mp4" });
+
+        closeGalleryVideo();
+        navigateTo("projects");
+        if (typeof resetCreateWizard === "function") resetCreateWizard();
+        openModal("modal-new-project");
+        _chooseCreateMode("similar");
+
+        const sourceEl = document.getElementById("similar-source-url");
+        if (sourceEl) sourceEl.value = "";
+        if (typeof _clearSimilarSourceFile === "function") _clearSimilarSourceFile({ skipPreviewReset: true });
+        similarState.sourceAspectKey = `gallery:${rawName}:${file.size}`;
+        similarState.sourceAspectManuallySelected = false;
+        similarState.sourceVideoFile = file;
+        similarState.sourceVideoName = rawName;
+        try { similarState.sourceVideoObjectUrl = URL.createObjectURL(file); } catch (_) { similarState.sourceVideoObjectUrl = ""; }
+        if (typeof _syncSimilarSourceFileUi === "function") _syncSimilarSourceFileUi();
+        if (typeof _resetSimilarSourceVerification === "function") _resetSimilarSourceVerification();
+    } catch (err) {
+        console.error("galleryUseInSimilar failed", err);
+        alert("Nao foi possivel copiar o video. Tente novamente.");
+    } finally {
+        if (copyBtn) {
+            copyBtn.disabled = false;
+            copyBtn.classList.remove("loading");
+        }
+    }
+}
+window.galleryUseInSimilar = galleryUseInSimilar;
 
 function bindNavigation() {
     const appShell = document.getElementById("app");

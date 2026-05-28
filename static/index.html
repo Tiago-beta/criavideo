@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260528-06">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260528-07">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 585;
+        var REQUIRED_VER = 586;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -970,7 +970,13 @@
 
     <div id="modal-gallery-video" class="modal" onclick="closeGalleryVideo(event)">
         <button class="gallery-video-close" type="button" onclick="closeGalleryVideo()" aria-label="Fechar">&times;</button>
-        <video id="gallery-video-player" controls playsinline></video>
+        <div class="gallery-video-wrap">
+            <video id="gallery-video-player" controls playsinline controlsList="nodownload noremoteplayback noplaybackrate" disablePictureInPicture oncontextmenu="return false"></video>
+            <button type="button" id="gallery-video-copy" class="gallery-video-copy" onclick="galleryUseInSimilar(event)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Copiar</span>
+            </button>
+        </div>
     </div>
 
     <div id="modal-editor-start" class="modal">
@@ -4687,8 +4693,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260528-06"></script>
-    <script src="/video/static/pwa.js?v=20260528-06"></script>
+    <script src="/video/static/app.js?v=20260528-07"></script>
+    <script src="/video/static/pwa.js?v=20260528-07"></script>
 </body>
 </html>
 
