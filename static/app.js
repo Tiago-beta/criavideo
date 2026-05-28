@@ -7421,6 +7421,7 @@ function _syncScriptAudioFirstSurface() {
 function _syncScriptModeMediaToggleVisibility(videoType = "") {
     const normalizedType = String(videoType || _getSelectedCreateVideoType("script") || scriptData.videoType || "").trim().toLowerCase();
     const isImageMode = !!normalizedType && normalizedType !== "realista";
+    const preserveAudioFirstGeneratedAudio = _isCreateAudioFirstMode() && !!scriptGeneratedAudioUploadId;
     const audioChip = document.getElementById("script-media-chip-audio");
     const videoChip = document.getElementById("script-media-chip-video");
 
@@ -7438,7 +7439,7 @@ function _syncScriptModeMediaToggleVisibility(videoType = "") {
     }
 
     const userAudioToggle = document.getElementById("script-use-user-audio");
-    if (userAudioToggle && userAudioToggle.checked) {
+    if (userAudioToggle && userAudioToggle.checked && !preserveAudioFirstGeneratedAudio) {
         userAudioToggle.checked = false;
         toggleUserAudioUpload();
     }
@@ -7450,6 +7451,7 @@ function _syncScriptAudioFirstSelection(selectedType = "") {
     }
 
     const normalizedType = String(selectedType || "").trim();
+    const preserveAudioFirstGeneratedAudio = !!scriptGeneratedAudioUploadId;
     const shouldUsePhotos = !!normalizedType && normalizedType !== "realista";
     const photoToggle = document.getElementById("script-use-photos");
     if (photoToggle && photoToggle.checked !== shouldUsePhotos) {
@@ -7464,7 +7466,7 @@ function _syncScriptAudioFirstSelection(selectedType = "") {
     }
 
     const userAudioToggle = document.getElementById("script-use-user-audio");
-    if (userAudioToggle && userAudioToggle.checked) {
+    if (userAudioToggle && userAudioToggle.checked && !preserveAudioFirstGeneratedAudio) {
         userAudioToggle.checked = false;
         toggleUserAudioUpload();
     }
