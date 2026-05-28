@@ -508,7 +508,7 @@ async def _enqueue_pilot_themes(db, pilot: AutoChannelPilot, long_schedule: Auto
 
         # Build pre-approval plan preview (prompt + decision summary + structured plan)
         try:
-            plan_preview = build_shorts_pilot_plan_preview(
+            plan_preview = await build_shorts_pilot_plan_preview(
                 theme=normalized,
                 top_video=top_video,
                 interaction_personas=interaction_personas,

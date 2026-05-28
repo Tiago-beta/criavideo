@@ -1577,19 +1577,14 @@ async def reject_pilot_theme(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reject a pending Short. It will not be rendered or published."""
+    """Reject a pending Short. The theme is DELETED immediately and disappears from the list."""
     theme = await _resolve_user_theme_or_404(db, user, theme_id)
-    if (theme.approval_status or "") not in ("pending_review", "approved"):
+    if (theme.approval_status or "") not in ("pending_review", "approved", ""):
         raise HTTPException(status_code=400, detail="Tema nao pode mais ser reprovado.")
-    theme.approval_status = "rejected"
-    theme.rejected_at = datetime.utcnow()
-    theme.rejection_reason = str(req.reason or "").strip()[:1000]
-    # Also mark theme.status='failed' so the auto-creation worker definitely skips it
-    if theme.status == "pending":
-        theme.status = "failed"
-        theme.error_message = "Reprovado pelo usuario no piloto automatico"
+    deleted_id = theme.id
+    await db.delete(theme)
     await db.commit()
-    return {"ok": True, "theme": _serialize_pending_theme(theme)}
+    return {"ok": True, "deleted_theme_id": deleted_id}
 
 
 @router.post("/pilot/channels/{social_account_id}/plan-preview")
@@ -1654,7 +1649,7 @@ async def preview_pilot_plan(
     if not theme_text:
         theme_text = "Tema inspirador do canal"
 
-    preview = build_shorts_pilot_plan_preview(
+    preview = await build_shorts_pilot_plan_preview(
         theme=theme_text,
         top_video=top_video,
         interaction_personas=interaction_personas,

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v581 loaded");
+console.log("[CriaVideo] app.js v582 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28278,6 +28278,8 @@ function _renderAutoPilotPlan() {
         const top = plan.top_video || null;
         const summary = Array.isArray(plan.decision_summary) ? plan.decision_summary : [];
         const promptText = String(item.preview_prompt || "");
+        const timelineText = String(plan.timeline_text || "");
+        const hookSummary = String(plan.hook_summary || "");
         const engineId = String(item.engine_id || "mega15");
         const dur = parseInt(item.engine_duration_seconds || "10", 10) || 10;
         const thumb = top && top.thumbnail_url ? `<img class="auto-pilot-plan-thumb" src="${esc(top.thumbnail_url)}" alt="Inspiracao top 1">` : `<div class="auto-pilot-plan-thumb-placeholder">9:16</div>`;
@@ -28301,8 +28303,13 @@ function _renderAutoPilotPlan() {
                     </div>
                     ${topInfo}
                     ${personaInfo}
+                    ${hookSummary ? `<p class="auto-pilot-plan-hook"><strong>Gancho:</strong> ${esc(hookSummary)}</p>` : ""}
+                    ${timelineText ? `<details class="auto-pilot-plan-prompt" open>
+                        <summary>Marcacao segundo a segundo</summary>
+                        <pre class="auto-pilot-plan-timeline">${esc(timelineText)}</pre>
+                    </details>` : ""}
                     <details class="auto-pilot-plan-prompt">
-                        <summary>Ver prompt cinematografico</summary>
+                        <summary>Ver prompt cinematografico completo</summary>
                         <p>${esc(promptText)}</p>
                     </details>
                     ${summary.length ? `<ul class="auto-pilot-plan-summary">${summary.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
@@ -28337,13 +28344,18 @@ window.approvePilotTheme = approvePilotTheme;
 async function rejectPilotTheme(themeId) {
     const tid = parseInt(themeId || "0", 10) || 0;
     if (!tid) return;
-    const reason = prompt("Motivo da reprovacao (opcional):", "") || "";
+    if (!confirm("Reprovar este plano? Ele sera excluido imediatamente.")) return;
     try {
         await api(`/automation/pilot/themes/${tid}/reject`, {
             method: "POST",
-            body: JSON.stringify({ reason }),
+            body: JSON.stringify({ reason: "" }),
         });
-        showToast("Short reprovado. Nao sera publicado.");
+        showToast("Plano reprovado e excluido. O piloto pode gerar outro no proximo ciclo.");
+        // Optimistic removal so the card desaparece imediatamente, antes do reload
+        if (_autoPilotPlanState.data && Array.isArray(_autoPilotPlanState.data.pending)) {
+            _autoPilotPlanState.data.pending = _autoPilotPlanState.data.pending.filter((it) => (parseInt(it.theme_id || "0", 10) || 0) !== tid);
+            _renderAutoPilotPlan();
+        }
         if (_autoPilotPlanState.accountId) {
             await openAutoPilotPlanModal(_autoPilotPlanState.accountId);
         }

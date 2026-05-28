@@ -1946,6 +1946,8 @@ a {
 .auto-pilot-plan-card-body .muted { font-size: 0.78rem; color: var(--text-muted, #94a3b8); margin: 0; }
 .auto-pilot-plan-prompt summary { cursor: pointer; font-size: 0.78rem; color: var(--accent, #60a5fa); }
 .auto-pilot-plan-prompt p { font-size: 0.78rem; line-height: 1.45; margin: 0.35rem 0 0; max-height: 7.5rem; overflow: auto; white-space: pre-wrap; }
+.auto-pilot-plan-timeline { margin: 0.35rem 0 0; padding: 0.5rem 0.7rem; background: rgba(255,255,255,0.04); border-radius: 0.45rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.76rem; line-height: 1.55; max-height: 11rem; overflow: auto; white-space: pre; }
+.auto-pilot-plan-hook { margin: 0.25rem 0 0; font-size: 0.8rem; color: #fbbf24; }
 .auto-pilot-plan-summary { margin: 0.25rem 0 0 1rem; padding: 0; font-size: 0.76rem; color: var(--text, #e2e8f0); }
 .auto-pilot-plan-summary li { margin-bottom: 0.15rem; }
 .auto-pilot-plan-deadline { margin: 0.3rem 0 0; font-size: 0.76rem; color: var(--text-muted, #94a3b8); }
