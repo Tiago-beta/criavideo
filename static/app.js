@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v587 loaded");
+console.log("[CriaVideo] app.js v588 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -33031,7 +33031,7 @@ function _renderPricingPackages() {
 
 function _renderPricingComparisonSections() {
     const sections = Array.isArray(_creditComparisonSections) ? _creditComparisonSections : [];
-    const plans = _creditPlansCatalog();
+    const plans = _creditPlansCatalog().filter((plan) => String(plan?.code || "") !== "free");
     if (!sections.length || !plans.length) {
         return '<div class="pricing-table-card"><p class="credits-hint">Carregando comparativo de modelos...</p></div>';
     }
