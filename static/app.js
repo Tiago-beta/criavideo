@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v584 loaded");
+console.log("[CriaVideo] app.js v585 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -1168,6 +1168,34 @@ function navigateTo(pageName) {
     _trackPageView(normalizedPage);
 }
 
+function openGalleryVideo(src) {
+    const modal = document.getElementById("modal-gallery-video");
+    const player = document.getElementById("gallery-video-player");
+    if (!modal || !player || !src) return;
+    player.src = src;
+    modal.classList.add("active");
+    player.currentTime = 0;
+    const playPromise = player.play();
+    if (playPromise && typeof playPromise.catch === "function") playPromise.catch(() => {});
+}
+window.openGalleryVideo = openGalleryVideo;
+
+function closeGalleryVideo(event) {
+    if (event && event.target && event.target.id && event.target.id !== "modal-gallery-video" && event.currentTarget !== event.target) {
+        return;
+    }
+    const modal = document.getElementById("modal-gallery-video");
+    const player = document.getElementById("gallery-video-player");
+    if (!modal) return;
+    modal.classList.remove("active");
+    if (player) {
+        player.pause();
+        player.removeAttribute("src");
+        player.load();
+    }
+}
+window.closeGalleryVideo = closeGalleryVideo;
+
 function bindNavigation() {
     const appShell = document.getElementById("app");
     const sidebar = document.getElementById("sidebar");
@@ -1224,6 +1252,18 @@ function bindNavigation() {
             navigateTo(tab.dataset.mobilePage);
         });
     });
+    // Gallery cards open video lightbox
+    const galleryGrid = document.querySelector("#page-galeria .gallery-grid");
+    if (galleryGrid) {
+        galleryGrid.addEventListener("click", (event) => {
+            const card = event.target.closest(".gallery-card");
+            if (!card) return;
+            const video = card.querySelector("video");
+            if (!video) return;
+            const src = video.currentSrc || video.src;
+            if (src) openGalleryVideo(src);
+        });
+    }
     // Profile logout button
     const profileLogout = document.getElementById("btn-profile-logout");
     if (profileLogout) {
