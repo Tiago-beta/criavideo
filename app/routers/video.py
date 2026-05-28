@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel, Field
 from typing import Optional, Any
@@ -277,6 +277,42 @@ def _normalize_wan_duration_seconds(value: int) -> int:
 def _normalize_lite2_duration_seconds(value: int) -> int:
     """Normalize Lite 2.0 duration to the Seedance v1.5 Fast window."""
     return max(5, min(int(value or 5), 12))
+
+
+def _sanitize_narration_state(raw_state: Any) -> dict[str, Any]:
+    candidate = raw_state
+
+    if isinstance(candidate, str):
+        raw_text = candidate.strip()
+        if not raw_text or raw_text.lower() in {"null", "undefined"}:
+            return {}
+        try:
+            candidate = json.loads(raw_text)
+        except Exception:
+            return {}
+
+    if not isinstance(candidate, dict):
+        return {}
+
+    voice_profile_id = int(candidate.get("voice_profile_id") or candidate.get("voiceProfileId") or 0)
+    normalized = {
+        "text": str(candidate.get("text") or "").strip(),
+        "voice": str(candidate.get("voice") or "").strip(),
+        "voice_type": str(candidate.get("voice_type") or candidate.get("voiceType") or "").strip().lower(),
+        "voice_profile_id": voice_profile_id,
+        "tone": str(candidate.get("tone") or "").strip(),
+        "pause_level": str(candidate.get("pause_level") or candidate.get("pauseLevel") or "").strip(),
+        "style": str(candidate.get("style") or "").strip(),
+        "pace": str(candidate.get("pace") or "").strip(),
+        "accent": str(candidate.get("accent") or "").strip(),
+        "notes": str(candidate.get("notes") or "").strip(),
+    }
+
+    if not normalized["voice_type"] and voice_profile_id > 0:
+        normalized["voice_type"] = "profile"
+
+    compact = {key: value for key, value in normalized.items() if value not in ("", 0, None)}
+    return compact if compact else {}
 
 
 _REALISTIC_ENGINES = {"grok", "wan2", "minimax", "seedance", "mega15", "lite2", "viduq3", "avatar25", "avatar31"}
@@ -2968,6 +3004,299 @@ async def _generate_similar_unified_prompt(
     return fallback_prompt, "fallback"
 
 
+def _build_similar_optimized_unified_prompt_fallback(
+    base_prompt: object,
+    aspect_ratio: str,
+    total_duration_seconds: int,
+    scene_duration_seconds: int,
+) -> str:
+    prompt_seed = _normalize_similar_unified_prompt_text(base_prompt, limit=2200)
+    if not prompt_seed:
+        return ""
+
+    normalized_aspect_ratio = str(aspect_ratio or "").strip() or "9:16"
+    total_duration = max(int(total_duration_seconds or 0), 1)
+    scene_duration = max(int(scene_duration_seconds or 0), 1)
+    scene_count = max(1, (total_duration + scene_duration - 1) // scene_duration)
+    framing_label = {
+        "9:16": "vertical",
+        "16:9": "widescreen",
+        "1:1": "square",
+        "4:5": "portrait",
+    }.get(normalized_aspect_ratio, "vertical")
+
+    story_hook = (
+        "Abra com uma imagem de alto impacto no primeiro segundo, aumente a curiosidade em cada virada e termine com um payoff emocional memoravel. "
+        "Cada cena precisa parecer indispensavel, com tensao crescente e continuidade visual clara."
+    )
+    dramatic_goals = [
+        "Apresentar um gancho visual impossivel de ignorar e prometer a historia em segundos",
+        "Aumentar a curiosidade com um detalhe novo, contraste forte ou tensao crescente",
+        "Escalar a emocao com movimento, risco ou descoberta mais intensa",
+        "Entregar o ponto de maior impacto visual e emocional da historia",
+        "Fechar com uma imagem marcante que fique na memoria e incentive replay",
+    ]
+    hook_emphasis = [
+        "Lead with an instant scroll-stopping visual hook and immediate curiosity.",
+        "Escalate the momentum with a stronger reveal, sharper contrast, or rising tension.",
+        "Push the emotion higher while preserving the same subject, wardrobe, and world.",
+        "Deliver the clearest payoff beat with the strongest cinematic impact so far.",
+        "Resolve with a memorable final image that feels earned and impossible to forget.",
+    ]
+
+    scene_blocks: list[str] = []
+    for index in range(scene_count):
+        start_second = index * scene_duration
+        end_second = min(total_duration, start_second + scene_duration)
+        stage_index = min(index, len(dramatic_goals) - 1)
+        if scene_count > 1:
+            progress_ratio = index / max(scene_count - 1, 1)
+            if progress_ratio >= 0.8:
+                stage_index = min(len(dramatic_goals) - 1, 4)
+            elif progress_ratio >= 0.55:
+                stage_index = min(len(dramatic_goals) - 1, 3)
+            elif progress_ratio >= 0.25:
+                stage_index = min(len(dramatic_goals) - 1, 2)
+            elif progress_ratio >= 0.1:
+                stage_index = min(len(dramatic_goals) - 1, 1)
+
+        dramatic_goal = dramatic_goals[stage_index]
+        hook_instruction = hook_emphasis[stage_index]
+        duration_label = max(end_second - start_second, 1)
+        scene_prompt = _normalize_similar_unified_prompt_text(
+            (
+                f"{prompt_seed} Rebuild this as scene {index + 1} of {scene_count} for a {framing_label} {normalized_aspect_ratio} short-form video. "
+                f"Primary dramatic goal: {dramatic_goal}. "
+                f"{hook_instruction} Keep the same main character, facial identity, wardrobe, environment, lighting direction, and emotional continuity. "
+                f"Deliver a clean beginning, a compelling mid-beat, and a memorable end beat within {duration_label} seconds."
+            ),
+            limit=520,
+        )
+        scene_blocks.append(
+            f"CENA {index + 1} ({start_second}s-{end_second}s)\n"
+            f"Objetivo dramatico: {dramatic_goal}.\n"
+            f"Prompt completo: {scene_prompt}"
+        )
+
+    script = (
+        "GANCHO CENTRAL\n"
+        f"{story_hook}\n\n"
+        f"FORMATO: {normalized_aspect_ratio}\n"
+        f"DURACAO TOTAL: {total_duration}s\n"
+        f"TEMPO POR CENA: {scene_duration}s\n"
+        f"TOTAL DE CENAS: {scene_count}\n\n"
+        + "\n\n".join(scene_blocks)
+    )
+    return _normalize_similar_unified_prompt_text(script, limit=9000)
+
+
+def _is_similar_optimized_unified_prompt_valid(raw: object, scene_count: int) -> bool:
+    text = _normalize_similar_unified_prompt_text(raw, limit=9000)
+    if len(text) < 260:
+        return False
+    required_parts = (
+        "GANCHO CENTRAL",
+        "FORMATO:",
+        "DURACAO TOTAL:",
+        "TEMPO POR CENA:",
+        "TOTAL DE CENAS:",
+        "Prompt completo:",
+    )
+    if any(part not in text for part in required_parts):
+        return False
+    scene_matches = re.findall(r"(?m)^CENA\s+\d+\s+\(", text)
+    return len(scene_matches) >= max(scene_count, 1)
+
+
+_SIMILAR_OPTIMIZED_SCENE_BLOCK_RE = re.compile(
+    r"(?ms)^CENA\s+(?P<number>\d+)\s*\([^)]+\)\s*\n"
+    r"Objetivo dramatico:\s*(?P<objective>.*?)\s*\n"
+    r"Prompt completo:\s*(?P<prompt>.*?)(?=^\s*CENA\s+\d+\s*\(|\Z)"
+)
+
+
+def _extract_similar_optimized_scene_specs(
+    prompt_text: object,
+    total_duration_seconds: int,
+    scene_duration_seconds: int,
+) -> list[dict[str, Any]]:
+    text = _normalize_similar_unified_prompt_text(prompt_text, limit=9000)
+    if not text:
+        return []
+
+    total_duration = max(int(total_duration_seconds or 0), 1)
+    scene_duration = max(int(scene_duration_seconds or 0), 1)
+    scene_specs: list[dict[str, Any]] = []
+
+    for index, match in enumerate(_SIMILAR_OPTIMIZED_SCENE_BLOCK_RE.finditer(text)):
+        prompt = _normalize_similar_unified_prompt_text(match.group("prompt"), limit=2200)
+        if not prompt:
+            continue
+
+        start_second = float(index * scene_duration)
+        end_second = float(min(total_duration, (index + 1) * scene_duration))
+        if end_second <= start_second:
+            end_second = float(start_second + scene_duration)
+
+        scene_specs.append(
+            {
+                "scene_index": index,
+                "prompt": prompt,
+                "start_time": start_second,
+                "end_time": end_second,
+            }
+        )
+
+    return scene_specs
+
+
+def _build_similar_optimized_scene_reference_maps(
+    tags_data: dict[str, Any],
+    scene_count: int,
+) -> tuple[dict[str, str], dict[str, str]]:
+    if scene_count <= 0:
+        return {}, {}
+
+    start_path, end_path = _extract_similar_unified_boundary_frame_paths(tags_data)
+    reference_frame_map: dict[str, str] = {}
+    reference_end_map: dict[str, str] = {}
+
+    if start_path and os.path.exists(start_path):
+        reference_frame_map["0"] = start_path
+    if end_path and os.path.exists(end_path):
+        reference_end_map[str(max(scene_count - 1, 0))] = end_path
+
+    return reference_frame_map, reference_end_map
+
+
+async def _sync_similar_optimized_story_scenes(
+    db: AsyncSession,
+    project: VideoProject,
+    scene_specs: list[dict[str, Any]],
+    tags_data: dict[str, Any],
+) -> None:
+    project_id = int(getattr(project, "id", 0) or 0)
+    await db.execute(delete(VideoScene).where(VideoScene.project_id == project_id))
+    await db.flush()
+
+    for scene_spec in scene_specs:
+        db.add(
+            VideoScene(
+                project_id=project_id,
+                scene_index=int(scene_spec.get("scene_index", 0) or 0),
+                scene_type="image",
+                prompt=str(scene_spec.get("prompt") or "").strip(),
+                start_time=float(scene_spec.get("start_time", 0.0) or 0.0),
+                end_time=float(scene_spec.get("end_time", 0.0) or 0.0),
+                lyrics_segment="",
+                is_user_uploaded=False,
+            )
+        )
+
+    for stale_key in (
+        "similar_generated_frame_variants",
+        "similar_detected_scene_durations",
+        "similar_reference_frames",
+        "similar_reference_end_frames",
+        "similar_current_scene_id",
+        "similar_current_scene_index",
+        "similar_total_scenes",
+        "similar_regenerating_scene_id",
+        "similar_generation_mode",
+    ):
+        tags_data.pop(stale_key, None)
+
+    reference_frame_map, reference_end_map = _build_similar_optimized_scene_reference_maps(tags_data, len(scene_specs))
+    if reference_frame_map:
+        tags_data["similar_reference_frames"] = reference_frame_map
+    else:
+        tags_data.pop("similar_reference_frames", None)
+
+    if reference_end_map:
+        tags_data["similar_reference_end_frames"] = reference_end_map
+    else:
+        tags_data.pop("similar_reference_end_frames", None)
+
+    tags_data["similar_scene_count"] = len(scene_specs)
+
+
+async def _generate_similar_optimized_unified_prompt(
+    base_prompt: object,
+    aspect_ratio: str,
+    total_duration_seconds: int,
+    scene_duration_seconds: int,
+) -> tuple[str, str]:
+    fallback_prompt = _build_similar_optimized_unified_prompt_fallback(
+        base_prompt,
+        aspect_ratio,
+        total_duration_seconds,
+        scene_duration_seconds,
+    )
+    if not fallback_prompt:
+        return "", "optimized_fallback"
+
+    scene_count = max(1, (int(total_duration_seconds or 0) + int(scene_duration_seconds or 0) - 1) // max(int(scene_duration_seconds or 0), 1))
+    preferred_model = (settings.similar_analysis_model or "gpt-4o-mini").strip() or "gpt-4o-mini"
+    system_prompt = (
+        "You expand a single cinematic recreation prompt into a short-form multi-scene story script with strong attention hooks. "
+        "Return plain text only, never markdown tables, never JSON, never bullet lists, and never wrap the answer in quotes. "
+        "Write the planning headings and dramatic notes in Brazilian Portuguese. "
+        "Every 'Prompt completo:' line must be in English and ready to feed into a text-to-video model for that specific scene. "
+        "Respect the requested aspect ratio, total duration, and per-scene duration. "
+        "Keep the same character identity, outfit, lighting logic, and visual world unless the dramatic escalation clearly justifies a change. "
+        "Each scene must intensify curiosity, emotion, risk, revelation, or payoff, avoiding filler."
+    )
+
+    scene_layout = []
+    for index in range(scene_count):
+        start_second = index * scene_duration_seconds
+        end_second = min(total_duration_seconds, start_second + scene_duration_seconds)
+        scene_layout.append(f"CENA {index + 1} ({start_second}s-{end_second}s)")
+
+    user_prompt = (
+        "Transform the base prompt below into an engaging short-form story script with one complete scene prompt per block.\n\n"
+        f"Aspect ratio: {aspect_ratio}\n"
+        f"Total duration: {total_duration_seconds} seconds\n"
+        f"Scene duration: {scene_duration_seconds} seconds\n"
+        f"Number of scenes: {scene_count}\n\n"
+        "Output structure to follow exactly:\n"
+        "GANCHO CENTRAL\n"
+        "[2-3 sentences in Brazilian Portuguese describing the hook, emotional arc, and why the story grabs attention fast.]\n\n"
+        f"FORMATO: {aspect_ratio}\n"
+        f"DURACAO TOTAL: {total_duration_seconds}s\n"
+        f"TEMPO POR CENA: {scene_duration_seconds}s\n"
+        f"TOTAL DE CENAS: {scene_count}\n\n"
+        + "\n".join(
+            f"{scene_label}\nObjetivo dramatico: [Brazilian Portuguese]\nPrompt completo: [English text-to-video prompt]"
+            for scene_label in scene_layout
+        )
+        + "\n\nBase prompt:\n"
+        + _normalize_similar_unified_prompt_text(base_prompt, limit=2200)
+    )
+
+    try:
+        response = await _openai.chat.completions.create(
+            model=preferred_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.55,
+            max_tokens=1400,
+        )
+        candidate = _normalize_similar_unified_prompt_text(
+            response.choices[0].message.content if response and response.choices else "",
+            limit=9000,
+        )
+        if _is_similar_optimized_unified_prompt_valid(candidate, scene_count):
+            return candidate, "optimized_ai"
+        logger.warning("Similar optimized unified prompt AI output invalid; using fallback")
+    except Exception as exc:
+        logger.warning("Similar optimized unified prompt generation failed: %s", exc)
+
+    return fallback_prompt, "optimized_fallback"
+
+
 class CreateProjectRequest(BaseModel):
     track_id: int = 0
     title: str = ""
@@ -3074,6 +3403,13 @@ class SimilarGenerateUnifiedSceneRequest(BaseModel):
     image_upload_id: str = ""
     image_upload_ids: list[str] = Field(default_factory=list)
     use_last_image_as_final_frame: bool = False
+
+
+class SimilarOptimizeUnifiedPromptRequest(BaseModel):
+    aspect_ratio: str = "9:16"
+    total_duration_seconds: int = Field(default=30, ge=5, le=180)
+    scene_duration_seconds: int = Field(default=5, ge=5, le=15)
+    prompt_override: str = ""
 
 
 class SimilarMergeRequest(BaseModel):
@@ -3560,6 +3896,12 @@ async def build_similar_unified_prompt(
         "similar_unified_start_frame_path",
         "similar_unified_end_frame_path",
         "similar_unified_reference_frame_count",
+        "similar_unified_prompt_seed",
+        "similar_unified_prompt_seed_source",
+        "similar_unified_prompt_story_aspect_ratio",
+        "similar_unified_prompt_story_total_duration",
+        "similar_unified_prompt_story_scene_duration",
+        "similar_unified_prompt_story_scene_count",
     ):
         tags_data.pop(stale_key, None)
 
@@ -3585,6 +3927,149 @@ async def build_similar_unified_prompt(
         "prompt": prompt_text,
         "source": prompt_source,
         "generated_at": generated_at,
+        "start_frame_url": _to_media_url(start_frame_path) if start_frame_path and os.path.exists(start_frame_path) else None,
+        "end_frame_url": _to_media_url(end_frame_path) if end_frame_path and os.path.exists(end_frame_path) else None,
+        "reference_frame_count": reference_frame_count,
+    }
+
+
+@router.post("/projects/{project_id}/similar/unified-prompt/optimize")
+async def optimize_similar_unified_prompt(
+    project_id: int,
+    req: SimilarOptimizeUnifiedPromptRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await db.get(VideoProject, project_id)
+    if not project or project.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not _is_similar_project(project):
+        raise HTTPException(status_code=400, detail="Projeto nao esta no modo Semelhante")
+
+    normalized_aspect_ratio = str(req.aspect_ratio or "").strip() or "9:16"
+    if normalized_aspect_ratio not in {"9:16", "16:9", "1:1", "4:5"}:
+        raise HTTPException(status_code=400, detail="Formato invalido")
+
+    total_duration_seconds = int(req.total_duration_seconds or 0)
+    scene_duration_seconds = int(req.scene_duration_seconds or 0)
+    if scene_duration_seconds not in {5, 10, 15}:
+        raise HTTPException(status_code=400, detail="Tempo por cena invalido. Use 5, 10 ou 15 segundos")
+    if total_duration_seconds < scene_duration_seconds:
+        raise HTTPException(status_code=400, detail="A duracao total deve ser maior ou igual ao tempo por cena")
+
+    scene_count = max(1, (total_duration_seconds + scene_duration_seconds - 1) // scene_duration_seconds)
+    if scene_count > 12:
+        raise HTTPException(status_code=400, detail="Divisao de cenas muito longa. Use no maximo 12 cenas por roteiro")
+
+    tags_data = _safe_tags_dict(project.tags)
+    source_prompt = _normalize_similar_unified_prompt_text(
+        req.prompt_override or tags_data.get("similar_unified_prompt") or "",
+        limit=4000,
+    )
+    if not source_prompt:
+        raise HTTPException(status_code=400, detail="Gere o prompt unico antes de otimizar")
+
+    existing_scenes_result = await db.execute(
+        select(VideoScene)
+        .where(VideoScene.project_id == project_id)
+        .order_by(VideoScene.scene_index.asc())
+    )
+    existing_scenes = existing_scenes_result.scalars().all()
+
+    prompt_text, prompt_source = await _generate_similar_optimized_unified_prompt(
+        source_prompt,
+        normalized_aspect_ratio,
+        total_duration_seconds,
+        scene_duration_seconds,
+    )
+    if not prompt_text:
+        raise HTTPException(status_code=500, detail="Nao foi possivel otimizar o prompt unico")
+
+    scene_specs = _extract_similar_optimized_scene_specs(
+        prompt_text,
+        total_duration_seconds,
+        scene_duration_seconds,
+    )
+    if len(scene_specs) != scene_count:
+        fallback_prompt = _build_similar_optimized_unified_prompt_fallback(
+            source_prompt,
+            normalized_aspect_ratio,
+            total_duration_seconds,
+            scene_duration_seconds,
+        )
+        fallback_scene_specs = _extract_similar_optimized_scene_specs(
+            fallback_prompt,
+            total_duration_seconds,
+            scene_duration_seconds,
+        )
+        if len(fallback_scene_specs) == scene_count:
+            prompt_text = fallback_prompt
+            prompt_source = "optimized_fallback"
+            scene_specs = fallback_scene_specs
+
+    if not scene_specs:
+        raise HTTPException(status_code=500, detail="Nao foi possivel dividir o roteiro em cenas")
+
+    scene_count = len(scene_specs)
+
+    generated_at = datetime.utcnow().isoformat() + "Z"
+    start_frame_path, end_frame_path = await _ensure_similar_unified_boundary_frame_paths(project.id, existing_scenes, tags_data)
+    reference_frame_count = len({path for path in (start_frame_path, end_frame_path) if path})
+
+    for stale_key in (
+        "similar_unified_clip_path",
+        "similar_unified_clip_engine",
+        "similar_unified_clip_duration",
+        "similar_unified_clip_generated_at",
+        "similar_unified_reference_image_path",
+    ):
+        tags_data.pop(stale_key, None)
+
+    previous_source = str(tags_data.get("similar_unified_prompt_source") or "").strip()
+    tags_data.update(
+        {
+            "type": "similar",
+            "similar_stage": "analysis_general_ready",
+            "similar_unified_prompt": prompt_text,
+            "similar_unified_prompt_source": prompt_source,
+            "similar_unified_prompt_generated_at": generated_at,
+            "similar_unified_prompt_seed": source_prompt,
+            "similar_unified_prompt_seed_source": previous_source,
+            "similar_unified_prompt_story_aspect_ratio": normalized_aspect_ratio,
+            "similar_unified_prompt_story_total_duration": total_duration_seconds,
+            "similar_unified_prompt_story_scene_duration": scene_duration_seconds,
+            "similar_unified_prompt_story_scene_count": scene_count,
+        }
+    )
+    if start_frame_path:
+        tags_data["similar_unified_start_frame_path"] = start_frame_path
+    else:
+        tags_data.pop("similar_unified_start_frame_path", None)
+    if end_frame_path:
+        tags_data["similar_unified_end_frame_path"] = end_frame_path
+    else:
+        tags_data.pop("similar_unified_end_frame_path", None)
+    if reference_frame_count > 0:
+        tags_data["similar_unified_reference_frame_count"] = reference_frame_count
+    else:
+        tags_data.pop("similar_unified_reference_frame_count", None)
+
+    await _sync_similar_optimized_story_scenes(db, project, scene_specs, tags_data)
+
+    project.aspect_ratio = normalized_aspect_ratio
+    project.tags = tags_data
+    await db.commit()
+
+    return {
+        "prompt": prompt_text,
+        "source": prompt_source,
+        "generated_at": generated_at,
+        "prompt_seed": source_prompt,
+        "prompt_seed_source": previous_source,
+        "aspect_ratio": normalized_aspect_ratio,
+        "total_duration_seconds": total_duration_seconds,
+        "scene_duration_seconds": scene_duration_seconds,
+        "scene_count": scene_count,
         "start_frame_url": _to_media_url(start_frame_path) if start_frame_path and os.path.exists(start_frame_path) else None,
         "end_frame_url": _to_media_url(end_frame_path) if end_frame_path and os.path.exists(end_frame_path) else None,
         "reference_frame_count": reference_frame_count,

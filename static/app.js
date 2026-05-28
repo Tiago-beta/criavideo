@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v574 loaded");
+console.log("[CriaVideo] app.js v579 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -206,6 +206,7 @@ const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
 const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
 const SIMILAR_ENGINE_OPTIONS = ["lite2", "mega15", "viduq3", "grok", "wan2", "seedance"];
+const SIMILAR_UNIFIED_ENGINE_CARD_OPTIONS = ["lite2", "viduq3", "grok", "wan2", "mega15", "seedance"];
 const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "mega15", "lite2", "viduq3"]);
 const REALISTIC_ENGINE_CREDITS_PER_SECOND = Object.freeze({
     avatar25: 3,
@@ -217,6 +218,38 @@ const REALISTIC_ENGINE_CREDITS_PER_SECOND = Object.freeze({
     mega15: 12,
     seedance: 15,
 });
+const SIMILAR_ENGINE_META = Object.freeze({
+    lite2: {
+        label: "Mega 1.5 Real",
+        shortLabel: "Mega 1.5",
+        description: "Cria vídeo realista com áudio nativo.",
+    },
+    mega15: {
+        label: "Lite 2.0 Fast",
+        shortLabel: "Lite 2.0",
+        description: "Versão mais leve do Mega 2.0 Ultra, com áudio nativo.",
+    },
+    viduq3: {
+        label: "Pro 3.1 Start",
+        shortLabel: "Pro 3.1",
+        description: "Cria vídeo com áudio nativo, duração de 1 a 16 segundos.",
+    },
+    grok: {
+        label: "Cria 3.0 speed",
+        shortLabel: "Cria 3.0",
+        description: "Cria vídeo com velocidade rápida.",
+    },
+    wan2: {
+        label: "Ultra High 1.0",
+        shortLabel: "Ultra High",
+        description: "Cria vídeo com áudio nativo e sem restrição.",
+    },
+    seedance: {
+        label: "Mega 2.0 Ultra",
+        shortLabel: "Mega 2.0",
+        description: "Cria vídeo realista com áudio nativo.",
+    },
+});
 
 function _isSeedanceFamilyEngine(engineValue) {
     return SEEDANCE_FAMILY_ENGINES.has(String(engineValue || "").trim().toLowerCase());
@@ -225,6 +258,17 @@ function _isSeedanceFamilyEngine(engineValue) {
 function _getRealisticEngineCreditsPerSecond(engineValue) {
     const normalized = String(engineValue || "").trim().toLowerCase();
     return REALISTIC_ENGINE_CREDITS_PER_SECOND[normalized] || 0;
+}
+
+function _getSimilarEngineMeta(engineValue) {
+    const normalized = _normalizeSimilarEngine(engineValue);
+    const meta = SIMILAR_ENGINE_META[normalized];
+    if (meta) return meta;
+    return {
+        label: normalized || "Motor",
+        shortLabel: normalized || "Motor",
+        description: "",
+    };
 }
 
 function _syncRealisticEngineOptionCards(containerId) {
@@ -4314,6 +4358,7 @@ let similarState = {
     bulkFrameTextRemovalBusy: false,
     activeUploadSceneId: 0,
     activeUploadSceneFrameTarget: "",
+    activeUploadSceneOpenEditor: false,
     sourceVideoFile: null,
     sourceVideoObjectUrl: "",
     sourceVideoName: "",
@@ -4365,6 +4410,7 @@ let similarState = {
     unifiedFramePendingImageUploads: [],
     unifiedAutoImageKey: "",
     unifiedAutoImageStatus: "idle",
+    unifiedOptimizeBusy: false,
 };
 
 function _createLiveSessionDefaultState() {
@@ -4598,6 +4644,7 @@ const _creditEstimateAddButtonByBadge = {
 const _createCreditButtonByBadge = {
     "wizard-credit-estimate": "wizard-create-btn-credit",
     "script-credit-estimate": "script-create-btn-credit",
+    "publish-scene-analysis-estimate": "btn-publish-analyze-credit",
 };
 const _createCreditRowByBadge = {
     "wizard-credit-estimate": "wizard-credit-actions",
@@ -4606,9 +4653,6 @@ const _createCreditRowByBadge = {
 const _inlineCreditButtonByEstimateTarget = {
     "auto-credit-estimate": "auto-btn-create",
     "workflow-credit-estimate": "workflow-run",
-    "publish-scene-analysis-estimate": "btn-publish-analyze",
-    "similar-general-analysis-estimate": "similar-start-analysis-general",
-    "similar-scene-analysis-estimate": "similar-start-analysis-scenes",
 };
 
 function _formatCreditsInt(value) {
@@ -4705,16 +4749,23 @@ function _extractCreateButtonCreditLabel(message = "") {
     return match ? match[0] : "";
 }
 
-function _setCreateButtonCredit(targetId, message = "", kind = "ready", hidden = false) {
-    const creditId = _createCreditButtonByBadge[targetId];
-    if (!creditId) return;
-    const creditEl = document.getElementById(creditId);
+function _setCreateButtonCreditElement(creditElOrId, message = "", kind = "ready", hidden = false) {
+    const creditEl = typeof creditElOrId === "string"
+        ? document.getElementById(creditElOrId)
+        : creditElOrId;
     if (!creditEl) return;
 
     const value = hidden ? "" : _extractCreateButtonCreditLabel(message);
+    const baseClass = String(creditEl.dataset.creditClass || "btn-create-video-credit").trim() || "btn-create-video-credit";
     creditEl.hidden = !value;
     creditEl.textContent = value;
-    creditEl.className = `btn-create-video-credit is-${kind}`;
+    creditEl.className = `${baseClass} is-${kind}`;
+}
+
+function _setCreateButtonCredit(targetId, message = "", kind = "ready", hidden = false) {
+    const creditId = _createCreditButtonByBadge[targetId];
+    if (!creditId) return;
+    _setCreateButtonCreditElement(creditId, message, kind, hidden);
 }
 
 function _setCreditEstimateBadge(targetId, message = "", kind = "ready", hidden = false) {
@@ -5723,10 +5774,12 @@ async function updateSimilarUnifiedActionCreditEstimates() {
     const tags = _safeSimilarTags(project?.tags);
     const promptText = String(document.getElementById("similar-unified-prompt-text")?.value || tags?.similar_unified_prompt || "").trim();
     const generateBtn = document.getElementById("similar-generate-unified-scene");
+    const generateCreditEl = document.getElementById("similar-generate-unified-scene-credit");
     const createImageBtn = document.getElementById("similar-unified-create-image-button");
 
     if (!project || !promptText) {
         _setInlineButtonCredit(generateBtn, "");
+        _setCreateButtonCreditElement(generateCreditEl, "", "ready", true);
         _setInlineButtonCredit(createImageBtn, "");
         return;
     }
@@ -5744,7 +5797,10 @@ async function updateSimilarUnifiedActionCreditEstimates() {
     ]);
 
     if (videoEstimate) {
-        _setInlineButtonCredit(generateBtn, videoEstimate.label, videoEstimate.kind);
+        _setInlineButtonCredit(generateBtn, "");
+        _setCreateButtonCreditElement(generateCreditEl, videoEstimate.label, videoEstimate.kind);
+    } else {
+        _setCreateButtonCreditElement(generateCreditEl, "", "ready", true);
     }
     if (imageEstimate) {
         _setInlineButtonCredit(createImageBtn, imageEstimate.label, imageEstimate.kind);
@@ -5786,14 +5842,22 @@ async function updateSimilarSceneActionCreditEstimate(sceneId) {
 
     const scene = _getSimilarProjectScene(targetId);
     const imageButton = document.getElementById(`similar-scene-generate-image-${targetId}`);
+    const imagePrimaryCreditEl = document.getElementById(`similar-scene-create-image-primary-credit-${targetId}`);
     const videoButtons = [
         document.getElementById(`similar-scene-generate-video-${targetId}`),
         document.getElementById(`similar-scene-generate-video-image-${targetId}`),
         document.getElementById(`similar-scene-generate-video-text-${targetId}`),
     ].filter(Boolean);
+    const videoCreditEls = [
+        document.getElementById(`similar-scene-generate-video-credit-${targetId}`),
+        document.getElementById(`similar-scene-generate-video-image-credit-${targetId}`),
+        document.getElementById(`similar-scene-generate-video-text-credit-${targetId}`),
+    ].filter(Boolean);
     if (!scene) {
         _setInlineButtonCredit(imageButton, "");
+        _setCreateButtonCreditElement(imagePrimaryCreditEl, "", "ready", true);
         videoButtons.forEach((button) => _setInlineButtonCredit(button, ""));
+        videoCreditEls.forEach((creditEl) => _setCreateButtonCreditElement(creditEl, "", "ready", true));
         return;
     }
 
@@ -5808,12 +5872,22 @@ async function updateSimilarSceneActionCreditEstimate(sceneId) {
         ),
     ]);
 
+    _setInlineButtonCredit(imageButton, "");
+    videoButtons.forEach((button) => _setInlineButtonCredit(button, ""));
+
     if (imageEstimate) {
-        _setInlineButtonCredit(imageButton, imageEstimate.label, imageEstimate.kind);
+        _setCreateButtonCreditElement(imagePrimaryCreditEl, imageEstimate.label, imageEstimate.kind);
+    } else {
+        _setCreateButtonCreditElement(imagePrimaryCreditEl, "", "ready", true);
     }
+
     if (videoEstimate) {
-        videoButtons.forEach((button) => {
-            _setInlineButtonCredit(button, videoEstimate.label, videoEstimate.kind);
+        videoCreditEls.forEach((creditEl) => {
+            _setCreateButtonCreditElement(creditEl, videoEstimate.label, videoEstimate.kind);
+        });
+    } else {
+        videoCreditEls.forEach((creditEl) => {
+            _setCreateButtonCreditElement(creditEl, "", "ready", true);
         });
     }
 }
@@ -6654,9 +6728,44 @@ function initCreateWizard() {
         similarBuildUnifiedPromptBtn.addEventListener("click", similarBuildUnifiedPrompt);
     }
 
-    const similarCopyUnifiedPromptBtn = document.getElementById("similar-copy-unified-prompt");
-    if (similarCopyUnifiedPromptBtn) {
-        similarCopyUnifiedPromptBtn.addEventListener("click", similarCopyUnifiedPrompt);
+    const similarOptimizeUnifiedPromptBtn = document.getElementById("similar-optimize-unified-prompt");
+    if (similarOptimizeUnifiedPromptBtn) {
+        similarOptimizeUnifiedPromptBtn.addEventListener("click", openSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptAspect = document.getElementById("similar-optimize-unified-prompt-aspect");
+    if (similarOptimizeUnifiedPromptAspect) {
+        similarOptimizeUnifiedPromptAspect.addEventListener("change", _syncSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptTotal = document.getElementById("similar-optimize-unified-prompt-total");
+    if (similarOptimizeUnifiedPromptTotal) {
+        similarOptimizeUnifiedPromptTotal.addEventListener("input", _syncSimilarOptimizeUnifiedPromptModal);
+        similarOptimizeUnifiedPromptTotal.addEventListener("change", _syncSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptScene = document.getElementById("similar-optimize-unified-prompt-scene");
+    if (similarOptimizeUnifiedPromptScene) {
+        similarOptimizeUnifiedPromptScene.addEventListener("change", _syncSimilarOptimizeUnifiedPromptModal);
+    }
+
+    const similarOptimizeUnifiedPromptCloseBtn = document.getElementById("similar-optimize-unified-prompt-close");
+    if (similarOptimizeUnifiedPromptCloseBtn) {
+        similarOptimizeUnifiedPromptCloseBtn.addEventListener("click", () => {
+            closeSimilarOptimizeUnifiedPromptModal();
+        });
+    }
+
+    const similarOptimizeUnifiedPromptCancelBtn = document.getElementById("similar-optimize-unified-prompt-cancel");
+    if (similarOptimizeUnifiedPromptCancelBtn) {
+        similarOptimizeUnifiedPromptCancelBtn.addEventListener("click", () => {
+            closeSimilarOptimizeUnifiedPromptModal();
+        });
+    }
+
+    const similarOptimizeUnifiedPromptSubmitBtn = document.getElementById("similar-optimize-unified-prompt-submit");
+    if (similarOptimizeUnifiedPromptSubmitBtn) {
+        similarOptimizeUnifiedPromptSubmitBtn.addEventListener("click", similarOptimizeUnifiedPrompt);
     }
 
     const similarGenerateUnifiedSceneBtn = document.getElementById("similar-generate-unified-scene");
@@ -8776,6 +8885,7 @@ function _clearSimilarUnifiedPrompt() {
     const previewMetaEl = document.getElementById("similar-unified-preview-meta");
     const previewStageEl = document.getElementById("similar-unified-preview-stage");
     const generateBtn = document.getElementById("similar-generate-unified-scene");
+    const generateCreditEl = document.getElementById("similar-generate-unified-scene-credit");
     const createImageBtn = document.getElementById("similar-unified-create-image-button");
     if (textEl) textEl.value = "";
     if (metaEl) metaEl.textContent = "Transforme as partes analisadas em um prompt continuo.";
@@ -8788,7 +8898,8 @@ function _clearSimilarUnifiedPrompt() {
     if (previewMetaEl) previewMetaEl.textContent = "";
     if (previewStageEl) previewStageEl.innerHTML = "";
     if (previewWrapEl) previewWrapEl.hidden = true;
-    if (generateBtn) generateBtn.textContent = "Gerar vídeo";
+    _setSimilarUnifiedGenerateButtonLabel("Gerar vídeo");
+    _setCreateButtonCreditElement(generateCreditEl, "", "ready", true);
     if (createImageBtn) createImageBtn.hidden = true;
     _setInlineButtonCredit(generateBtn, "");
     _setInlineButtonCredit(createImageBtn, "");
@@ -8802,9 +8913,209 @@ function _clearSimilarUnifiedPrompt() {
     _clearSimilarUnifiedFramePendingUploads();
     similarState.unifiedAutoImageKey = "";
     similarState.unifiedAutoImageStatus = "idle";
+    similarState.unifiedOptimizeBusy = false;
     _setSimilarUnifiedUploadStatus("");
+    _setSimilarOptimizeUnifiedPromptModalBusy(false);
+    closeSimilarOptimizeUnifiedPromptModal(true);
     _syncSimilarUnifiedUploadUi();
     if (wrapEl) wrapEl.hidden = true;
+}
+
+function _setSimilarUnifiedGenerateButtonLabel(label = "Gerar vídeo") {
+    const generateBtn = document.getElementById("similar-generate-unified-scene");
+    if (!generateBtn) return;
+
+    const labelEl = generateBtn.querySelector(".btn-create-video-label");
+    const nextLabel = String(label || "Gerar vídeo").trim() || "Gerar vídeo";
+    if (labelEl) {
+        labelEl.textContent = nextLabel;
+        return;
+    }
+
+    generateBtn.textContent = nextLabel;
+}
+
+function _renderSimilarUnifiedEngineCards(enginePickerEl, selectedEngine) {
+    if (!enginePickerEl) return;
+
+    enginePickerEl.innerHTML = SIMILAR_UNIFIED_ENGINE_CARD_OPTIONS.map((engineValue) => {
+        const meta = _getSimilarEngineMeta(engineValue);
+        const rate = _getRealisticEngineCreditsPerSecond(engineValue);
+        return `
+            <button
+                class="engine-option${selectedEngine === engineValue ? " selected" : ""}"
+                data-value="${engineValue}"
+                type="button"
+                onclick="similarSelectUnifiedEngine('${engineValue}')"
+                title="Usar ${meta.label} na cena unica"
+                aria-label="Usar ${meta.label} na cena unica"
+            >
+                <strong>${meta.label}</strong>
+                <small class="engine-option-desc">${meta.description}</small>
+                <span class="engine-option-footer">${rate > 0 ? `<span class="engine-option-rate">${rate}/s</span>` : ""}</span>
+            </button>
+        `;
+    }).join("");
+}
+
+function _setSimilarOptimizeUnifiedPromptModalBusy(isBusy, message = "") {
+    similarState.unifiedOptimizeBusy = !!isBusy;
+
+    const submitBtn = document.getElementById("similar-optimize-unified-prompt-submit");
+    const closeBtn = document.getElementById("similar-optimize-unified-prompt-close");
+    const cancelBtn = document.getElementById("similar-optimize-unified-prompt-cancel");
+    const aspectEl = document.getElementById("similar-optimize-unified-prompt-aspect");
+    const totalEl = document.getElementById("similar-optimize-unified-prompt-total");
+    const sceneEl = document.getElementById("similar-optimize-unified-prompt-scene");
+    const statusEl = document.getElementById("similar-optimize-unified-prompt-status");
+
+    [closeBtn, cancelBtn, aspectEl, totalEl, sceneEl].forEach((el) => {
+        if (el) el.disabled = !!isBusy;
+    });
+
+    if (submitBtn) {
+        submitBtn.textContent = isBusy ? "Otimizando..." : "Gerar roteiro";
+        submitBtn.disabled = !!isBusy || submitBtn.dataset.invalid === "true";
+    }
+
+    const nextMessage = String(message || "").trim();
+    if (statusEl) {
+        if (nextMessage) {
+            statusEl.hidden = false;
+            statusEl.textContent = nextMessage;
+        } else if (!isBusy) {
+            statusEl.hidden = true;
+            statusEl.textContent = "";
+        }
+    }
+}
+
+function _getSimilarOptimizeUnifiedPromptDefaults(project) {
+    const tags = _safeSimilarTags(project?.tags);
+    const rawAspectRatio = String(
+        tags.similar_unified_prompt_story_aspect_ratio
+        || project?.aspect_ratio
+        || document.getElementById("similar-aspect")?.value
+        || "9:16",
+    ).trim();
+    const aspectRatio = ["9:16", "16:9", "1:1", "4:5"].includes(rawAspectRatio) ? rawAspectRatio : "9:16";
+
+    const rawSceneDuration = parseInt(tags.similar_unified_prompt_story_scene_duration || 5, 10) || 5;
+    const sceneDuration = [5, 10, 15].includes(rawSceneDuration) ? rawSceneDuration : 5;
+
+    const durationSeed = Number(
+        tags.similar_unified_prompt_story_total_duration
+        || tags.similar_total_duration
+        || project?.track_duration
+        || similarState.sourceVideoDurationSeconds
+        || 30,
+    ) || 30;
+    const roundedDuration = Math.max(sceneDuration, Math.ceil(durationSeed / 5) * 5 || 30);
+    const maxDuration = Math.min(180, sceneDuration * 12);
+    const totalDuration = Math.max(sceneDuration, Math.min(roundedDuration, maxDuration));
+
+    return { aspectRatio, totalDuration, sceneDuration };
+}
+
+function _syncSimilarOptimizeUnifiedPromptModal() {
+    const aspectEl = document.getElementById("similar-optimize-unified-prompt-aspect");
+    const totalEl = document.getElementById("similar-optimize-unified-prompt-total");
+    const sceneEl = document.getElementById("similar-optimize-unified-prompt-scene");
+    const summaryEl = document.getElementById("similar-optimize-unified-prompt-summary");
+    const submitBtn = document.getElementById("similar-optimize-unified-prompt-submit");
+
+    const aspectRatio = String(aspectEl?.value || "9:16").trim() || "9:16";
+    const totalDuration = parseInt(totalEl?.value || "0", 10) || 0;
+    const sceneDuration = parseInt(sceneEl?.value || "0", 10) || 0;
+
+    let invalidMessage = "";
+    let summaryText = "Defina o formato e o ritmo para montar o roteiro.";
+    let sceneCount = 0;
+
+    if (![5, 10, 15].includes(sceneDuration)) {
+        invalidMessage = "Escolha 5, 10 ou 15 segundos por cena.";
+    } else if (totalDuration < sceneDuration) {
+        invalidMessage = "A duracao total precisa ser maior ou igual ao tempo por cena.";
+    } else {
+        sceneCount = Math.ceil(totalDuration / sceneDuration);
+        if (sceneCount > 12) {
+            invalidMessage = "Use no maximo 12 cenas por roteiro.";
+        } else {
+            const lastSceneDuration = totalDuration - ((sceneCount - 1) * sceneDuration);
+            summaryText = `Serao ${sceneCount} cena(s) em ${aspectRatio}. Cada bloco seguira ${sceneDuration}s`;
+            if (lastSceneDuration !== sceneDuration) {
+                summaryText += `, com a ultima cena em ${lastSceneDuration}s.`;
+            } else {
+                summaryText += ".";
+            }
+        }
+    }
+
+    if (summaryEl) {
+        summaryEl.textContent = invalidMessage || summaryText;
+    }
+    if (submitBtn) {
+        submitBtn.dataset.invalid = invalidMessage ? "true" : "false";
+        submitBtn.disabled = similarState.unifiedOptimizeBusy || !!invalidMessage;
+    }
+
+    return {
+        aspectRatio,
+        totalDuration,
+        sceneDuration,
+        sceneCount,
+        invalidMessage,
+    };
+}
+
+function openSimilarOptimizeUnifiedPromptModal() {
+    const projectId = Number(similarState.projectId || 0);
+    const project = similarState.lastProjectSnapshot;
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptText = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+
+    if (!projectId || !promptText) {
+        showToast("Gere o prompt unico antes de otimizar.", "error");
+        return;
+    }
+
+    const aspectEl = document.getElementById("similar-optimize-unified-prompt-aspect");
+    const totalEl = document.getElementById("similar-optimize-unified-prompt-total");
+    const sceneEl = document.getElementById("similar-optimize-unified-prompt-scene");
+    const statusEl = document.getElementById("similar-optimize-unified-prompt-status");
+    const defaults = _getSimilarOptimizeUnifiedPromptDefaults(project);
+
+    if (aspectEl) aspectEl.value = defaults.aspectRatio;
+    if (totalEl) totalEl.value = String(defaults.totalDuration);
+    if (sceneEl) sceneEl.value = String(defaults.sceneDuration);
+    if (statusEl) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+    }
+
+    _setSimilarOptimizeUnifiedPromptModalBusy(false);
+    _syncSimilarOptimizeUnifiedPromptModal();
+    openModal("modal-similar-unified-optimize");
+    setTimeout(() => {
+        document.getElementById("similar-optimize-unified-prompt-total")?.focus();
+    }, 0);
+}
+
+function closeSimilarOptimizeUnifiedPromptModal(force = false) {
+    if (similarState.unifiedOptimizeBusy && !force) {
+        return;
+    }
+
+    const statusEl = document.getElementById("similar-optimize-unified-prompt-status");
+    if (statusEl) {
+        statusEl.hidden = true;
+        statusEl.textContent = "";
+    }
+
+    closeModal("modal-similar-unified-optimize");
+    if (force || !similarState.unifiedOptimizeBusy) {
+        _setSimilarOptimizeUnifiedPromptModalBusy(false);
+    }
 }
 
 function _setSimilarUnifiedUploadStatus(message = "", kind = "running") {
@@ -9125,12 +9436,20 @@ function _renderSimilarUnifiedReferencePanel(project) {
 }
 
 function _buildSimilarUnifiedPromptTags(baseTags, response) {
-    const promptText = String(response?.prompt || "").trim();
-    const promptSource = String(response?.source || "").trim();
-    const generatedAt = String(response?.generated_at || "").trim();
-    const startFrameUrl = String(response?.start_frame_url || "").trim();
-    const endFrameUrl = String(response?.end_frame_url || "").trim();
-    const referenceFrameCount = Number(response?.reference_frame_count || 0) || 0;
+    const responseData = response && typeof response === "object" ? response : {};
+    const hasResponseKey = (key) => Object.prototype.hasOwnProperty.call(responseData, key);
+    const promptText = String(responseData.prompt || "").trim();
+    const promptSource = String(responseData.source || "").trim();
+    const generatedAt = String(responseData.generated_at || "").trim();
+    const startFrameUrl = String(responseData.start_frame_url || "").trim();
+    const endFrameUrl = String(responseData.end_frame_url || "").trim();
+    const referenceFrameCount = Number(responseData.reference_frame_count || 0) || 0;
+    const promptSeed = String(responseData.prompt_seed || "").trim();
+    const promptSeedSource = String(responseData.prompt_seed_source || "").trim();
+    const optimizedAspectRatio = String(responseData.aspect_ratio || "").trim();
+    const optimizedTotalDuration = Number(responseData.total_duration_seconds || 0) || 0;
+    const optimizedSceneDuration = Number(responseData.scene_duration_seconds || 0) || 0;
+    const optimizedSceneCount = Number(responseData.scene_count || 0) || 0;
     const nextTags = {
         ..._safeSimilarTags(baseTags),
         similar_unified_prompt: promptText,
@@ -9150,22 +9469,56 @@ function _buildSimilarUnifiedPromptTags(baseTags, response) {
         delete nextTags[key];
     });
 
-    if (startFrameUrl) {
-        nextTags.similar_unified_start_frame_url = startFrameUrl;
+    if (promptSource.startsWith("optimized")) {
+        if (optimizedAspectRatio) {
+            nextTags.similar_unified_prompt_story_aspect_ratio = optimizedAspectRatio;
+        }
+        if (optimizedTotalDuration > 0) {
+            nextTags.similar_unified_prompt_story_total_duration = optimizedTotalDuration;
+        }
+        if (optimizedSceneDuration > 0) {
+            nextTags.similar_unified_prompt_story_scene_duration = optimizedSceneDuration;
+        }
+        if (optimizedSceneCount > 0) {
+            nextTags.similar_unified_prompt_story_scene_count = optimizedSceneCount;
+        }
+        if (promptSeed) {
+            nextTags.similar_unified_prompt_seed = promptSeed;
+        }
+        if (promptSeedSource) {
+            nextTags.similar_unified_prompt_seed_source = promptSeedSource;
+        }
     } else {
-        delete nextTags.similar_unified_start_frame_url;
+        delete nextTags.similar_unified_prompt_seed;
+        delete nextTags.similar_unified_prompt_seed_source;
+        delete nextTags.similar_unified_prompt_story_aspect_ratio;
+        delete nextTags.similar_unified_prompt_story_total_duration;
+        delete nextTags.similar_unified_prompt_story_scene_duration;
+        delete nextTags.similar_unified_prompt_story_scene_count;
     }
 
-    if (endFrameUrl) {
-        nextTags.similar_unified_end_frame_url = endFrameUrl;
-    } else {
-        delete nextTags.similar_unified_end_frame_url;
+    if (hasResponseKey("start_frame_url")) {
+        if (startFrameUrl) {
+            nextTags.similar_unified_start_frame_url = startFrameUrl;
+        } else {
+            delete nextTags.similar_unified_start_frame_url;
+        }
     }
 
-    if (referenceFrameCount > 0) {
-        nextTags.similar_unified_reference_frame_count = referenceFrameCount;
-    } else {
-        delete nextTags.similar_unified_reference_frame_count;
+    if (hasResponseKey("end_frame_url")) {
+        if (endFrameUrl) {
+            nextTags.similar_unified_end_frame_url = endFrameUrl;
+        } else {
+            delete nextTags.similar_unified_end_frame_url;
+        }
+    }
+
+    if (hasResponseKey("reference_frame_count")) {
+        if (referenceFrameCount > 0) {
+            nextTags.similar_unified_reference_frame_count = referenceFrameCount;
+        } else {
+            delete nextTags.similar_unified_reference_frame_count;
+        }
     }
 
     return nextTags;
@@ -9200,6 +9553,34 @@ function _mergeSimilarUnifiedPromptTags(rawTags, fallbackTags) {
 
     if ((canMergePrompt || currentPrompt === fallbackPrompt) && !String(nextTags.similar_unified_prompt_generated_at || "").trim() && fallbackGeneratedAt) {
         nextTags.similar_unified_prompt_generated_at = fallbackGeneratedAt;
+    }
+
+    if (canMergePrompt || currentPrompt === fallbackPrompt) {
+        const fallbackSeed = String(fallback.similar_unified_prompt_seed || "").trim();
+        const fallbackSeedSource = String(fallback.similar_unified_prompt_seed_source || "").trim();
+        const fallbackAspectRatio = String(fallback.similar_unified_prompt_story_aspect_ratio || "").trim();
+        const fallbackTotalDuration = Number(fallback.similar_unified_prompt_story_total_duration || 0) || 0;
+        const fallbackSceneDuration = Number(fallback.similar_unified_prompt_story_scene_duration || 0) || 0;
+        const fallbackSceneCount = Number(fallback.similar_unified_prompt_story_scene_count || 0) || 0;
+
+        if (!String(nextTags.similar_unified_prompt_seed || "").trim() && fallbackSeed) {
+            nextTags.similar_unified_prompt_seed = fallbackSeed;
+        }
+        if (!String(nextTags.similar_unified_prompt_seed_source || "").trim() && fallbackSeedSource) {
+            nextTags.similar_unified_prompt_seed_source = fallbackSeedSource;
+        }
+        if (!String(nextTags.similar_unified_prompt_story_aspect_ratio || "").trim() && fallbackAspectRatio) {
+            nextTags.similar_unified_prompt_story_aspect_ratio = fallbackAspectRatio;
+        }
+        if (!(Number(nextTags.similar_unified_prompt_story_total_duration || 0) > 0) && fallbackTotalDuration > 0) {
+            nextTags.similar_unified_prompt_story_total_duration = fallbackTotalDuration;
+        }
+        if (!(Number(nextTags.similar_unified_prompt_story_scene_duration || 0) > 0) && fallbackSceneDuration > 0) {
+            nextTags.similar_unified_prompt_story_scene_duration = fallbackSceneDuration;
+        }
+        if (!(Number(nextTags.similar_unified_prompt_story_scene_count || 0) > 0) && fallbackSceneCount > 0) {
+            nextTags.similar_unified_prompt_story_scene_count = fallbackSceneCount;
+        }
     }
 
     if (canMergeFrames) {
@@ -9242,17 +9623,37 @@ function _renderSimilarUnifiedPrompt(project) {
 
     const source = String(tags.similar_unified_prompt_source || "").trim();
     const generatedAt = _formatSimilarUnifiedPromptGeneratedAt(tags.similar_unified_prompt_generated_at);
-    let metaText = analysisMode === "general"
-        ? source === "ai"
-            ? "Prompt geral sintetizado pela IA a partir do video inteiro."
-            : source === "fallback"
-                ? "Prompt geral montado com o fallback local a partir da analise salva."
-                : "Prompt geral derivado da analise atual."
-        : source === "ai"
-            ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
-            : source === "fallback"
-                ? "Prompt unico montado com o fallback local a partir da analise salva."
-                : "Prompt unico derivado da analise atual.";
+    const optimizedAspectRatio = String(tags.similar_unified_prompt_story_aspect_ratio || "").trim();
+    const optimizedTotalDuration = Number(tags.similar_unified_prompt_story_total_duration || 0) || 0;
+    const optimizedSceneDuration = Number(tags.similar_unified_prompt_story_scene_duration || 0) || 0;
+    const optimizedSceneCount = Number(tags.similar_unified_prompt_story_scene_count || 0) || 0;
+    let metaText = "";
+
+    if (source.startsWith("optimized")) {
+        metaText = source === "optimized_ai"
+            ? "Roteiro otimizado pela IA a partir do prompt atual."
+            : "Roteiro otimizado com fallback local a partir do prompt atual.";
+        const timingBits = [];
+        if (optimizedAspectRatio) timingBits.push(`formato ${optimizedAspectRatio}`);
+        if (optimizedTotalDuration > 0) timingBits.push(`${optimizedTotalDuration}s totais`);
+        if (optimizedSceneDuration > 0) timingBits.push(`cenas de ${optimizedSceneDuration}s`);
+        if (optimizedSceneCount > 0) timingBits.push(`${optimizedSceneCount} cenas`);
+        if (timingBits.length) {
+            metaText = `${metaText} ${timingBits.join(", ")}.`;
+        }
+    } else {
+        metaText = analysisMode === "general"
+            ? source === "ai"
+                ? "Prompt geral sintetizado pela IA a partir do video inteiro."
+                : source === "fallback"
+                    ? "Prompt geral montado com o fallback local a partir da analise salva."
+                    : "Prompt geral derivado da analise atual."
+            : source === "ai"
+                ? "Prompt unico sintetizado pela IA a partir das cenas analisadas."
+                : source === "fallback"
+                    ? "Prompt unico montado com o fallback local a partir da analise salva."
+                    : "Prompt unico derivado da analise atual.";
+    }
     if (generatedAt) {
         metaText = `${metaText} Atualizado em ${generatedAt}.`;
     }
@@ -9262,15 +9663,7 @@ function _renderSimilarUnifiedPrompt(project) {
     similarState.unifiedEngine = selectedEngine;
     similarState.unifiedDuration = selectedDuration;
 
-    enginePickerEl.innerHTML = SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
-        <button
-            class="similar-scene-engine-btn${selectedEngine === engineValue ? " selected" : ""}"
-            type="button"
-            onclick="similarSelectUnifiedEngine('${engineValue}')"
-            title="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
-            aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} na cena unica"
-        >${_similarSceneEngineLabel(engineValue)}</button>
-    `).join("");
+    _renderSimilarUnifiedEngineCards(enginePickerEl, selectedEngine);
     _renderDurationButtons("similar-unified-duration-options", _similarUnifiedDurationOptions(selectedEngine), selectedDuration);
     previewMetaEl.textContent = "";
     previewStageEl.innerHTML = "";
@@ -9278,9 +9671,7 @@ function _renderSimilarUnifiedPrompt(project) {
 
     textEl.value = promptText;
     metaEl.textContent = metaText;
-    if (generateBtn) {
-        generateBtn.textContent = String(tags.similar_unified_clip_url || "").trim() ? "Gerar novamente o vídeo" : "Gerar vídeo";
-    }
+    _setSimilarUnifiedGenerateButtonLabel(String(tags.similar_unified_clip_url || "").trim() ? "Gerar novamente" : "Gerar vídeo");
     _renderSimilarUnifiedReferencePanel(project);
     _syncSimilarUnifiedUploadUi(project);
     wrapEl.hidden = false;
@@ -9834,23 +10225,11 @@ function _normalizeSimilarEngine(rawValue) {
 }
 
 function _similarSceneEngineLabel(engineValue) {
-    const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1";
-    if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Mega 1.5";
-    if (normalized === "mega15") return "Lite 2.0";
-    if (normalized === "seedance") return "Mega 2.0";
-    return "Cria 2.5";
+    return _getSimilarEngineMeta(engineValue).shortLabel;
 }
 
 function _similarEngineDisplayLabel(engineValue) {
-    const normalized = _normalizeSimilarEngine(engineValue);
-    if (normalized === "viduq3") return "Pro 3.1";
-    if (normalized === "wan2") return "Ultra 3.0";
-    if (normalized === "lite2") return "Mega 1.5";
-    if (normalized === "mega15") return "Lite 2.0";
-    if (normalized === "seedance") return "Mega 2.0";
-    return "Cria 2.5";
+    return _getSimilarEngineMeta(engineValue).label;
 }
 
 function _getSimilarSceneSelectedEngine(sceneId) {
@@ -10006,6 +10385,7 @@ function _patchSimilarSceneBoundaryFrameSnapshot(sceneId, frameTarget, frameUrl)
 function _resetSimilarSceneUploadIntent() {
     similarState.activeUploadSceneId = 0;
     similarState.activeUploadSceneFrameTarget = "";
+    similarState.activeUploadSceneOpenEditor = false;
     const input = document.getElementById("similar-scene-image-input");
     if (input) {
         input.multiple = true;
@@ -10037,13 +10417,31 @@ function _similarPreviewAspectClass(aspectRatio) {
 
 function _setSimilarFrameCreateActionVisibility(sceneId, forceVisible = null) {
     const actionEl = document.getElementById(`similar-frame-create-action-${sceneId}`);
-    if (!actionEl) return;
+    const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+    const editorEl = instructionEl?.closest(".similar-reference-frame-editor") || null;
+    const primaryCreateBtn = document.getElementById(`similar-scene-create-image-primary-${sceneId}`);
+    const quickCreateBtn = editorEl?.querySelector(".similar-frame-tool-btn-primary") || null;
+
+    if (!actionEl && !primaryCreateBtn && !quickCreateBtn) return;
 
     const nextVisible = typeof forceVisible === "boolean"
         ? forceVisible
-        : !!String(document.getElementById(`similar-frame-instruction-${sceneId}`)?.value || "").trim();
+        : !!String(instructionEl?.value || "").trim();
 
-    actionEl.hidden = !nextVisible;
+    const sceneKey = _similarSceneStateKey(sceneId);
+    const draft = sceneKey ? (similarState.sceneDraftsBySceneId[sceneKey] || {}) : {};
+    const isFrameBusy = !!draft.frameBusy;
+    const hasPendingUploads = _getSimilarScenePendingUploads(sceneId).length > 0;
+    const canRunFrameAction = nextVisible || hasPendingUploads;
+
+    if (actionEl) {
+        actionEl.hidden = !nextVisible;
+    }
+
+    [primaryCreateBtn, quickCreateBtn].forEach((buttonEl) => {
+        if (!(buttonEl instanceof HTMLButtonElement)) return;
+        buttonEl.disabled = isFrameBusy || !canRunFrameAction;
+    });
 }
 
 function _normalizeSimilarBusySceneIds(rawSceneIds) {
@@ -11300,6 +11698,7 @@ function _renderSimilarScenes(project, options = {}) {
                     alt: startFrameAltRaw,
                     badge: "Entrada",
                     downloadName: startFrameDownloadName,
+                    active: frameEditorOpen && activeFrameTarget === "start",
                     isBase: true,
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
@@ -11309,7 +11708,8 @@ function _renderSimilarScenes(project, options = {}) {
                         ${referenceTextDetected ? `<button class="similar-frame-inline-remove-btn" type="button" onclick="similarRemoveFrameText(${sceneId})" title="${removeTextTitle}" aria-label="${removeTextTitle}" ${frameBusyDisabledAttr}>Remover escrita</button>` : ""}
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(renderedStartFrameUrlRaw)}" download="${startFrameDownloadName}" title="Baixar entrada" aria-label="Baixar entrada">${similarActionIcons.download}</a>
-                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                            <button class="similar-frame-image-action" type="button" onclick="similarReplaceFrameReference(${sceneId}, 'start')" title="Substituir frame inicial" aria-label="Substituir frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
+                            <button class="similar-frame-image-action${frameEditorOpen && activeFrameTarget === "start" ? " is-active" : ""}" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'start')" title="Editar frame inicial" aria-label="Editar frame inicial" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 }),
@@ -11322,6 +11722,7 @@ function _renderSimilarScenes(project, options = {}) {
                     alt: endFrameAltRaw,
                     badge: "Saida",
                     downloadName: endFrameDownloadName,
+                    active: frameEditorOpen && activeFrameTarget === "end",
                     clipBusy: isGeneratingSceneClip,
                     clipBusyMarkup: sceneClipBusyMarkup,
                     frameBusy: frameBusyTarget === "end",
@@ -11329,7 +11730,8 @@ function _renderSimilarScenes(project, options = {}) {
                     overlayActionsMarkup: `
                         <div class="similar-frame-image-actions">
                             <a class="similar-frame-image-action" href="${esc(renderedEndFrameUrlRaw)}" download="${endFrameDownloadName}" title="Baixar saida" aria-label="Baixar saida">${similarActionIcons.download}</a>
-                            <button class="similar-frame-image-action" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'end')" title="Editar frame final" aria-label="Editar frame final" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
+                            <button class="similar-frame-image-action" type="button" onclick="similarReplaceFrameReference(${sceneId}, 'end')" title="Substituir frame final" aria-label="Substituir frame final" ${frameBusyDisabledAttr}>${similarActionIcons.upload}</button>
+                            <button class="similar-frame-image-action${frameEditorOpen && activeFrameTarget === "end" ? " is-active" : ""}" type="button" onclick="similarToggleFrameEdit(${sceneId}, 'end')" title="Editar frame final" aria-label="Editar frame final" ${frameBusyDisabledAttr}>${similarActionIcons.edit}</button>
                         </div>
                     `,
                 })
@@ -11406,7 +11808,7 @@ function _renderSimilarScenes(project, options = {}) {
                             <button class="btn btn-secondary" type="button" onclick="similarCloseNarrationEdit(${sceneId})">Cancelar</button>
                         </div>
                     </div>
-                    <div class="similar-reference-frame-editor is-open">
+                    <div class="similar-reference-frame-editor${frameEditorOpen ? " is-open" : ""}" ${frameEditorOpen ? "" : "hidden"}>
                         <label for="similar-frame-instruction-${sceneId}">O que a IA deve mudar no ${activeFrameLabelLower}? (opcional)</label>
                         <textarea id="similar-frame-instruction-${sceneId}" class="input similar-reference-frame-editor-input" rows="3" maxlength="900" placeholder="Ex.: trocar o produto por uma embalagem premium, manter a mesma mesa, o mesmo enquadramento e a mesma luz." ${frameBusyDisabledAttr}>${frameInstructionValue}</textarea>
                         <p class="field-hint">${isEditingEndFrame ? "A nova imagem passa a valer como frame final desta cena e continuidade da próxima." : "A imagem nova sai do frame original e respeita o prompt atual da cena para manter o contexto."}</p>
@@ -11418,7 +11820,7 @@ function _renderSimilarScenes(project, options = {}) {
                         </div>
                         ${frameUploadsMarkup}
                         <div id="similar-frame-create-action-${sceneId}" class="similar-reference-frame-editor-actions similar-reference-frame-create-actions" ${showFrameCreateAction ? "" : "hidden"}>
-                            <button class="similar-frame-create-btn" type="button" onclick="${framePrimaryAction}" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span>${isEditingEndFrame ? "Aplicar" : "Criar imagem"}</span></button>
+                            <button id="similar-scene-create-image-primary-${sceneId}" class="similar-frame-create-btn similar-scene-create-image-primary-btn" type="button" onclick="${framePrimaryAction}" title="${frameCreateTitle}" aria-label="${frameCreateTitle}" ${frameRerollDisabledAttr}>${similarActionIcons.wand}<span class="btn-create-video-label">${isEditingEndFrame ? "Aplicar" : "Criar imagem"}</span><span class="btn-create-video-credit btn-create-video-credit--compact" id="similar-scene-create-image-primary-credit-${sceneId}" data-credit-class="btn-create-video-credit btn-create-video-credit--compact" hidden></span></button>
                         </div>
                     </div>
                 </section>
@@ -11483,18 +11885,11 @@ function _renderSimilarScenes(project, options = {}) {
                 ${uploadsSectionMarkup}
 
                 <div class="similar-scene-pickers">
-                    <div class="similar-scene-duration-picker" aria-label="Duracao da cena ${idx + 1}">
-                        <span class="similar-scene-picker-label">Tempo</span>
-                        <div id="similar-scene-duration-options-${sceneId}" class="duration-options" role="group" aria-label="Selecionar a duracao da cena ${idx + 1}">
-                            ${durationButtonsMarkup}
-                        </div>
-                        <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
-                        <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
-                    </div>
                     <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
                         ${SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
                             <button
                                 class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
+                                data-value="${engineValue}"
                                 type="button"
                                 onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
                                 title="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
@@ -11510,7 +11905,15 @@ function _renderSimilarScenes(project, options = {}) {
                     <button class="similar-scene-action-btn" type="button" onclick="similarApplyUploadedSceneImages(${sceneId})" title="${applyUploadedLabel}" aria-label="${applyUploadedLabel}" ${applyDisabledAttr}>${similarActionIcons.apply}</button>
                     <button id="similar-scene-generate-image-${sceneId}" class="similar-scene-action-btn" type="button" onclick="similarGenerateSceneImage(${sceneId})" title="Criar imagem" aria-label="Criar imagem">${similarActionIcons.image}</button>
                     <div class="similar-scene-video-actions">
-                        <button id="similar-scene-generate-video-${sceneId}" class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.preview}<span>Gerar vídeo</span></button>
+                        <div class="similar-scene-duration-picker" aria-label="Duracao da cena ${idx + 1}">
+                            <span class="similar-scene-picker-label">Tempo</span>
+                            <div id="similar-scene-duration-options-${sceneId}" class="duration-options" role="group" aria-label="Selecionar a duracao da cena ${idx + 1}">
+                                ${durationButtonsMarkup}
+                            </div>
+                            <input id="similar-scene-duration-${sceneId}" type="hidden" value="${esc(String(durationValue))}" data-server-value="${esc(String(durationSelection.currentDurationSeconds))}" data-detected-value="${esc(String(durationSelection.detectedDurationSeconds))}">
+                            <input id="similar-scene-duration-mode-${sceneId}" type="hidden" value="${durationSelection.selectedMode}" data-server-value="${durationSelection.serverMode}">
+                        </div>
+                        <button id="similar-scene-generate-video-${sceneId}" class="similar-frame-create-btn similar-scene-run-btn" type="button" onclick="similarRegenerateScene(${sceneId}, 'image')" title="${generateVideoImageTitle}" aria-label="${generateVideoImageTitle}" ${generateVideoDisabledAttr}>${similarActionIcons.wand}<span class="btn-create-video-label">Gerar vídeo</span><span class="btn-create-video-credit" id="similar-scene-generate-video-credit-${sceneId}" hidden></span></button>
                     </div>
                 </div>
             </article>
@@ -11526,6 +11929,7 @@ function _refreshSimilarButtonsDisabled(disabled) {
         "similar-start-analysis-general",
         "similar-start-analysis-scenes",
         "similar-build-unified-prompt",
+        "similar-optimize-unified-prompt",
         "similar-unified-create-image-button",
         "similar-generate-unified-scene",
         "similar-generate-all",
@@ -14918,6 +15322,8 @@ function _resetSimilarModeState() {
     similarState.progress = 0;
     similarState.bulkFrameTextRemovalBusy = false;
     similarState.activeUploadSceneId = 0;
+    similarState.activeUploadSceneFrameTarget = "";
+    similarState.activeUploadSceneOpenEditor = false;
     _clearSimilarSourceFile();
     similarState.sourceVerificationStatus = "idle";
     similarState.sourceVerificationMessage = "";
@@ -15234,31 +15640,69 @@ async function similarBuildUnifiedPrompt() {
     }
 }
 
-async function similarCopyUnifiedPrompt() {
-    const textEl = document.getElementById("similar-unified-prompt-text");
-    const promptText = String(textEl?.value || "").trim();
+async function similarOptimizeUnifiedPrompt() {
+    const projectId = Number(similarState.projectId || 0);
+    const project = similarState.lastProjectSnapshot;
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptText = String(promptEl?.value || project?.tags?.similar_unified_prompt || "").trim();
+
+    if (!projectId) {
+        alert("Analise o video antes de otimizar o prompt unico.");
+        return;
+    }
     if (!promptText) {
-        showToast("Gere o prompt unico antes de copiar.", "error");
+        showToast("Gere o prompt unico antes de otimizar.", "error");
         return;
     }
 
+    const config = _syncSimilarOptimizeUnifiedPromptModal();
+    if (config.invalidMessage) {
+        showToast(config.invalidMessage, "error");
+        return;
+    }
+
+    _refreshSimilarButtonsDisabled(true);
+    _setSimilarOptimizeUnifiedPromptModalBusy(true, "A IA esta montando um roteiro completo com base no prompt atual...");
+    _setSimilarStatus("Otimizando o prompt em roteiro...", "running");
+    _queueSimilarScroll({ preferUnified: true, preferStatus: true });
+
     try {
-        if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(promptText);
-        } else if (textEl) {
-            textEl.focus();
-            textEl.select();
-            textEl.setSelectionRange(0, textEl.value.length);
-            const copied = document.execCommand("copy");
-            if (!copied) {
-                throw new Error("Falha ao copiar");
-            }
-        } else {
-            throw new Error("Campo indisponivel");
+        const response = await api(`/video/projects/${projectId}/similar/unified-prompt/optimize`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                aspect_ratio: config.aspectRatio,
+                total_duration_seconds: config.totalDuration,
+                scene_duration_seconds: config.sceneDuration,
+                prompt_override: promptText,
+            }),
+        });
+
+        const optimizedPrompt = String(response?.prompt || "").trim();
+        if (!optimizedPrompt) {
+            throw new Error("Resposta invalida ao otimizar prompt unico");
         }
-        showToast("Prompt unico copiado.", "success");
+
+        const nextTags = _buildSimilarUnifiedPromptTags(project?.tags, response);
+        const nextProject = {
+            ...(project || {}),
+            tags: nextTags,
+        };
+
+        similarState.lastProjectSnapshot = nextProject;
+        _renderSimilarUnifiedPrompt(nextProject);
+        await _refreshSimilarProject({ silent: true, preserveUnifiedTags: nextTags });
+        closeSimilarOptimizeUnifiedPromptModal(true);
+        _setSimilarStatus("", "running");
+        showToast("Roteiro otimizado aplicado ao prompt unico.", "success");
     } catch (error) {
-        showToast(`Erro ao copiar prompt unico: ${error.message || error}`, "error");
+        _setSimilarStatus(`Erro ao otimizar prompt unico: ${error.message}`, "error");
+        showToast(`Erro ao otimizar prompt unico: ${error.message}`, "error");
+    } finally {
+        _setSimilarOptimizeUnifiedPromptModalBusy(false);
+        _refreshSimilarButtonsDisabled(false);
     }
 }
 
@@ -15819,13 +16263,14 @@ async function similarSaveScene(sceneId, options = {}) {
     }
 }
 
-function similarUploadSceneImage(sceneId, { frameTarget = "" } = {}) {
+function similarUploadSceneImage(sceneId, { frameTarget = "", openEditor = false } = {}) {
     const input = document.getElementById("similar-scene-image-input");
     if (!input) return;
     similarState.activeUploadSceneId = Number(sceneId || 0);
     similarState.activeUploadSceneFrameTarget = frameTarget
         ? _normalizeSimilarSceneFrameTarget(frameTarget)
         : "";
+    similarState.activeUploadSceneOpenEditor = !!openEditor;
     input.multiple = !similarState.activeUploadSceneFrameTarget;
     input.value = "";
     input.click();
@@ -15838,12 +16283,17 @@ function similarUploadFrameReference(sceneId, frameTarget = "") {
             frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
         });
     }
-    similarUploadSceneImage(sceneId, { frameTarget });
+    similarUploadSceneImage(sceneId, { frameTarget, openEditor: true });
 }
 
-async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files) {
+function similarReplaceFrameReference(sceneId, frameTarget = "") {
+    similarUploadSceneImage(sceneId, { frameTarget, openEditor: false });
+}
+
+async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files, options = {}) {
     const projectId = Number(similarState.projectId || 0);
     const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const keepEditorOpen = !!options.openEditor;
     const selectedFiles = Array.from(files || []).slice(0, 1);
     const frameLabelLower = _getSimilarSceneFrameLabel(normalizedFrameTarget, { lower: true });
     if (!projectId || !sceneId || !selectedFiles.length) {
@@ -15861,7 +16311,7 @@ async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, fi
     const localPreviewUrl = URL.createObjectURL(file);
     _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, localPreviewUrl);
     _setSimilarSceneFrameEditorDraft(sceneId, {
-        open: true,
+        open: keepEditorOpen,
         frameTarget: normalizedFrameTarget,
         frameBusy: true,
         frameBusyLabel: normalizedFrameTarget === "end"
@@ -15895,7 +16345,7 @@ async function _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, fi
         _patchSimilarSceneBoundaryFrameSnapshot(sceneId, normalizedFrameTarget, response?.frame_url || "");
         _setSimilarSceneBoundaryFramePreview(sceneId, normalizedFrameTarget, "");
         _setSimilarSceneFrameEditorDraft(sceneId, {
-            open: true,
+            open: keepEditorOpen,
             frameTarget: normalizedFrameTarget,
             frameBusy: false,
             frameBusyLabel: "",
@@ -15945,6 +16395,7 @@ async function _handleSimilarSceneImageInput(event) {
     const projectId = Number(similarState.projectId || 0);
     const sceneId = Number(similarState.activeUploadSceneId || 0);
     const frameTarget = String(similarState.activeUploadSceneFrameTarget || "").trim();
+    const openEditor = !!similarState.activeUploadSceneOpenEditor;
     const files = Array.from(event.target?.files || []);
     event.target.value = "";
 
@@ -15958,7 +16409,7 @@ async function _handleSimilarSceneImageInput(event) {
             if (files.length > 1) {
                 showToast("Para substituir o frame, envie uma imagem por vez. So a primeira foi usada.", "info");
             }
-            await _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files);
+            await _uploadAndApplySimilarSceneBoundaryFrame(sceneId, frameTarget, files, { openEditor });
             return;
         }
 
@@ -16093,18 +16544,25 @@ function similarToggleFrameEdit(sceneId, frameTarget = "start") {
     _syncSimilarDraftsFromDom();
     const key = _similarSceneStateKey(sceneId);
     if (!key) return;
+    const normalizedFrameTarget = _normalizeSimilarSceneFrameTarget(frameTarget);
+    const draft = similarState.sceneDraftsBySceneId[key] || {};
+    const isOpen = !!draft.frameEditorOpen;
+    const currentFrameTarget = _normalizeSimilarSceneFrameTarget(draft.frameTarget || "start");
+    const nextOpen = !(isOpen && currentFrameTarget === normalizedFrameTarget);
     _setSimilarSceneFrameEditorDraft(sceneId, {
-        open: true,
-        frameTarget: _normalizeSimilarSceneFrameTarget(frameTarget),
+        open: nextOpen,
+        frameTarget: normalizedFrameTarget,
     });
     if (similarState.lastProjectSnapshot) {
         _renderSimilarScenes(similarState.lastProjectSnapshot, { force: true });
     }
-    setTimeout(() => {
-        const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
-        instructionEl?.focus();
-        instructionEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-    }, 0);
+    if (nextOpen) {
+        setTimeout(() => {
+            const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+            instructionEl?.focus();
+            instructionEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        }, 0);
+    }
 }
 
 function similarToggleNarrationEdit(sceneId) {
