@@ -193,16 +193,22 @@
         .hero {
             width: var(--container);
             margin: 0 auto;
-            padding: 92px 0 44px;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(440px, 520px);
-            gap: 42px;
+            padding: 76px 0 36px;
+            display: flex;
+            flex-direction: column;
             align-items: center;
+            text-align: center;
+            gap: 8px;
         }
 
         .hero-copy {
             position: relative;
             z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 1100px;
         }
 
         .eyebrow {
@@ -225,10 +231,11 @@
         }
 
         .hero-title {
-            font-size: clamp(2.8rem, 5.2vw, 5rem);
-            line-height: 0.96;
-            letter-spacing: -0.055em;
-            max-width: 13ch;
+            font-size: clamp(3rem, 7vw, 6.6rem);
+            line-height: 0.98;
+            letter-spacing: -0.045em;
+            max-width: 22ch;
+            text-wrap: balance;
         }
 
         .hero-title em {
@@ -251,25 +258,27 @@
         }
 
         .hero-subtitle {
-            max-width: 60ch;
-            margin-top: 26px;
+            max-width: 64ch;
+            margin: 26px auto 0;
             color: var(--muted);
-            font-size: 1.1rem;
-            line-height: 1.75;
+            font-size: 1.08rem;
+            line-height: 1.7;
         }
 
         .hero-actions {
             display: flex;
             flex-wrap: wrap;
+            justify-content: center;
             gap: 14px;
-            margin-top: 34px;
+            margin-top: 32px;
         }
 
         .hero-meta {
             display: flex;
             flex-wrap: wrap;
+            justify-content: center;
             gap: 12px;
-            margin-top: 28px;
+            margin-top: 26px;
         }
 
         .meta-chip {
@@ -1339,8 +1348,8 @@
 
         .showcase-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 22px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 26px;
         }
 
         .showcase-card {
@@ -1843,38 +1852,6 @@
             </div>
         </header>
 
-        <div class="hero-marquee" aria-hidden="true">
-            <div class="hero-marquee-track">
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>TikTok</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Karaokê</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-estelar.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Cinema</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Clipe</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-pastor.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Persona</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-corrida.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Esporte</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-lirio.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Nicho</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>E-commerce</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-neve.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Realista</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Pet</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Imóveis</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Devocional</span></a>
-                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Atmosfera</span></a>
-                <!-- duplicado para loop infinito perfeito -->
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>TikTok</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Karaokê</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-estelar.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Cinema</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Clipe</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-pastor.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Persona</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-corrida.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Esporte</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-lirio.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Nicho</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>E-commerce</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-neve.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Realista</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Pet</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Imóveis</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Devocional</span></a>
-                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Atmosfera</span></a>
-            </div>
-        </div>
-
         <main>
             <section class="hero">
                 <div class="hero-copy">
@@ -1894,105 +1871,6 @@
                         <span class="meta-chip"><span class="meta-dot"></span>Publicação e agendamento social</span>
                         <span class="meta-chip"><span class="meta-dot"></span>Referências visuais e personas</span>
                     </div>
-                </div>
-
-                <div class="hero-stage" aria-hidden="true">
-                    <article class="stage-frame">
-                        <div class="stage-toolbar">
-                            <div class="toolbar-dots"><span></span><span></span><span></span></div>
-                            <span class="toolbar-label">Direção autônoma ativa</span>
-                        </div>
-
-                        <div class="stage-tabs">
-                            <span class="stage-tab active">Criar</span>
-                            <span class="stage-tab">Editar</span>
-                            <span class="stage-tab">Analisar</span>
-                            <span class="stage-tab">Publicar</span>
-                            <span class="stage-tab">Automatizar</span>
-                        </div>
-
-                        <div class="stage-grid">
-                            <section class="panel">
-                                <span class="panel-label">Briefing</span>
-                                <h2 class="panel-title">Campanha com gancho rápido, oferta clara e cortes prontos para Reels, Shorts e anúncios.</h2>
-                                <p class="panel-copy">O sistema organiza a estrutura, separa cenas, aplica referências e prepara variações de saída sem quebrar o contexto visual.</p>
-
-                                <div class="prompt-tags">
-                                    <span class="prompt-tag">Hook forte</span>
-                                    <span class="prompt-tag">Referência travada</span>
-                                    <span class="prompt-tag">CTA final</span>
-                                </div>
-
-                                <div class="prompt-box">
-                                    <span class="prompt-line">01. Abrir com dor e prova visual do produto.</span>
-                                    <span class="prompt-line">02. Alternar close, uso real e comparação em ritmo curto.</span>
-                                    <span class="prompt-line">03. Fechar com oferta, urgência e versões para cada canal.</span>
-                                </div>
-                            </section>
-
-                            <section class="panel">
-                                <span class="panel-label">Pipeline</span>
-                                <div class="assistant-steps">
-                                    <div class="assistant-step complete">Roteiro estruturado com promessa, prova e CTA.</div>
-                                    <div class="assistant-step complete">Storyboards alinhados com referência visual do projeto.</div>
-                                    <div class="assistant-step active">Gerando cortes, thumbnail e versões por plataforma.</div>
-                                    <div class="assistant-step">Publicação e agendamento multi-canal.</div>
-                                </div>
-                                <p class="assistant-note">Mega 2.0 Ultra, Ultra High 1.0, Avatar 3.1 Plus, Cria 3.0 speed, Pro 3.1 Start e mais entram no mesmo fluxo, escolhidos por tipo de vídeo.</p>
-                            </section>
-
-                            <section class="panel timeline-panel">
-                                <span class="panel-label">Storyboard + timeline</span>
-                                <div class="shot-list">
-                                    <div class="shot-item">
-                                        <div class="shot-thumb one"></div>
-                                        <div class="shot-copy">
-                                            <strong>Cena 01</strong>
-                                            <span>Close no produto com a promessa principal e movimento de abertura.</span>
-                                        </div>
-                                        <span class="shot-time">0s - 3s</span>
-                                    </div>
-                                    <div class="shot-item">
-                                        <div class="shot-thumb two"></div>
-                                        <div class="shot-copy">
-                                            <strong>Cena 02</strong>
-                                            <span>Demonstração rápida com referência visual consistente e fala curta.</span>
-                                        </div>
-                                        <span class="shot-time">3s - 7s</span>
-                                    </div>
-                                    <div class="shot-item">
-                                        <div class="shot-thumb three"></div>
-                                        <div class="shot-copy">
-                                            <strong>Cena 03</strong>
-                                            <span>Fechamento com prova social, oferta e janela de publicação pronta.</span>
-                                        </div>
-                                        <span class="shot-time">7s - 12s</span>
-                                    </div>
-                                </div>
-
-                                <div class="timeline-track">
-                                    <span class="timeline-clip clip-script">Roteiro</span>
-                                    <span class="timeline-clip clip-storyboard">Storyboard</span>
-                                    <span class="timeline-clip clip-edit">Edição</span>
-                                    <span class="timeline-clip clip-publish">Publicação</span>
-                                </div>
-                            </section>
-                        </div>
-                    </article>
-
-                    <aside class="floating-card consistency-card">
-                        <strong>Consistência visual</strong>
-                        <p>Referências multi-image e controle por cena para manter produto, pessoa ou ambiente sob a mesma identidade.</p>
-                        <div class="consistency-bar"><span></span></div>
-                    </aside>
-
-                    <aside class="floating-card persona-card">
-                        <img src="/video/static/landing-media/persona-raposa.png?v=20260528-02" alt="Persona realista gerada na plataforma" />
-                        <div>
-                            <strong>Persona travada</strong>
-                            <p>Mesma identidade em todas as cenas, sem trocar de modelo no meio.</p>
-                        </div>
-                    </aside>
                 </div>
             </section>
 
@@ -2138,6 +2016,36 @@
                             <span class="showcase-tag">Canal recorrente</span>
                             <strong>Série visual com identidade fixa</strong>
                             <span class="showcase-desc">Lite 2.0 Fast em fluxo contínuo de publicação.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Novela</span>
+                        <video src="/video/static/landing-media/showcase-novelas.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Storyline</span>
+                            <strong>Cena dramática com persona consistente</strong>
+                            <span class="showcase-desc">Avatar 2.5 Pro entregando expressão e lip sync estáveis.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Pet</span>
+                        <video src="/video/static/landing-media/showcase-pet.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Animal</span>
+                            <strong>Movimento natural em ambiente real</strong>
+                            <span class="showcase-desc">Mega 1.5 Real com referência travada por persona.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Produto</span>
+                        <video src="/video/static/landing-media/showcase-prateleira.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">E-commerce</span>
+                            <strong>Vitrine cinematográfica de produto</strong>
+                            <span class="showcase-desc">Pro 3.1 Start com câmera estável e foco no item.</span>
                         </div>
                     </article>
                 </div>
