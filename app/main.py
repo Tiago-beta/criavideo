@@ -39,6 +39,36 @@ ANDROID_ASSETLINKS_STATEMENTS = [
 ]
 
 
+async def _run_pilot_shorts_preapproval_migration() -> None:
+    """Apply pilot Shorts pre-approval columns (idempotent)."""
+    from app.database import engine
+    from sqlalchemy import text
+
+    statements = [
+        "ALTER TABLE auto_channel_pilots ADD COLUMN IF NOT EXISTS engine_id VARCHAR(40) NOT NULL DEFAULT 'mega15'",
+        "ALTER TABLE auto_channel_pilots ADD COLUMN IF NOT EXISTS engine_duration_seconds INTEGER NOT NULL DEFAULT 10",
+        "ALTER TABLE auto_channel_pilots ADD COLUMN IF NOT EXISTS auto_approval_window_minutes INTEGER NOT NULL DEFAULT 60",
+        "ALTER TABLE auto_channel_pilots ADD COLUMN IF NOT EXISTS location_persona_candidates JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "ALTER TABLE auto_channel_pilots ADD COLUMN IF NOT EXISTS shorts_only BOOLEAN NOT NULL DEFAULT true",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS approval_status VARCHAR(20)",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS approval_deadline_at TIMESTAMP",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS rejection_reason TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS preview_prompt TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS preview_image_url TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE auto_schedule_themes ADD COLUMN IF NOT EXISTS preview_plan JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "CREATE INDEX IF NOT EXISTS idx_auto_schedule_themes_approval_status ON auto_schedule_themes(approval_status)",
+        "CREATE INDEX IF NOT EXISTS idx_auto_schedule_themes_approval_deadline ON auto_schedule_themes(approval_deadline_at)",
+    ]
+    async with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                await conn.execute(text(stmt))
+            except Exception as exc:
+                logger.warning("pilot shorts pre-approval migration stmt failed: %s | %s", stmt, exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
@@ -54,6 +84,10 @@ async def lifespan(app: FastAPI):
             logger.warning("Recovered %s interrupted video projects on startup", recovered_count)
     except Exception:
         logger.exception("Failed to recover interrupted video projects on startup")
+    try:
+        await _run_pilot_shorts_preapproval_migration()
+    except Exception:
+        logger.exception("Failed to apply pilot shorts pre-approval migration on startup")
     logger.info("CriaVideo started")
     yield
     stop_scheduler()

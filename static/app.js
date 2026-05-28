@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v580 loaded");
+﻿console.log("[CriaVideo] app.js v581 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28111,6 +28111,13 @@ function _renderAutoPilotChannels() {
                         onclick="openAutoPilotPersonaSelector(${accountId})"
                     >Definir personas</button>
                     <button
+                        class="btn btn-sm btn-secondary"
+                        type="button"
+                        ${toggling ? "disabled" : ""}
+                        onclick="openAutoPilotPlanModal(${accountId})"
+                        title="Revisar plano dos proximos shorts (aprovar ou reprovar antes da publicacao)"
+                    >Revisar plano</button>
+                    <button
                         class="btn btn-sm ${actionClass}"
                         type="button"
                         ${toggling ? "disabled" : ""}
@@ -28213,6 +28220,138 @@ async function saveAutoPilotPersonaExperiment() {
     }
 }
 window.saveAutoPilotPersonaExperiment = saveAutoPilotPersonaExperiment;
+
+// ── Piloto automatico Shorts: modal de plano / aprovacao ──
+const _autoPilotPlanState = { accountId: 0, loading: false, data: null };
+
+async function openAutoPilotPlanModal(socialAccountId) {
+    const accountId = parseInt(socialAccountId || "0", 10) || 0;
+    if (!accountId) return;
+    _autoPilotPlanState.accountId = accountId;
+    _autoPilotPlanState.loading = true;
+    _autoPilotPlanState.data = null;
+    openModal("modal-auto-pilot-plan");
+    _renderAutoPilotPlan();
+    try {
+        const data = await api(`/automation/pilot/channels/${accountId}/pending`);
+        _autoPilotPlanState.data = data;
+    } catch (error) {
+        _autoPilotPlanState.data = { error: String(error?.message || error) };
+    } finally {
+        _autoPilotPlanState.loading = false;
+        _renderAutoPilotPlan();
+    }
+}
+window.openAutoPilotPlanModal = openAutoPilotPlanModal;
+
+function _renderAutoPilotPlan() {
+    const container = document.getElementById("auto-pilot-plan-body");
+    if (!container) return;
+    if (_autoPilotPlanState.loading) {
+        container.innerHTML = "<p class='loading'>Carregando proximos shorts do piloto...</p>";
+        return;
+    }
+    const data = _autoPilotPlanState.data || {};
+    if (data.error) {
+        container.innerHTML = `<p class='loading'>Erro ao carregar plano: ${esc(data.error)}</p>`;
+        return;
+    }
+    const pending = Array.isArray(data.pending) ? data.pending : [];
+    const approved = Array.isArray(data.approved) ? data.approved : [];
+    const rejected = Array.isArray(data.rejected) ? data.rejected : [];
+    if (!pending.length && !approved.length && !rejected.length) {
+        container.innerHTML = `
+            <div class="auto-pilot-plan-empty">
+                <p>Nenhum short pre-aprovado pendente no momento.</p>
+                <p class="muted">A cada ciclo (a cada 15 min), o piloto analisa o canal e cria novos planos aqui. Voce pode reprovar antes da publicacao automatica.</p>
+            </div>
+        `;
+        return;
+    }
+    const renderItem = (item, mode) => {
+        const tid = parseInt(item.theme_id || "0", 10) || 0;
+        const status = String(item.approval_status || "");
+        const deadline = item.approval_deadline_at ? _autoPilotFormatDateTime(item.approval_deadline_at) : "-";
+        const plan = item.preview_plan || {};
+        const personas = Array.isArray(plan.interaction_personas) ? plan.interaction_personas : [];
+        const locs = Array.isArray(plan.location_personas) ? plan.location_personas : [];
+        const top = plan.top_video || null;
+        const summary = Array.isArray(plan.decision_summary) ? plan.decision_summary : [];
+        const promptText = String(item.preview_prompt || "");
+        const engineId = String(item.engine_id || "mega15");
+        const dur = parseInt(item.engine_duration_seconds || "10", 10) || 10;
+        const thumb = top && top.thumbnail_url ? `<img class="auto-pilot-plan-thumb" src="${esc(top.thumbnail_url)}" alt="Inspiracao top 1">` : `<div class="auto-pilot-plan-thumb-placeholder">9:16</div>`;
+        const actions = mode === "pending"
+            ? `<div class="auto-pilot-plan-actions">
+                  <button class="btn btn-sm btn-accent" type="button" onclick="approvePilotTheme(${tid})">Aprovar agora</button>
+                  <button class="btn btn-sm btn-secondary" type="button" onclick="rejectPilotTheme(${tid})">Reprovar</button>
+               </div>`
+            : `<div class="auto-pilot-plan-actions"><span class="auto-pilot-plan-status auto-pilot-plan-status-${esc(status)}">${esc(status)}</span></div>`;
+        const topInfo = top && top.title ? `<p class="muted">Inspiracao: ${esc(top.title)}</p>` : "";
+        const personaInfo = (personas.length || locs.length)
+            ? `<p class="muted">Personas: ${esc(personas.join(", ") || "-")} | Local: ${esc(locs.join(", ") || "-")}</p>`
+            : "";
+        return `
+            <article class="auto-pilot-plan-card">
+                <div class="auto-pilot-plan-card-media">${thumb}</div>
+                <div class="auto-pilot-plan-card-body">
+                    <div class="auto-pilot-plan-card-head">
+                        <h4>${esc(item.theme || "Short do piloto")}</h4>
+                        <small>${esc(engineId)} - ${dur}s - 9:16</small>
+                    </div>
+                    ${topInfo}
+                    ${personaInfo}
+                    <details class="auto-pilot-plan-prompt">
+                        <summary>Ver prompt cinematografico</summary>
+                        <p>${esc(promptText)}</p>
+                    </details>
+                    ${summary.length ? `<ul class="auto-pilot-plan-summary">${summary.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+                    <p class="auto-pilot-plan-deadline">${mode === "pending" ? `Auto-aprova em: <strong>${esc(deadline)}</strong>` : `Status: ${esc(status)}`}</p>
+                    ${actions}
+                </div>
+            </article>
+        `;
+    };
+    container.innerHTML = `
+        ${pending.length ? `<h4 class="auto-pilot-plan-section">Pendentes de revisao (${pending.length})</h4>${pending.map((i) => renderItem(i, "pending")).join("")}` : ""}
+        ${approved.length ? `<h4 class="auto-pilot-plan-section">Aprovados recentes</h4>${approved.slice(0, 5).map((i) => renderItem(i, "approved")).join("")}` : ""}
+        ${rejected.length ? `<h4 class="auto-pilot-plan-section">Reprovados</h4>${rejected.slice(0, 5).map((i) => renderItem(i, "rejected")).join("")}` : ""}
+    `;
+}
+
+async function approvePilotTheme(themeId) {
+    const tid = parseInt(themeId || "0", 10) || 0;
+    if (!tid) return;
+    try {
+        await api(`/automation/pilot/themes/${tid}/approve`, { method: "POST" });
+        showToast("Short aprovado. Sera renderizado e publicado no horario agendado.");
+        if (_autoPilotPlanState.accountId) {
+            await openAutoPilotPlanModal(_autoPilotPlanState.accountId);
+        }
+    } catch (error) {
+        alert(`Erro ao aprovar: ${error.message}`);
+    }
+}
+window.approvePilotTheme = approvePilotTheme;
+
+async function rejectPilotTheme(themeId) {
+    const tid = parseInt(themeId || "0", 10) || 0;
+    if (!tid) return;
+    const reason = prompt("Motivo da reprovacao (opcional):", "") || "";
+    try {
+        await api(`/automation/pilot/themes/${tid}/reject`, {
+            method: "POST",
+            body: JSON.stringify({ reason }),
+        });
+        showToast("Short reprovado. Nao sera publicado.");
+        if (_autoPilotPlanState.accountId) {
+            await openAutoPilotPlanModal(_autoPilotPlanState.accountId);
+        }
+    } catch (error) {
+        alert(`Erro ao reprovar: ${error.message}`);
+    }
+}
+window.rejectPilotTheme = rejectPilotTheme;
 
 async function toggleAutoPilotChannel(socialAccountId, enabled) {
     const accountId = parseInt(socialAccountId || "0", 10) || 0;

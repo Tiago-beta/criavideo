@@ -784,9 +784,16 @@ async def run_auto_creation(auto_schedule_id: int):
             logger.info("Auto-schedule %d: theme %d already processing, skipping", auto_schedule_id, processing[0].id)
             return
 
-        # Pick next pending theme (lowest position)
+        # Pick next pending theme (lowest position). For pilot Shorts pre-approval,
+        # skip themes still waiting for tacit approval ('pending_review') or rejected.
+        def _is_pickable(t):
+            if t.status != "pending":
+                return False
+            approval = getattr(t, "approval_status", None) or ""
+            return approval in ("", "approved")
+
         pending = sorted(
-            [t for t in schedule.themes if t.status == "pending"],
+            [t for t in schedule.themes if _is_pickable(t)],
             key=lambda t: t.position,
         )
         if not pending:

@@ -13,6 +13,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.database import async_session
 from app.models import AutoChannelPilot, AutoPilotCycleRun, AutoSchedule, AutoScheduleTheme, Platform, VideoProject
 from app.routers.analyze import build_channel_analysis_payload
+from app.services.pilot_prompt import build_shorts_pilot_plan_preview
 from app.services.pilot_schedule import (
     PILOT_LONG_PUBLISH_TIME_LOCAL,
     PILOT_LONG_SCHEDULE_SUMMARY,
@@ -454,6 +455,43 @@ async def _enqueue_pilot_themes(db, pilot: AutoChannelPilot, long_schedule: Auto
     shorts_per_cycle = PILOT_TOTAL_SHORTS_PER_CYCLE
     short_modes = _resolve_short_render_modes(shorts_per_cycle, short_mix_mode)
 
+    # --- Pilot Shorts pre-approval inputs ---
+    pilot_summary = pilot.last_summary if isinstance(pilot.last_summary, dict) else {}
+    persona_experiment = pilot_summary.get("pilot_persona_experiment") if isinstance(pilot_summary, dict) else None
+    interaction_personas: list[str] = []
+    if isinstance(persona_experiment, dict):
+        for cand in persona_experiment.get("candidates") or []:
+            if isinstance(cand, dict):
+                ptype = str(cand.get("persona_type") or "").strip().lower()
+                if ptype and ptype not in interaction_personas:
+                    interaction_personas.append(ptype)
+    location_candidates_raw = getattr(pilot, "location_persona_candidates", None) or []
+    location_personas: list[str] = []
+    if isinstance(location_candidates_raw, list):
+        for cand in location_candidates_raw:
+            if isinstance(cand, dict):
+                lp = str(cand.get("persona_type") or cand.get("type") or "").strip().lower()
+            else:
+                lp = str(cand or "").strip().lower()
+            if lp and lp not in location_personas:
+                location_personas.append(lp)
+    engine_id = str(getattr(pilot, "engine_id", None) or "mega15")
+    engine_duration_seconds = int(getattr(pilot, "engine_duration_seconds", None) or 10)
+    if engine_duration_seconds not in (5, 10, 15):
+        engine_duration_seconds = 10
+    approval_window_minutes = int(getattr(pilot, "auto_approval_window_minutes", None) or 60)
+    prompt_template = str(pilot_summary.get("pilot_prompt_template") or "") if isinstance(pilot_summary, dict) else ""
+    top_video = None
+    top_videos = analysis_payload.get("top_videos") if isinstance(analysis_payload, dict) else None
+    if isinstance(top_videos, list) and top_videos:
+        # Best by views * engagement_rate
+        def _score(v):
+            try:
+                return float(v.get("views") or 0) * float(v.get("engagement_rate") or 0)
+            except Exception:
+                return 0.0
+        top_video = max(top_videos, key=_score)
+
     added = 0
     for candidate in candidates:
         if added >= to_add:
@@ -468,6 +506,33 @@ async def _enqueue_pilot_themes(db, pilot: AutoChannelPilot, long_schedule: Auto
         max_pos += 1
         cycle_key = f"pilot-{pilot.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}-{max_pos}"
 
+        # Build pre-approval plan preview (prompt + decision summary + structured plan)
+        try:
+            plan_preview = build_shorts_pilot_plan_preview(
+                theme=normalized,
+                top_video=top_video,
+                interaction_personas=interaction_personas,
+                location_personas=location_personas,
+                engine_id=engine_id,
+                engine_duration_seconds=engine_duration_seconds,
+                prompt_template=prompt_template,
+            )
+        except Exception as exc:
+            logger.warning("pilot plan preview failed for theme '%s': %s", normalized, exc)
+            plan_preview = {
+                "preview_prompt": normalized,
+                "image_prompt": normalized,
+                "decision_summary": [],
+                "plan": {
+                    "theme": normalized,
+                    "engine_id": engine_id,
+                    "engine_duration_seconds": engine_duration_seconds,
+                    "aspect_ratio": "9:16",
+                },
+            }
+
+        approval_deadline = datetime.utcnow() + timedelta(minutes=max(1, approval_window_minutes))
+
         theme_entry = AutoScheduleTheme(
             auto_schedule_id=long_schedule.id,
             theme=normalized,
@@ -478,6 +543,19 @@ async def _enqueue_pilot_themes(db, pilot: AutoChannelPilot, long_schedule: Auto
                 "pilot_shorts_per_cycle": shorts_per_cycle,
                 "pilot_short_mix_mode": short_mix_mode,
                 "pilot_short_modes": short_modes,
+                "pilot_engine_id": engine_id,
+                "pilot_engine_duration_seconds": engine_duration_seconds,
+            },
+            approval_status="pending_review",
+            approval_deadline_at=approval_deadline,
+            preview_prompt=str(plan_preview.get("preview_prompt") or ""),
+            preview_image_url="",
+            preview_plan={
+                **(plan_preview.get("plan") or {}),
+                "image_prompt": plan_preview.get("image_prompt") or "",
+                "decision_summary": plan_preview.get("decision_summary") or [],
+                "cycle_key": cycle_key,
+                "approval_window_minutes": approval_window_minutes,
             },
         )
         db.add(theme_entry)

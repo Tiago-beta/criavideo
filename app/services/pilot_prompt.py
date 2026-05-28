@@ -24,6 +24,72 @@ _INTERACTION_PERSONA_LABELS = {
 	"personalizado": "persona personalizada",
 }
 
+_LOCATION_PERSONAS = {
+	"estudio",
+	"exterior",
+	"interior",
+	"natureza",
+	"urbano",
+	"personalizado",
+}
+
+_LOCATION_PERSONA_LABELS = {
+	"estudio": "estudio fotografico cinematografico",
+	"exterior": "ambiente externo aberto",
+	"interior": "ambiente interno aconchegante",
+	"natureza": "cenario de natureza viva",
+	"urbano": "cenario urbano contemporaneo",
+	"personalizado": "cenario personalizado da referencia",
+}
+
+
+def normalize_location_persona(value: str) -> str:
+	raw = str(value or "").strip().lower()
+	mapping = {
+		"estúdio": "estudio",
+		"estudio": "estudio",
+		"custom": "personalizado",
+		"personalizada": "personalizado",
+	}
+	normalized = mapping.get(raw, raw)
+	return normalized if normalized in _LOCATION_PERSONAS else ""
+
+
+def normalize_location_personas(values) -> list[str]:
+	if values is None:
+		return []
+	if isinstance(values, str):
+		raw_values = [values]
+	else:
+		try:
+			raw_values = list(values)
+		except Exception:
+			return []
+	out: list[str] = []
+	for item in raw_values:
+		loc = normalize_location_persona(str(item or ""))
+		if loc and loc not in out:
+			out.append(loc)
+	return out
+
+
+def build_location_persona_instruction(location_persona) -> str:
+	locs = normalize_location_personas(location_persona)
+	if not locs:
+		return ""
+	if len(locs) == 1:
+		label = _LOCATION_PERSONA_LABELS.get(locs[0], locs[0])
+		return (
+			f"PERSONA DE LOCAL: ambiente o trecho em {label}, com luz, texturas e profundidade coerentes com esse cenario, "
+			"mantendo cinematografia realista."
+		)
+	labels = [_LOCATION_PERSONA_LABELS.get(loc, loc) for loc in locs]
+	return (
+		"PERSONA DE LOCAL: o piloto vai testar variacoes nos cenarios: " + ", ".join(labels) + ". "
+		"Cada variacao deve preservar a emocao do trecho com luz e composicao realistas."
+	)
+
+
 _DEFAULT_PILOT_PROMPT_TEMPLATE = (
 	'Trecho base do short: "{{excerpt}}". '
 	"Crie uma unica cena realista cinematografica baseada somente nesse trecho e na emocao imediata dele. "
@@ -211,4 +277,89 @@ def build_pilot_prompt_preview(
 		"preview_prompt": render_pilot_prompt_template(template, personas or persona, "{{TRECHO_TRANSCRITO_DO_SHORT}}"),
 		"source": source,
 		"decision_summary": summary,
+	}
+
+
+def build_shorts_pilot_plan_preview(
+	*,
+	theme: str,
+	top_video: dict | None,
+	interaction_personas,
+	location_personas,
+	engine_id: str = "mega15",
+	engine_duration_seconds: int = 10,
+	prompt_template: str = "",
+) -> dict:
+	"""Build a complete pre-approval plan for a single pilot Short.
+
+	Returns dict with: preview_prompt (final cinematic prompt), image_prompt
+	(seed for thumbnail/frame generation), decision_summary (list of bullets),
+	and structured plan metadata for persistence in AutoScheduleTheme.preview_plan.
+	"""
+	personas = normalize_interaction_personas(interaction_personas)
+	locs = normalize_location_personas(location_personas)
+	theme_text = " ".join(str(theme or "").split()).strip() or "tema do canal"
+	top = top_video or {}
+	top_title = str(top.get("title") or "").strip()
+
+	persona_instruction = build_interaction_persona_instruction(personas)
+	location_instruction = build_location_persona_instruction(locs)
+
+	excerpt = theme_text
+	if top_title:
+		excerpt = f"{theme_text} (inspirado em '{top_title}')"
+
+	rendered = render_pilot_prompt_template(prompt_template, personas, excerpt)
+	if location_instruction and "PERSONA DE LOCAL:" not in rendered:
+		rendered = f"{rendered} {location_instruction}"
+
+	image_prompt_parts = [
+		f"Frame inicial cinematografico vertical 9:16 para short de {engine_duration_seconds}s sobre: {theme_text}.",
+	]
+	if persona_instruction:
+		image_prompt_parts.append(persona_instruction)
+	if location_instruction:
+		image_prompt_parts.append(location_instruction)
+	image_prompt_parts.append("Sem texto na tela, sem legenda, luz natural realista, foco no protagonista principal.")
+	image_prompt = " ".join(image_prompt_parts)
+
+	summary = [
+		f"Tema base: {theme_text}.",
+		f"Motor selecionado: {engine_id} ({engine_duration_seconds}s, formato 9:16).",
+	]
+	if top_title:
+		views = int(top.get("views") or 0)
+		summary.append(f"Inspirado no top 1 do canal: '{top_title}' ({views:,} views).".replace(",", "."))
+	if personas:
+		summary.append(f"Persona de pessoa: {summarize_interaction_personas(personas)}.")
+	if locs:
+		labels = [_LOCATION_PERSONA_LABELS.get(loc, loc) for loc in locs]
+		summary.append("Persona de local: " + ", ".join(labels) + ".")
+	summary.append(
+		"Este plano fica pre-aprovado. Se voce nao reprovar ate a janela expirar, o short e publicado automaticamente."
+	)
+
+	plan = {
+		"theme": theme_text,
+		"top_video": {
+			"id": top.get("id") or "",
+			"title": top_title,
+			"views": int(top.get("views") or 0),
+			"likes": int(top.get("likes") or 0),
+			"comments": int(top.get("comments") or 0),
+			"thumbnail_url": str(top.get("thumbnail_url") or ""),
+			"url": str(top.get("url") or ""),
+		} if top_title else None,
+		"interaction_personas": personas,
+		"location_personas": locs,
+		"engine_id": engine_id,
+		"engine_duration_seconds": int(engine_duration_seconds or 10),
+		"aspect_ratio": "9:16",
+	}
+
+	return {
+		"preview_prompt": rendered,
+		"image_prompt": image_prompt,
+		"decision_summary": summary,
+		"plan": plan,
 	}

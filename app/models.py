@@ -396,6 +396,16 @@ class AutoScheduleTheme(Base):
     error_message = Column(Text)
     position = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Pilot Shorts pre-approval workflow:
+    # approval_status: NULL/"" for legacy/non-pilot themes; "pending_review" | "approved" | "rejected" | "published"
+    approval_status = Column(String(20), default=None, nullable=True, index=True)
+    approval_deadline_at = Column(DateTime, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, default="")
+    preview_prompt = Column(Text, default="")
+    preview_image_url = Column(Text, default="")
+    preview_plan = Column(JSON, default=dict)
 
     schedule = relationship("AutoSchedule", back_populates="themes")
 
@@ -420,6 +430,12 @@ class AutoChannelPilot(Base):
     last_run_at = Column(DateTime)
     last_error = Column(Text)
     last_summary = Column(JSON, default=dict)
+    # Piloto automatico Shorts: configuracoes de motor + janela de aprovacao tacita + persona de local
+    engine_id = Column(String(40), default="mega15")  # mega15 = Lite 2.0 Fast (padrao). Outros: mega30, etc.
+    engine_duration_seconds = Column(Integer, default=10)  # 5 | 10 | 15
+    auto_approval_window_minutes = Column(Integer, default=60)
+    location_persona_candidates = Column(JSON, default=list)
+    shorts_only = Column(Boolean, default=True)  # True = pipeline 100% shorts (novo padrao)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

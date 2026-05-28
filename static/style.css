@@ -1932,6 +1932,29 @@ a {
     font-size: 0.82rem;
 }
 
+/* Piloto automatico Shorts: modal de plano / aprovacao tacita */
+.auto-pilot-plan-list { display: flex; flex-direction: column; gap: 0.9rem; }
+.auto-pilot-plan-section { margin: 0.6rem 0 0.2rem; font-size: 0.9rem; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 0.04em; }
+.auto-pilot-plan-empty { text-align: center; padding: 1.4rem 0.5rem; color: var(--text-muted, #94a3b8); }
+.auto-pilot-plan-card { display: flex; gap: 0.9rem; background: var(--bg-card, #1f2937); border: 1px solid var(--border, #334155); border-radius: 0.75rem; padding: 0.8rem; }
+.auto-pilot-plan-card-media { flex-shrink: 0; width: 100px; }
+.auto-pilot-plan-thumb, .auto-pilot-plan-thumb-placeholder { width: 100px; height: 178px; object-fit: cover; border-radius: 0.55rem; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; color: var(--text-muted, #64748b); font-size: 0.75rem; }
+.auto-pilot-plan-card-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.auto-pilot-plan-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.auto-pilot-plan-card-head h4 { margin: 0; font-size: 0.95rem; }
+.auto-pilot-plan-card-head small { color: var(--text-muted, #94a3b8); font-size: 0.72rem; white-space: nowrap; }
+.auto-pilot-plan-card-body .muted { font-size: 0.78rem; color: var(--text-muted, #94a3b8); margin: 0; }
+.auto-pilot-plan-prompt summary { cursor: pointer; font-size: 0.78rem; color: var(--accent, #60a5fa); }
+.auto-pilot-plan-prompt p { font-size: 0.78rem; line-height: 1.45; margin: 0.35rem 0 0; max-height: 7.5rem; overflow: auto; white-space: pre-wrap; }
+.auto-pilot-plan-summary { margin: 0.25rem 0 0 1rem; padding: 0; font-size: 0.76rem; color: var(--text, #e2e8f0); }
+.auto-pilot-plan-summary li { margin-bottom: 0.15rem; }
+.auto-pilot-plan-deadline { margin: 0.3rem 0 0; font-size: 0.76rem; color: var(--text-muted, #94a3b8); }
+.auto-pilot-plan-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.auto-pilot-plan-status { font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid var(--border, #334155); }
+.auto-pilot-plan-status-approved { color: #4ade80; border-color: rgba(74,222,128,0.4); }
+.auto-pilot-plan-status-rejected { color: #f87171; border-color: rgba(248,113,113,0.4); }
+.auto-pilot-plan-status-pending_review { color: #fbbf24; border-color: rgba(251,191,36,0.4); }
+
 .auto-card {
     background: var(--bg-card);
     border: 1px solid var(--border);

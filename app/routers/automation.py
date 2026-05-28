@@ -226,11 +226,30 @@ class ToggleChannelPilotRequest(BaseModel):
     pilot_persona_types: Optional[list[str]] = None
     pilot_persona_candidates: Optional[list[dict]] = None
     pilot_prompt_template: Optional[str] = None
+    # Piloto automatico Shorts: configuracoes novas
+    engine_id: Optional[str] = None
+    engine_duration_seconds: Optional[int] = None
+    auto_approval_window_minutes: Optional[int] = None
+    location_persona_candidates: Optional[list[dict]] = None
+    shorts_only: Optional[bool] = None
 
 
 class PilotPromptPreviewRequest(BaseModel):
     prompt_template: Optional[str] = None
     pilot_persona_candidates: Optional[list[dict]] = None
+
+
+class PilotPlanPreviewRequest(BaseModel):
+    theme: Optional[str] = None
+    pilot_persona_candidates: Optional[list[dict]] = None
+    location_persona_candidates: Optional[list[dict]] = None
+    engine_id: Optional[str] = None
+    engine_duration_seconds: Optional[int] = None
+    prompt_template: Optional[str] = None
+
+
+class PilotThemeRejectRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 class GenerateTevoxiInlineSongRequest(BaseModel):
@@ -323,6 +342,40 @@ def _build_pilot_persona_experiment(candidates: list[dict]) -> dict:
         "winner": None,
         "selection_reason": "primeira_rodada_testa_todas_as_personas",
     }
+
+
+_LOCATION_PERSONA_TYPES = {"estudio", "exterior", "interior", "natureza", "urbano", "personalizado"}
+
+
+def _normalize_location_persona_candidates(candidates) -> list[dict]:
+    """Normalize location persona candidate list. Returns list of dicts with persona_type + optional persona_profile_id."""
+    if not candidates:
+        return []
+    out: list[dict] = []
+    seen = set()
+    for item in candidates:
+        if isinstance(item, dict):
+            ptype = str(item.get("persona_type") or item.get("type") or "").strip().lower()
+            pid_raw = item.get("persona_profile_id") or item.get("profile_id") or 0
+        else:
+            ptype = str(item or "").strip().lower()
+            pid_raw = 0
+        mapping = {"estúdio": "estudio", "custom": "personalizado", "personalizada": "personalizado"}
+        ptype = mapping.get(ptype, ptype)
+        if ptype not in _LOCATION_PERSONA_TYPES:
+            continue
+        try:
+            pid = int(pid_raw or 0)
+        except Exception:
+            pid = 0
+        key = f"{ptype}:{pid}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"persona_type": ptype, "persona_profile_id": pid})
+        if len(out) >= 8:
+            break
+    return out
 
 
 def _pilot_last_summary_dict(pilot: Optional[AutoChannelPilot]) -> dict:
@@ -663,6 +716,11 @@ def _pilot_summary_dict(pilot: AutoChannelPilot | None) -> dict:
         "long_schedule_id": pilot.long_schedule_id,
         "shorts_schedule_id": pilot.shorts_schedule_id,
         "pilot_persona_experiment": (pilot.last_summary or {}).get("pilot_persona_experiment", {}),
+        "engine_id": str(getattr(pilot, "engine_id", None) or "mega15"),
+        "engine_duration_seconds": int(getattr(pilot, "engine_duration_seconds", None) or 10),
+        "auto_approval_window_minutes": int(getattr(pilot, "auto_approval_window_minutes", None) or 60),
+        "location_persona_candidates": list(getattr(pilot, "location_persona_candidates", None) or []),
+        "shorts_only": bool(getattr(pilot, "shorts_only", True)),
     }
 
 
@@ -1277,6 +1335,29 @@ async def toggle_pilot_channel(
         )
     pilot.shorts_per_cycle = PILOT_TOTAL_SHORTS_PER_CYCLE
 
+    # Piloto automatico Shorts: novos campos
+    if req.engine_id is not None:
+        engine_id_clean = str(req.engine_id or "").strip().lower() or "mega15"
+        pilot.engine_id = engine_id_clean[:40]
+    if req.engine_duration_seconds is not None:
+        try:
+            dur = int(req.engine_duration_seconds)
+        except Exception:
+            dur = 10
+        if dur not in (5, 10, 15):
+            dur = 10
+        pilot.engine_duration_seconds = dur
+    if req.auto_approval_window_minutes is not None:
+        try:
+            window = int(req.auto_approval_window_minutes)
+        except Exception:
+            window = 60
+        pilot.auto_approval_window_minutes = max(5, min(24 * 60, window))
+    if req.location_persona_candidates is not None:
+        pilot.location_persona_candidates = _normalize_location_persona_candidates(req.location_persona_candidates)
+    if req.shorts_only is not None:
+        pilot.shorts_only = bool(req.shorts_only)
+
     experiment_candidates: list[dict] | None = None
     if req.pilot_persona_types is not None or req.pilot_persona_candidates is not None:
         experiment_candidates = _normalize_pilot_persona_candidates(
@@ -1383,6 +1464,212 @@ async def toggle_pilot_channel(
         "social_account_id": social_account_id,
         "pilot": _pilot_summary_dict(pilot),
     }
+
+
+# ── Piloto automatico Shorts: pending review / approve / reject / plan-preview ──
+
+def _serialize_pending_theme(theme: AutoScheduleTheme) -> dict:
+    plan = theme.preview_plan if isinstance(theme.preview_plan, dict) else {}
+    custom = theme.custom_settings if isinstance(theme.custom_settings, dict) else {}
+    return {
+        "theme_id": int(theme.id),
+        "auto_schedule_id": int(theme.auto_schedule_id),
+        "theme": str(theme.theme or ""),
+        "position": int(theme.position or 0),
+        "status": str(theme.status or ""),
+        "approval_status": str(theme.approval_status or ""),
+        "approval_deadline_at": theme.approval_deadline_at.isoformat() if theme.approval_deadline_at else None,
+        "approved_at": theme.approved_at.isoformat() if theme.approved_at else None,
+        "rejected_at": theme.rejected_at.isoformat() if theme.rejected_at else None,
+        "rejection_reason": str(theme.rejection_reason or ""),
+        "preview_prompt": str(theme.preview_prompt or ""),
+        "preview_image_url": str(theme.preview_image_url or ""),
+        "preview_plan": plan,
+        "engine_id": str(plan.get("engine_id") or custom.get("pilot_engine_id") or "mega15"),
+        "engine_duration_seconds": int(plan.get("engine_duration_seconds") or custom.get("pilot_engine_duration_seconds") or 10),
+        "created_at": theme.created_at.isoformat() if theme.created_at else None,
+    }
+
+
+async def _resolve_pilot_or_404(db: AsyncSession, user: dict, social_account_id: int) -> AutoChannelPilot:
+    account = await db.get(SocialAccount, social_account_id)
+    if not account or account.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Conta social nao encontrada.")
+    pilot_result = await db.execute(
+        select(AutoChannelPilot)
+        .where(AutoChannelPilot.user_id == user["id"])
+        .where(AutoChannelPilot.social_account_id == social_account_id)
+        .limit(1)
+    )
+    pilot = pilot_result.scalar_one_or_none()
+    if not pilot:
+        raise HTTPException(status_code=404, detail="Piloto nao configurado para este canal.")
+    return pilot
+
+
+@router.get("/pilot/channels/{social_account_id}/pending")
+async def list_pilot_pending_shorts(
+    social_account_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List Shorts queued by the pilot awaiting tacit approval."""
+    pilot = await _resolve_pilot_or_404(db, user, social_account_id)
+    schedule_ids = [sid for sid in [pilot.long_schedule_id, pilot.shorts_schedule_id, pilot.auto_schedule_id] if sid]
+    if not schedule_ids:
+        return {"social_account_id": social_account_id, "pending": [], "approved": [], "rejected": []}
+    result = await db.execute(
+        select(AutoScheduleTheme)
+        .where(AutoScheduleTheme.auto_schedule_id.in_(schedule_ids))
+        .where(AutoScheduleTheme.approval_status.in_(["pending_review", "approved", "rejected"]))
+        .order_by(AutoScheduleTheme.created_at.desc())
+        .limit(100)
+    )
+    themes = list(result.scalars())
+    pending = [t for t in themes if (t.approval_status or "") == "pending_review"]
+    approved = [t for t in themes if (t.approval_status or "") == "approved"]
+    rejected = [t for t in themes if (t.approval_status or "") == "rejected"]
+    return {
+        "social_account_id": social_account_id,
+        "pilot": _pilot_summary_dict(pilot),
+        "pending": [_serialize_pending_theme(t) for t in pending],
+        "approved": [_serialize_pending_theme(t) for t in approved[:20]],
+        "rejected": [_serialize_pending_theme(t) for t in rejected[:20]],
+    }
+
+
+async def _resolve_user_theme_or_404(db: AsyncSession, user: dict, theme_id: int) -> AutoScheduleTheme:
+    theme = await db.get(AutoScheduleTheme, theme_id)
+    if not theme:
+        raise HTTPException(status_code=404, detail="Tema nao encontrado.")
+    schedule = await db.get(AutoSchedule, theme.auto_schedule_id)
+    if not schedule or schedule.user_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Tema nao encontrado.")
+    return theme
+
+
+@router.post("/pilot/themes/{theme_id}/approve")
+async def approve_pilot_theme(
+    theme_id: int,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve a pending Short immediately. Existing auto-creation worker will pick it up."""
+    theme = await _resolve_user_theme_or_404(db, user, theme_id)
+    if (theme.approval_status or "") not in ("pending_review", "approved"):
+        raise HTTPException(status_code=400, detail="Tema nao esta em revisao.")
+    theme.approval_status = "approved"
+    theme.approved_at = datetime.utcnow()
+    plan = dict(theme.preview_plan or {})
+    plan["manually_approved"] = True
+    plan["manually_approved_at"] = theme.approved_at.isoformat()
+    theme.preview_plan = plan
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(theme, "preview_plan")
+    await db.commit()
+    return {"ok": True, "theme": _serialize_pending_theme(theme)}
+
+
+@router.post("/pilot/themes/{theme_id}/reject")
+async def reject_pilot_theme(
+    theme_id: int,
+    req: PilotThemeRejectRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject a pending Short. It will not be rendered or published."""
+    theme = await _resolve_user_theme_or_404(db, user, theme_id)
+    if (theme.approval_status or "") not in ("pending_review", "approved"):
+        raise HTTPException(status_code=400, detail="Tema nao pode mais ser reprovado.")
+    theme.approval_status = "rejected"
+    theme.rejected_at = datetime.utcnow()
+    theme.rejection_reason = str(req.reason or "").strip()[:1000]
+    # Also mark theme.status='failed' so the auto-creation worker definitely skips it
+    if theme.status == "pending":
+        theme.status = "failed"
+        theme.error_message = "Reprovado pelo usuario no piloto automatico"
+    await db.commit()
+    return {"ok": True, "theme": _serialize_pending_theme(theme)}
+
+
+@router.post("/pilot/channels/{social_account_id}/plan-preview")
+async def preview_pilot_plan(
+    social_account_id: int,
+    req: PilotPlanPreviewRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a pilot plan preview on-demand (no persist). Useful for the 'Revisar plano' demo."""
+    from app.services.pilot_prompt import build_shorts_pilot_plan_preview
+
+    pilot = await _resolve_pilot_or_404(db, user, social_account_id)
+    pilot_summary = _pilot_last_summary_dict(pilot)
+
+    long_defaults = {}
+    short_defaults = {}
+    if pilot.long_schedule_id:
+        long_schedule = await db.get(AutoSchedule, pilot.long_schedule_id)
+        if long_schedule and long_schedule.user_id == user["id"] and isinstance(long_schedule.default_settings, dict):
+            long_defaults = long_schedule.default_settings
+    if pilot.shorts_schedule_id:
+        short_schedule = await db.get(AutoSchedule, pilot.shorts_schedule_id)
+        if short_schedule and short_schedule.user_id == user["id"] and isinstance(short_schedule.default_settings, dict):
+            short_defaults = short_schedule.default_settings
+
+    interaction_candidates = _normalize_pilot_persona_candidates(persona_candidates=req.pilot_persona_candidates or [])
+    if not interaction_candidates:
+        interaction_candidates = _extract_saved_pilot_persona_candidates(pilot_summary, short_defaults, long_defaults)
+    interaction_personas = [c.get("persona_type") for c in interaction_candidates if c.get("persona_type")]
+
+    location_candidates = _normalize_location_persona_candidates(req.location_persona_candidates) if req.location_persona_candidates is not None else None
+    if location_candidates is None:
+        saved_locs = getattr(pilot, "location_persona_candidates", None) or []
+        location_candidates = _normalize_location_persona_candidates(saved_locs)
+    location_personas = [c.get("persona_type") for c in location_candidates if c.get("persona_type")]
+
+    engine_id = (req.engine_id or getattr(pilot, "engine_id", None) or "mega15").strip().lower() or "mega15"
+    dur = req.engine_duration_seconds if req.engine_duration_seconds is not None else (getattr(pilot, "engine_duration_seconds", None) or 10)
+    try:
+        dur_int = int(dur)
+    except Exception:
+        dur_int = 10
+    if dur_int not in (5, 10, 15):
+        dur_int = 10
+
+    prompt_template = (
+        str(req.prompt_template or "").strip()
+        if req.prompt_template is not None
+        else _extract_saved_pilot_prompt_template(pilot_summary, short_defaults, long_defaults)
+    )
+
+    theme_text = str(req.theme or "").strip()
+    top_video = None
+    if not theme_text:
+        # Try to read last analysis payload top video and a theme idea
+        analysis_top = (pilot_summary.get("last_analysis_payload") or {}) if isinstance(pilot_summary, dict) else {}
+        top_videos = analysis_top.get("top_videos") if isinstance(analysis_top, dict) else None
+        if isinstance(top_videos, list) and top_videos:
+            top_video = top_videos[0]
+            theme_text = str(top_video.get("title") or "").strip()
+    if not theme_text:
+        theme_text = "Tema inspirador do canal"
+
+    preview = build_shorts_pilot_plan_preview(
+        theme=theme_text,
+        top_video=top_video,
+        interaction_personas=interaction_personas,
+        location_personas=location_personas,
+        engine_id=engine_id,
+        engine_duration_seconds=dur_int,
+        prompt_template=prompt_template,
+    )
+    preview["social_account_id"] = social_account_id
+    preview["interaction_personas"] = interaction_personas
+    preview["location_personas"] = location_personas
+    preview["engine_id"] = engine_id
+    preview["engine_duration_seconds"] = dur_int
+    preview["auto_approval_window_minutes"] = int(getattr(pilot, "auto_approval_window_minutes", None) or 60)
+    return preview
 
 
 @router.get("/schedules/{schedule_id}")

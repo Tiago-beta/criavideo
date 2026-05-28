@@ -294,6 +294,16 @@ async def check_auto_channel_pilots():
         logger.error("Auto channel pilot cycle failed: %s", err)
 
 
+async def check_pilot_tacit_approvals():
+    """Runs every 5 minutes. Promotes pilot Short themes whose pre-approval window expired."""
+    from app.tasks.pilot_approval_tasks import process_tacit_pilot_approvals
+
+    try:
+        await process_tacit_pilot_approvals()
+    except Exception as err:
+        logger.error("Pilot tacit approval worker failed: %s", err)
+
+
 RENDER_EXPIRY_HOURS = 48
 
 
@@ -427,6 +437,12 @@ def start_scheduler():
         check_auto_channel_pilots,
         trigger=IntervalTrigger(minutes=15),
         id="check_auto_channel_pilots",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        check_pilot_tacit_approvals,
+        trigger=IntervalTrigger(minutes=5),
+        id="check_pilot_tacit_approvals",
         replace_existing=True,
     )
     scheduler.start()
