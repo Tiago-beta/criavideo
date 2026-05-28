@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260528-13">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260528-14">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 592;
+        var REQUIRED_VER = 593;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -606,9 +606,6 @@
                                         <span>IA gerando título, descrição e hashtags...</span>
                                     </div>
                                     <div class="form-group publish-form-group">
-                                        <div id="pub-account-selectors" class="publish-account-selectors" hidden></div>
-                                    </div>
-                                    <div class="form-group publish-form-group">
                                         <input id="pub-title" type="text" class="input" placeholder="Escreva o Título aqui" aria-label="Título do vídeo">
                                     </div>
                                     <div class="form-group publish-form-group">
@@ -658,6 +655,9 @@
                                             </a>
                                         </div>
                                         <button id="btn-regenerate-thumb" class="btn btn-secondary btn-sm" type="button" hidden>Gerar thumbnail</button>
+                                    </div>
+                                    <div class="form-group publish-form-group">
+                                        <div id="pub-account-selectors" class="publish-account-selectors" hidden></div>
                                     </div>
                                     <div id="publish-action-row" class="publish-action-row">
                                         <button id="btn-publish" class="btn btn-primary publish-action-btn" type="button">
@@ -4684,8 +4684,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260528-13"></script>
-    <script src="/video/static/pwa.js?v=20260528-13"></script>
+    <script src="/video/static/app.js?v=20260528-14"></script>
+    <script src="/video/static/pwa.js?v=20260528-14"></script>
 </body>
 </html>
 
