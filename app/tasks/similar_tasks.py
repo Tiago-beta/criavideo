@@ -3431,6 +3431,57 @@ async def run_similar_reference_analysis(
                     }
                 )
 
+                start_frame_path = ""
+                for _scene_key in sorted(
+                    reference_frames_by_scene_index.keys(),
+                    key=lambda k: int(k) if str(k).isdigit() else 999999,
+                ):
+                    candidate = str(reference_frames_by_scene_index.get(_scene_key) or "").strip()
+                    if candidate and os.path.exists(candidate):
+                        start_frame_path = candidate
+                        break
+
+                end_frame_path = ""
+                if resolved_video_path and os.path.exists(resolved_video_path) and duration_seconds > 0.05:
+                    end_frame_target = Path(settings.media_dir) / "images" / str(project_id) / "similar_unified_end_frame.jpg"
+                    end_frame_target.parent.mkdir(parents=True, exist_ok=True)
+                    safe_timestamp = max(0.0, float(duration_seconds) - 0.05)
+                    try:
+                        end_proc = await asyncio.create_subprocess_exec(
+                            "ffmpeg",
+                            "-y",
+                            "-ss",
+                            f"{safe_timestamp:.3f}",
+                            "-i",
+                            resolved_video_path,
+                            "-frames:v",
+                            "1",
+                            "-q:v",
+                            "2",
+                            str(end_frame_target),
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        await end_proc.communicate()
+                        if end_proc.returncode == 0 and end_frame_target.exists() and end_frame_target.stat().st_size > 0:
+                            end_frame_path = str(end_frame_target)
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to extract general-mode end frame for project %s: %s",
+                            project_id,
+                            exc,
+                        )
+
+                if start_frame_path:
+                    tags["similar_unified_start_frame_path"] = start_frame_path
+                if end_frame_path:
+                    tags["similar_unified_end_frame_path"] = end_frame_path
+                elif start_frame_path:
+                    tags["similar_unified_end_frame_path"] = start_frame_path
+                reference_frame_count = len({p for p in (start_frame_path, end_frame_path) if p})
+                if reference_frame_count > 0:
+                    tags["similar_unified_reference_frame_count"] = reference_frame_count
+
             project.tags = tags
             project.track_duration = float(duration_seconds)
             project.lyrics_text = (

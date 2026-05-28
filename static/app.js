@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v590 loaded");
+console.log("[CriaVideo] app.js v591 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -9469,6 +9469,7 @@ function _renderSimilarUnifiedReferencePanel(project) {
         <article class="similar-frame-gallery-item is-base${similarState.unifiedFrameEditorOpen && activeFrameKind === entry.kind ? " is-active" : ""}${isGeneratingUnifiedScene ? " is-generating-clip" : ""}">
             <div class="similar-frame-gallery-box similar-preview-box ${previewAspectClass}${isGeneratingUnifiedScene ? " is-generating-clip" : ""}">
                 <img src="${esc(entry.url)}" alt="${esc(entry.alt)}" loading="lazy">
+                <button class="similar-frame-inline-remove-btn" type="button" onclick="similarRemoveUnifiedFrameText('${entry.kind}')" title="Remover escrita do frame" aria-label="Remover escrita do frame" ${frameBusyDisabledAttr}>Remover escrita</button>
                 <div class="similar-frame-image-actions">
                     <a class="similar-frame-image-action" href="${esc(entry.url)}" download="${entry.downloadName}" title="Baixar ${entry.badge.toLowerCase()}" aria-label="Baixar ${entry.badge.toLowerCase()}">${SIMILAR_ACTION_ICONS.download}</a>
                     <button class="similar-frame-image-action" type="button" onclick="similarOpenUnifiedFrameEdit('${entry.kind}')" title="Editar ${entry.badge.toLowerCase()}" aria-label="Editar ${entry.badge.toLowerCase()}" ${frameBusyDisabledAttr}>${SIMILAR_ACTION_ICONS.edit}</button>
@@ -16973,6 +16974,68 @@ async function similarRemoveFrameText(sceneId) {
         promoteReferenceFrame: true,
         successMessage: "Escrita removida do frame base.",
     });
+}
+
+async function similarRemoveUnifiedFrameText(frameKind = "start") {
+    const projectId = Number(similarState.projectId || 0);
+    if (!projectId) {
+        alert("Analise o video antes de editar um frame do prompt unico.");
+        return;
+    }
+    if (similarState.unifiedFrameBusy) {
+        return;
+    }
+
+    const normalizedKind = _normalizeSimilarUnifiedFrameKind(frameKind || "start");
+    const frameLabel = _getSimilarUnifiedFrameLabel(normalizedKind);
+    const frameLabelLower = _getSimilarUnifiedFrameLabel(normalizedKind, { lower: true });
+    const project = similarState.lastProjectSnapshot;
+    const tags = _safeSimilarTags(project?.tags);
+    const currentFrameUrl = normalizedKind === "end"
+        ? String(tags.similar_unified_end_frame_url || "").trim()
+        : String(tags.similar_unified_start_frame_url || "").trim();
+    if (!currentFrameUrl) {
+        showToast("Esse frame ainda nao esta disponivel.", "error");
+        return;
+    }
+
+    const promptEl = document.getElementById("similar-unified-prompt-text");
+    const promptOverride = String(promptEl?.value || tags.similar_unified_prompt || "").trim();
+    const removalInstruction = _buildSimilarFrameTextRemovalInstruction(null);
+
+    similarState.unifiedFrameTarget = normalizedKind;
+    similarState.unifiedFrameBusy = true;
+    similarState.unifiedFrameBusyLabel = `Removendo escrita do ${frameLabelLower}...`;
+    if (similarState.lastProjectSnapshot) {
+        _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+    }
+    _setSimilarStatus(`Removendo escrita do ${frameLabelLower}...`, "running");
+
+    try {
+        await api(`/video/projects/${projectId}/similar/unified-boundary-frame`, {
+            method: "POST",
+            body: JSON.stringify({
+                frame_kind: normalizedKind,
+                generate_from_prompt: true,
+                prompt_override: promptOverride,
+                edit_instruction: removalInstruction,
+                image_upload_ids: [],
+                aspect_ratio: document.getElementById("similar-aspect")?.value || "16:9",
+            }),
+        });
+        await _refreshSimilarProject({ silent: true });
+        _setSimilarStatus("", "running");
+        showToast(`Escrita removida do ${frameLabelLower}.`, "success");
+    } catch (error) {
+        _setSimilarStatus(`Erro ao remover escrita do ${frameLabelLower}: ${error.message}`, "error");
+        showToast(`Erro ao remover escrita do ${frameLabelLower}: ${error.message}`, "error");
+    } finally {
+        similarState.unifiedFrameBusy = false;
+        similarState.unifiedFrameBusyLabel = "";
+        if (similarState.lastProjectSnapshot) {
+            _renderSimilarUnifiedPrompt(similarState.lastProjectSnapshot);
+        }
+    }
 }
 
 async function similarRemoveAllFrameText() {
@@ -31999,6 +32062,7 @@ window.similarOpenUnifiedFrameEdit = similarOpenUnifiedFrameEdit;
 window.similarCloseUnifiedFrameEdit = similarCloseUnifiedFrameEdit;
 window.similarGenerateUnifiedReferenceImage = similarGenerateUnifiedReferenceImage;
 window.similarApplyUnifiedFrameEdit = similarApplyUnifiedFrameEdit;
+window.similarRemoveUnifiedFrameText = similarRemoveUnifiedFrameText;
 window.similarRegenerateScene = similarRegenerateScene;
 window.similarSelectSceneEngine = similarSelectSceneEngine;
 window.similarSelectUnifiedEngine = similarSelectUnifiedEngine;
