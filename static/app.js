@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v579 loaded");
+console.log("[CriaVideo] app.js v580 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -28041,7 +28041,7 @@ function _renderAutoPilotChannels() {
             && _socialAccountsCache.some((account) => String(account.platform || "").toLowerCase() === "youtube");
         const emptyText = hasYoutubeConnected
             ? "Nenhum canal do YouTube ficou disponivel no piloto. Clique em Conectar YouTube para adicionar outro canal ou atualizar acesso."
-            : "Conecte ao menos um canal do YouTube para ativar o Piloto automatico.";
+            : "Conecte ao menos um canal do YouTube para ativar o Piloto automatico Shorts.";
 
         container.innerHTML = `
             <div class="auto-pilot-empty">
@@ -28163,7 +28163,7 @@ async function loadAutoPilotChannels(forceReload = false) {
     } catch (error) {
         const container = document.getElementById("auto-pilot-channels");
         if (container) {
-            container.innerHTML = `<p class="loading">Erro ao carregar piloto automatico: ${esc(error.message)}</p>`;
+            container.innerHTML = `<p class="loading">Erro ao carregar piloto automatico Shorts: ${esc(error.message)}</p>`;
         }
     } finally {
         _autoPilotState.loading = false;
@@ -28234,7 +28234,7 @@ async function toggleAutoPilotChannel(socialAccountId, enabled) {
         await loadAutoPilotChannels(true);
         await loadAutoSchedules();
     } catch (error) {
-        alert(`Erro ao atualizar piloto automatico: ${error.message}`);
+        alert(`Erro ao atualizar piloto automatico Shorts: ${error.message}`);
     } finally {
         _autoPilotState.togglingByAccount[accountId] = false;
         _renderAutoPilotChannels();

@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260527-12">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260528-01">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 579;
+        var REQUIRED_VER = 580;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -851,7 +851,7 @@
                             <div class="automate-section">
                                 <div class="automate-section-head">
                                     <h3 class="section-title">Criação automática</h3>
-                                    <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico</button>
+                                    <button id="btn-auto-pilot" class="btn btn-secondary btn-sm" type="button">Piloto automatico Shorts</button>
                                 </div>
                                 <p class="section-subtitle">Crie e publique vídeos automaticamente com IA. Defina temas, frequência e deixe o sistema trabalhar.</p>
                                 <div id="auto-schedules-list" class="cards-grid">
@@ -3235,15 +3235,15 @@
     <div id="modal-auto-pilot" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h3>Piloto automatico</h3>
+                <h3>Piloto automatico Shorts</h3>
                 <button class="modal-close" onclick="closeModal('modal-auto-pilot')" type="button">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="section-subtitle">Cada canal publica videos longos na segunda e na quinta as 20:00, e agenda 5 shorts por dia na terca, quarta, sexta e sabado, sempre entre 18:00 e 22:00.</p>
+                <p class="section-subtitle">Cria shorts de ate 15s no motor Lite 2.0 Fast, inspirados no video de melhor desempenho do canal, usando as personas de pessoa e local que voce definir.</p>
                 <div id="auto-pilot-channels" class="auto-pilot-list">
                     <p class="loading">Carregando canais conectados...</p>
                 </div>
-                <p class="muted auto-pilot-note">Quando ligado, o piloto repoe temas automaticamente, deriva os shorts de cada video longo e mantem a fila de publicacao organizada.</p>
+                <p class="muted auto-pilot-note">Cada short e pre-aprovado: voce pode revisar o plano (prompt e frame inicial) antes da publicacao agendada. Se nada for reprovado, publica automaticamente.</p>
             </div>
             <div class="modal-footer modal-footer-space">
                 <button class="btn btn-primary" onclick="closeModal('modal-auto-pilot'); connectPlatform('youtube')" type="button">Conectar YouTube</button>
@@ -3255,7 +3255,7 @@
     <div id="modal-auto-pilot-persona" class="modal">
         <div class="modal-content modal-content-wide">
             <div class="modal-header">
-                <h3>Definir personas do piloto</h3>
+                <h3>Definir personas do piloto Shorts</h3>
                 <button class="modal-close" onclick="closeModal('modal-auto-pilot-persona')" type="button">&times;</button>
             </div>
             <div class="modal-body">
@@ -3271,8 +3271,9 @@
                         <button class="style-tag selected" type="button" data-persona="natureza" onclick="selectAutoPilotPersonaType('natureza')">Natureza</button>
                         <button class="style-tag" type="button" data-persona="desenho" onclick="selectAutoPilotPersonaType('desenho')">Desenho</button>
                         <button class="style-tag" type="button" data-persona="personalizado" onclick="selectAutoPilotPersonaType('personalizado')">Personalizado</button>
+                        <button class="style-tag" type="button" data-persona="local" onclick="selectAutoPilotPersonaType('local')" title="Persona de local/cenario que o piloto deve usar nas imagens do frame inicial">Local</button>
                     </div>
-                    <small class="pause-hint">Escolha cada tipo que o piloto deve testar e selecione a persona ou Nenhum.</small>
+                    <small class="pause-hint">Escolha cada tipo que o piloto deve testar (pessoa e/ou local) e selecione a persona ou Nenhum.</small>
                     <div id="pilot-realistic-persona-preview" class="realistic-persona-preview"></div>
                     <div class="realistic-persona-actions">
                         <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('pilot')" title="Gerenciar personas" aria-label="Gerenciar personas">
@@ -4625,8 +4626,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260527-12"></script>
-    <script src="/video/static/pwa.js?v=20260527-12"></script>
+    <script src="/video/static/app.js?v=20260528-01"></script>
+    <script src="/video/static/pwa.js?v=20260528-01"></script>
 </body>
 </html>
 
