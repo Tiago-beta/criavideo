@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v583 loaded");
+console.log("[CriaVideo] app.js v584 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -860,91 +860,35 @@ function _getSessionPlanPresentation() {
 }
 
 const ROLE_RESTRICTED_PAGES = ["editor", "analyze", "publish", "automate"];
-const ROLE_CREATE_MODES = [
-    { mode: "wizard", label: "Assistente", icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>' },
-    { mode: "script", label: "Meu Roteiro", icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>' },
-    { mode: "similar", label: "Semelhante", icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' },
-    { mode: "workflow", label: "Workflow", icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.7 7.5 10.8 15"/><path d="M15.3 7.5 13.2 15"/><path d="M9 6h6"/></svg>' },
-    { mode: "images", label: "Imagens", icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>' },
-    { mode: "audio", label: "Áudio", icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="M16 5v8"/><path d="M8 7v6"/><path d="M6 17a6 6 0 0 0 12 0"/><path d="M9 21h6"/></svg>' },
-];
-
-function _openCreateModeDirect(mode) {
-    navigateTo("projects");
-    resetCreateWizard();
-    openModal("modal-new-project");
-    _chooseCreateMode(mode);
-}
-window._openCreateModeDirect = _openCreateModeDirect;
 
 function _applyRoleBasedNav() {
     const isAdmin = _isProfileAdminUser();
-    const sidebarNav = document.querySelector(".sidebar-nav");
-    const mobileNav = document.getElementById("mobile-bottom-nav");
-    const newProjectBtn = document.getElementById("btn-new-project");
     const liveEditorBtn = document.getElementById("create-live-session-editor-btn");
+    const mobileProfileTab = document.querySelector('.mobile-nav-tab[data-mobile-page="profile"]');
 
-    // Remove anything we injected previously so this is idempotent.
-    document.querySelectorAll("[data-role-mode-nav]").forEach((el) => el.remove());
-
-    // Reset original items to their default visibility.
+    // Reset visibility to defaults so this is idempotent.
     ROLE_RESTRICTED_PAGES.forEach((page) => {
         const sidebarItem = document.querySelector(`.sidebar-nav .nav-item[data-page="${page}"]`);
         if (sidebarItem) sidebarItem.hidden = false;
         const mobileItem = document.querySelector(`.mobile-nav-tab[data-mobile-page="${page}"]`);
         if (mobileItem) mobileItem.hidden = false;
     });
-    if (newProjectBtn) newProjectBtn.hidden = false;
     if (liveEditorBtn) liveEditorBtn.dataset.roleHidden = "";
+    if (mobileProfileTab) mobileProfileTab.hidden = isAdmin;
 
     if (isAdmin) {
         return;
     }
 
-    // Hide restricted tabs (sidebar + mobile bottom-nav).
     ROLE_RESTRICTED_PAGES.forEach((page) => {
         const sidebarItem = document.querySelector(`.sidebar-nav .nav-item[data-page="${page}"]`);
         if (sidebarItem) sidebarItem.hidden = true;
         const mobileItem = document.querySelector(`.mobile-nav-tab[data-mobile-page="${page}"]`);
         if (mobileItem) mobileItem.hidden = true;
     });
-    if (newProjectBtn) newProjectBtn.hidden = true;
     if (liveEditorBtn) {
         liveEditorBtn.hidden = true;
         liveEditorBtn.dataset.roleHidden = "1";
-    }
-
-    // Inject 6 creation-mode items in sidebar.
-    if (sidebarNav) {
-        ROLE_CREATE_MODES.forEach(({ mode, label, icon }) => {
-            const a = document.createElement("a");
-            a.href = "#";
-            a.className = "nav-item";
-            a.dataset.roleModeNav = "sidebar";
-            a.dataset.createMode = mode;
-            a.innerHTML = `${icon}<span>${label}</span>`;
-            a.addEventListener("click", (event) => {
-                event.preventDefault();
-                _openCreateModeDirect(mode);
-            });
-            sidebarNav.appendChild(a);
-        });
-    }
-
-    // Inject 6 creation-mode tabs in mobile bottom-nav.
-    if (mobileNav) {
-        ROLE_CREATE_MODES.forEach(({ mode, label, icon }) => {
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "mobile-nav-tab";
-            btn.dataset.roleModeNav = "mobile";
-            btn.dataset.createMode = mode;
-            btn.innerHTML = `${icon.replace(/width="20" height="20"/, 'width="22" height="22"')}<span>${label}</span>`;
-            btn.addEventListener("click", () => {
-                _openCreateModeDirect(mode);
-            });
-            mobileNav.appendChild(btn);
-        });
     }
 }
 
@@ -1198,7 +1142,8 @@ function bindAuthEvents() {
 }
 
 function navigateTo(pageName) {
-    const normalizedPage = (pageName === "accounts") ? "publish" : pageName;
+    let normalizedPage = (pageName === "accounts") ? "publish" : pageName;
+    if (normalizedPage === "profile") normalizedPage = "profile";
     const RESTRICTED_PAGES = ["editor", "analyze", "publish", "automate"];
     if (RESTRICTED_PAGES.includes(normalizedPage) && currentUser && !_isProfileAdminUser()) {
         return navigateTo("projects");

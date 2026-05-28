@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260528-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260528-05">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 583;
+        var REQUIRED_VER = 584;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -132,6 +132,10 @@
                         <a href="#" class="nav-item active" data-page="projects">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                             <span>Criar</span>
+                        </a>
+                        <a href="#" class="nav-item" data-page="galeria">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                            <span>Galeria</span>
                         </a>
                         <a href="#" class="nav-item" data-page="editor">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
@@ -275,6 +279,33 @@
                                     </div>
                                 </aside>
                             </div>
+                        </div>
+                    </section>
+
+                    <section id="page-galeria" class="page">
+                        <div class="page-header">
+                            <div class="page-header-left">
+                                <h1>Galeria de exemplos</h1>
+                                <p class="page-subtitle">Veja exemplos de vídeos que voce pode criar.</p>
+                            </div>
+                        </div>
+                        <div class="gallery-grid">
+                            <article class="gallery-card"><span class="gallery-badge">TikTok</span><video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Corte vertical pronto pra feed</strong><span>UGC viral</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Karaokê</span><video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Letra sincronizada palavra a palavra</strong><span>Legenda animada</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Reels</span><video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Cena cinemática com IA</strong><span>Clipe musical</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Decoração</span><video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Produto em cena cinematográfica</strong><span>E-commerce</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Novela</span><video src="/video/static/landing-media/showcase-novelas.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Cena dramática com persona consistente</strong><span>Storyline</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Esporte</span><video src="/video/static/landing-media/showcase-corrida.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Ação contínua com câmera estável</strong><span>Movimento real</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Imóveis</span><video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Storyboard rápido em ambientes reais</strong><span>Antes e depois</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Inspiração</span><video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Cenas atmosféricas em loop</strong><span>Conteúdo recorrente</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Mensagem</span><video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Texto, voz e visual no mesmo fluxo</strong><span>Devocional</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Cinema</span><video src="/video/static/landing-media/showcase-estelar.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Cena cinematográfica em 9:16</strong><span>Cinemático</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Persona</span><video src="/video/static/landing-media/showcase-pastor.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Avatar realista falando direto pra câmera</strong><span>Persona com fala</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Selvagem</span><video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Cenário aberto com movimento natural</strong><span>Vida selvagem</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Realista</span><video src="/video/static/landing-media/showcase-neve.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Cena realista guiada por referência</strong><span>Ambiente natural</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Nicho</span><video src="/video/static/landing-media/showcase-lirio.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Série visual com identidade fixa</strong><span>Canal recorrente</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Pet</span><video src="/video/static/landing-media/showcase-pet.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Movimento natural em ambiente real</strong><span>Animal</span></div></article>
+                            <article class="gallery-card"><span class="gallery-badge">Produto</span><video src="/video/static/landing-media/showcase-prateleira.mp4?v=20260528-03" autoplay muted loop playsinline preload="metadata"></video><div class="gallery-meta"><strong>Vitrine cinematográfica de produto</strong><span>E-commerce</span></div></article>
                         </div>
                     </section>
 
@@ -909,6 +940,10 @@
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                         <span>Criar</span>
                     </button>
+                    <button class="mobile-nav-tab" data-mobile-page="galeria">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                        <span>Galeria</span>
+                    </button>
                     <button class="mobile-nav-tab" data-mobile-page="editor">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
                         <span>Editar</span>
@@ -924,6 +959,10 @@
                     <button class="mobile-nav-tab" data-mobile-page="automate">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                         <span>Automatizar</span>
+                    </button>
+                    <button class="mobile-nav-tab" data-mobile-page="profile" hidden>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        <span>Perfil</span>
                     </button>
                 </nav>
             </div>
@@ -4644,8 +4683,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260528-04"></script>
-    <script src="/video/static/pwa.js?v=20260528-04"></script>
+    <script src="/video/static/app.js?v=20260528-05"></script>
+    <script src="/video/static/pwa.js?v=20260528-05"></script>
 </body>
 </html>
 
