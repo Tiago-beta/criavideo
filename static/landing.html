@@ -1276,6 +1276,364 @@
                 grid-column: 2;
             }
         }
+
+        /* ============ Showcase de vídeos ============ */
+        .showcase-section {
+            position: relative;
+        }
+
+        .showcase-section .section-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 24px;
+            max-width: none;
+            margin-bottom: 36px;
+        }
+
+        .showcase-section .section-header > div:first-child {
+            max-width: 640px;
+        }
+
+        .showcase-stats {
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+        }
+
+        .showcase-stat {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 14px 18px;
+            background: rgba(10, 16, 28, 0.7);
+            min-width: 130px;
+        }
+
+        .showcase-stat strong {
+            display: block;
+            font-family: "Instrument Serif", serif;
+            font-size: 1.7rem;
+            color: var(--accent);
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .showcase-stat span {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--muted);
+        }
+
+        .showcase-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 22px;
+        }
+
+        .showcase-card {
+            position: relative;
+            border-radius: 24px;
+            overflow: hidden;
+            aspect-ratio: 9 / 16;
+            background: linear-gradient(180deg, rgba(20, 28, 44, 0.9), rgba(8, 12, 22, 0.95));
+            border: 1px solid var(--line);
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+            isolation: isolate;
+            transition: transform 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+
+        .showcase-card:hover {
+            transform: translateY(-6px);
+            border-color: var(--line-strong);
+            box-shadow: 0 30px 80px rgba(255, 184, 61, 0.18);
+        }
+
+        .showcase-card video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+        }
+
+        .showcase-card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(5, 7, 11, 0) 35%, rgba(5, 7, 11, 0.78) 88%, rgba(5, 7, 11, 0.96) 100%);
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        .showcase-meta {
+            position: absolute;
+            inset: auto 0 0 0;
+            padding: 16px 18px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            z-index: 3;
+        }
+
+        .showcase-meta .showcase-tag {
+            display: inline-flex;
+            align-self: flex-start;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(255, 184, 61, 0.18);
+            color: var(--accent);
+            border: 1px solid rgba(255, 184, 61, 0.32);
+            margin-bottom: 4px;
+        }
+
+        .showcase-meta strong {
+            font-size: 1.02rem;
+            color: var(--text);
+            letter-spacing: -0.01em;
+        }
+
+        .showcase-meta span.showcase-desc {
+            font-size: 0.82rem;
+            color: rgba(247, 244, 236, 0.78);
+            line-height: 1.4;
+        }
+
+        .showcase-card .showcase-badge {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            font-size: 0.7rem;
+            border-radius: 999px;
+            background: rgba(5, 7, 11, 0.6);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: var(--text);
+            z-index: 3;
+        }
+
+        .showcase-card .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff5b6b;
+            box-shadow: 0 0 0 0 rgba(255, 91, 107, 0.6);
+            animation: liveDot 1.6s ease-out infinite;
+        }
+
+        @keyframes liveDot {
+            0% { box-shadow: 0 0 0 0 rgba(255, 91, 107, 0.55); }
+            70% { box-shadow: 0 0 0 8px rgba(255, 91, 107, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 91, 107, 0); }
+        }
+
+        /* ============ Resultado / Monetização ============ */
+        .result-section {
+            position: relative;
+        }
+
+        .result-shell {
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+            gap: 36px;
+            align-items: center;
+            background: linear-gradient(135deg, rgba(255, 184, 61, 0.08), rgba(18, 28, 48, 0.95));
+            border: 1px solid rgba(255, 184, 61, 0.22);
+            border-radius: 32px;
+            padding: 40px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .result-shell::before {
+            content: "";
+            position: absolute;
+            width: 480px;
+            height: 480px;
+            background: radial-gradient(circle, rgba(255, 184, 61, 0.22), transparent 65%);
+            top: -180px;
+            right: -180px;
+            pointer-events: none;
+        }
+
+        .result-copy {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .result-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .result-eyebrow::before {
+            content: "";
+            width: 26px;
+            height: 1px;
+            background: var(--accent);
+        }
+
+        .result-title {
+            font-family: "Instrument Serif", serif;
+            font-size: clamp(1.9rem, 4vw, 2.7rem);
+            line-height: 1.08;
+            letter-spacing: -0.01em;
+        }
+
+        .result-title em {
+            color: var(--accent);
+            font-style: italic;
+        }
+
+        .result-copy p {
+            color: var(--muted);
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+
+        .result-kpis {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 4px;
+        }
+
+        .result-kpi {
+            background: rgba(5, 7, 11, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 14px 14px;
+        }
+
+        .result-kpi strong {
+            display: block;
+            font-family: "Instrument Serif", serif;
+            font-size: 1.6rem;
+            color: var(--text);
+            line-height: 1;
+        }
+
+        .result-kpi span {
+            display: block;
+            margin-top: 6px;
+            font-size: 0.74rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .result-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 10px;
+        }
+
+        .course-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            padding: 10px 16px;
+            background: rgba(255, 184, 61, 0.12);
+            color: var(--accent);
+            border: 1px solid rgba(255, 184, 61, 0.3);
+            border-radius: 999px;
+            font-weight: 500;
+        }
+
+        .course-pill svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .result-frame {
+            position: relative;
+            z-index: 2;
+            border-radius: 24px;
+            overflow: hidden;
+            background: #0a1018;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
+        }
+
+        .result-frame::before {
+            content: "";
+            position: absolute;
+            top: 12px;
+            left: 14px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff5f57;
+            box-shadow: 16px 0 0 #febc2e, 32px 0 0 #28c840;
+            z-index: 3;
+        }
+
+        .result-frame img {
+            display: block;
+            width: 100%;
+            margin-top: 30px;
+        }
+
+        .result-frame .result-badge {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(40, 200, 100, 0.18);
+            border: 1px solid rgba(40, 200, 100, 0.42);
+            color: #6df0a4;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            z-index: 3;
+        }
+
+        @media (max-width: 880px) {
+            .result-shell {
+                grid-template-columns: minmax(0, 1fr);
+                padding: 28px;
+            }
+
+            .result-kpis {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 540px) {
+            .result-kpis {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .showcase-section .section-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1290,10 +1648,11 @@
             </a>
 
             <nav class="site-nav" aria-label="Navegação principal">
+                <a href="#showcase">Vídeos</a>
                 <a href="#flow">Fluxo</a>
                 <a href="#cases">Aplicações</a>
+                <a href="#resultado">Resultados</a>
                 <a href="#platform">Plataforma</a>
-                <a href="#models">Modelos</a>
                 <a href="#faq">FAQ</a>
             </nav>
 
@@ -1427,6 +1786,103 @@
                 </div>
             </section>
 
+            <section class="section showcase-section" id="showcase">
+                <div class="section-header">
+                    <div>
+                        <span class="section-kicker">Feitos no CriaVideo</span>
+                        <h2 class="section-title">Vídeos reais gerados na plataforma.</h2>
+                        <p class="section-copy">Sequências curtas para Reels, Shorts e TikTok criadas dentro do mesmo fluxo: roteiro, referência, geração, edição e publicação. Passe o mouse para ver melhor — todos rodam direto do navegador.</p>
+                    </div>
+                    <div class="showcase-stats" aria-label="Destaques da plataforma">
+                        <div class="showcase-stat"><strong>+8</strong><span>Engines de vídeo</span></div>
+                        <div class="showcase-stat"><strong>9:16</strong><span>Formato vertical pronto</span></div>
+                        <div class="showcase-stat"><strong>1 fluxo</strong><span>Do briefing ao upload</span></div>
+                    </div>
+                </div>
+
+                <div class="showcase-grid">
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>TikTok</span>
+                        <video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">UGC viral</span>
+                            <strong>Corte vertical pronto pra feed</strong>
+                            <span class="showcase-desc">Roteiro curto + cenas geradas com referência travada.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Karaokê</span>
+                        <video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Legenda animada</span>
+                            <strong>Letra sincronizada palavra a palavra</strong>
+                            <span class="showcase-desc">Áudio + karaokê em poucos cliques no editor.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Reels</span>
+                        <video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Clipe musical</span>
+                            <strong>Cena cinemática com IA</strong>
+                            <span class="showcase-desc">Geração realista guiada por referência visual.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Decoração</span>
+                        <video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">E-commerce</span>
+                            <strong>Produto em cena cinematográfica</strong>
+                            <span class="showcase-desc">Texto, luz e câmera coerentes na mesma identidade.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Pet</span>
+                        <video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Vida selvagem</span>
+                            <strong>Cenário aberto com movimento natural</strong>
+                            <span class="showcase-desc">Wan 2.6 e Seedance em sequência consistente.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Imóveis</span>
+                        <video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Antes e depois</span>
+                            <strong>Storyboard rápido em ambientes reais</strong>
+                            <span class="showcase-desc">Estrutura de cenas pronta para canais de nicho.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Inspiração</span>
+                        <video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Conteúdo recorrente</span>
+                            <strong>Cenas atmosféricas em loop</strong>
+                            <span class="showcase-desc">Modelo perfeito para canais faceless de volume.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Mensagem</span>
+                        <video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Devocional</span>
+                            <strong>Texto, voz e visual no mesmo fluxo</strong>
+                            <span class="showcase-desc">Pronto para publicar em Shorts e Reels.</span>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
             <section class="section" id="flow">
                 <div class="section-header">
                     <span class="section-kicker">Como funciona</span>
@@ -1523,6 +1979,35 @@
                         <h3>Cenas com referências visuais</h3>
                         <p>Trabalhe com frames base, ambientes e pessoas consistentes ao longo da narrativa.</p>
                     </article>
+                </div>
+            </section>
+
+            <section class="section result-section" id="resultado">
+                <div class="result-shell">
+                    <div class="result-copy">
+                        <span class="result-eyebrow">Resultado real</span>
+                        <h2 class="result-title">Canal monetizado em <em>menos de 30 dias</em> usando o CriaVideo.</h2>
+                        <p>Um criador iniciou um novo canal usando o fluxo da plataforma (roteiro, storyboard, geração e publicação no mesmo painel) e bateu mais de 4 milhões de visualizações, 9,5 mil horas de exibição e 4,8 mil inscritos em pouco mais de 4 semanas — passando os requisitos de monetização do YouTube.</p>
+
+                        <div class="result-kpis">
+                            <div class="result-kpi"><strong>4,0 mi</strong><span>visualizações</span></div>
+                            <div class="result-kpi"><strong>9,5 mil</strong><span>horas de exibição</span></div>
+                            <div class="result-kpi"><strong>+4,8 mil</strong><span>inscritos</span></div>
+                        </div>
+
+                        <div class="result-actions">
+                            <a href="/video" class="button button-primary">Quero meu canal &rarr;</a>
+                            <span class="course-pill">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5-10-5z"/><path d="M6 12v5c0 1.7 3.6 3 6 3s6-1.3 6-3v-5"/></svg>
+                                Curso de monetização incluso no painel
+                            </span>
+                        </div>
+                    </div>
+
+                    <figure class="result-frame">
+                        <span class="result-badge">YouTube Studio · 28 dias</span>
+                        <img src="/video/static/landing-media/monetizacao-canal.png?v=20260528-01" alt="Estatísticas do canal mostrando 4 milhões de visualizações, 9,5 mil horas e 4,8 mil inscritos em 28 dias." loading="lazy">
+                    </figure>
                 </div>
             </section>
 
