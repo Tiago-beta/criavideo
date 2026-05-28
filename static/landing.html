@@ -225,18 +225,29 @@
         }
 
         .hero-title {
-            font-size: clamp(3.2rem, 6vw, 6rem);
-            line-height: 0.95;
-            letter-spacing: -0.065em;
-            max-width: 12ch;
+            font-size: clamp(2.8rem, 5.2vw, 5rem);
+            line-height: 0.96;
+            letter-spacing: -0.055em;
+            max-width: 13ch;
         }
 
         .hero-title em {
             font-family: "Instrument Serif", serif;
             font-style: italic;
             font-weight: 400;
-            color: #fff4a6;
+            background: linear-gradient(120deg, #ffd864 0%, #ffb83d 35%, #b8d3ff 70%, #ffd864 100%);
+            background-size: 240% 100%;
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
             letter-spacing: -0.03em;
+            animation: heroEmShine 7s linear infinite;
+            filter: drop-shadow(0 0 22px rgba(255, 184, 61, 0.35));
+        }
+
+        @keyframes heroEmShine {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 240% 50%; }
         }
 
         .hero-subtitle {
@@ -1634,6 +1645,176 @@
                 align-items: flex-start;
             }
         }
+
+        /* ============ Marquee superior ============ */
+        .hero-marquee {
+            width: var(--container);
+            margin: 22px auto 0;
+            position: relative;
+            border: 1px solid var(--line);
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(12, 18, 31, 0.85), rgba(8, 12, 22, 0.6));
+            overflow: hidden;
+            padding: 14px 0;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        .hero-marquee::before,
+        .hero-marquee::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 120px;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .hero-marquee::before {
+            left: 0;
+            background: linear-gradient(90deg, rgba(5, 7, 11, 1), rgba(5, 7, 11, 0));
+        }
+
+        .hero-marquee::after {
+            right: 0;
+            background: linear-gradient(270deg, rgba(5, 7, 11, 1), rgba(5, 7, 11, 0));
+        }
+
+        .hero-marquee-track {
+            display: flex;
+            gap: 14px;
+            width: max-content;
+            animation: marqueeScroll 48s linear infinite;
+        }
+
+        .hero-marquee:hover .hero-marquee-track {
+            animation-play-state: paused;
+        }
+
+        .hero-marquee-item {
+            position: relative;
+            width: 132px;
+            height: 188px;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #0a1018;
+            flex-shrink: 0;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+            transition: transform 0.35s ease, border-color 0.35s ease;
+        }
+
+        .hero-marquee-item:hover {
+            transform: translateY(-4px);
+            border-color: var(--line-strong);
+        }
+
+        .hero-marquee-item video,
+        .hero-marquee-item img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .hero-marquee-item span {
+            position: absolute;
+            left: 8px;
+            bottom: 8px;
+            padding: 3px 8px;
+            font-size: 0.62rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            background: rgba(5, 7, 11, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+            color: var(--text);
+            backdrop-filter: blur(8px);
+            z-index: 2;
+        }
+
+        @keyframes marqueeScroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .hero-marquee-track { animation: none; }
+            .hero-title em { animation: none; }
+        }
+
+        /* ============ Cartoes criativos com imagem ============ */
+        .creative-card.has-image {
+            background: #0a1018;
+            border-color: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+            min-height: 240px;
+        }
+
+        .creative-card.has-image::before {
+            display: none;
+        }
+
+        .creative-card.has-image .creative-bg {
+            position: absolute;
+            inset: 0;
+            background-position: center;
+            background-size: cover;
+            filter: brightness(0.72) saturate(1.05);
+            transform: scale(1.05);
+            transition: transform 0.6s ease, filter 0.6s ease;
+            z-index: 0;
+        }
+
+        .creative-card.has-image::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(5, 7, 11, 0) 28%, rgba(5, 7, 11, 0.78) 78%, rgba(5, 7, 11, 0.95) 100%);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .creative-card.has-image:hover .creative-bg {
+            transform: scale(1.12);
+            filter: brightness(0.82) saturate(1.1);
+        }
+
+        .creative-card.has-image > * {
+            position: relative;
+            z-index: 2;
+        }
+
+        /* ============ Featured persona card no hero ============ */
+        .floating-card.persona-card {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            max-width: 260px;
+            padding: 12px;
+        }
+
+        .floating-card.persona-card img {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            object-fit: cover;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            flex-shrink: 0;
+        }
+
+        .floating-card.persona-card strong {
+            display: block;
+            font-size: 0.92rem;
+            margin-bottom: 2px;
+        }
+
+        .floating-card.persona-card p {
+            font-size: 0.78rem;
+            line-height: 1.35;
+            color: var(--muted);
+        }
     </style>
 </head>
 <body>
@@ -1662,24 +1843,56 @@
             </div>
         </header>
 
+        <div class="hero-marquee" aria-hidden="true">
+            <div class="hero-marquee-track">
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>TikTok</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Karaokê</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-estelar.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Cinema</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Clipe</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-pastor.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Persona</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-corrida.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Esporte</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-lirio.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Nicho</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>E-commerce</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-neve.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Realista</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Pet</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Imóveis</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Devocional</span></a>
+                <a class="hero-marquee-item" href="#showcase"><video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Atmosfera</span></a>
+                <!-- duplicado para loop infinito perfeito -->
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>TikTok</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Karaokê</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-estelar.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Cinema</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Clipe</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-pastor.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Persona</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-corrida.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Esporte</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-lirio.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Nicho</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>E-commerce</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-neve.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Realista</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Pet</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Imóveis</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Devocional</span></a>
+                <a class="hero-marquee-item" href="#showcase" aria-hidden="true" tabindex="-1"><video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video><span>Atmosfera</span></a>
+            </div>
+        </div>
+
         <main>
             <section class="hero">
                 <div class="hero-copy">
-                    <span class="eyebrow">Plataforma de criação, edição e publicação com IA</span>
-                    <h1 class="hero-title">A plataforma <em>autônoma</em> para criar vídeos com volume, consistência e distribuição.</h1>
+                    <span class="eyebrow">Criação, edição e publicação com IA</span>
+                    <h1 class="hero-title">A plataforma <em>autônoma</em> para criar vídeos em escala.</h1>
                     <p class="hero-subtitle">
-                        Do briefing ao upload: gere roteiro, storyboard, cenas, thumbnails, timeline e agenda de publicação dentro do mesmo painel. O CriaVideo foi feito para transformar ideias em peças prontas para YouTube, TikTok e Instagram sem trocar de ferramenta no meio do caminho.
+                        Do briefing ao upload em um único painel: roteiro, storyboard, geração, edição em timeline e publicação para YouTube, TikTok e Instagram.
                     </p>
 
                     <div class="hero-actions">
                         <a href="/video" class="button button-primary">Começar agora &rarr;</a>
-                        <a href="#flow" class="button button-secondary">Ver o fluxo completo</a>
+                        <a href="#showcase" class="button button-secondary">Ver vídeos reais</a>
                     </div>
 
                     <div class="hero-meta" aria-label="Destaques do produto">
                         <span class="meta-chip"><span class="meta-dot"></span>Roteiro + storyboard + timeline</span>
                         <span class="meta-chip"><span class="meta-dot"></span>Publicação e agendamento social</span>
-                        <span class="meta-chip"><span class="meta-dot"></span>Referências visuais e modelos reais</span>
+                        <span class="meta-chip"><span class="meta-dot"></span>Referências visuais e personas</span>
                     </div>
                 </div>
 
@@ -1725,7 +1938,7 @@
                                     <div class="assistant-step active">Gerando cortes, thumbnail e versões por plataforma.</div>
                                     <div class="assistant-step">Publicação e agendamento multi-canal.</div>
                                 </div>
-                                <p class="assistant-note">Seedance, Wan 2.6, Hailuo, GPT Image, Nano Banana e outros modelos podem entrar no mesmo fluxo dependendo do tipo de criação.</p>
+                                <p class="assistant-note">Mega 2.0 Ultra, Ultra High 1.0, Avatar 3.1 Plus, Cria 3.0 speed, Pro 3.1 Start e mais entram no mesmo fluxo, escolhidos por tipo de vídeo.</p>
                             </section>
 
                             <section class="panel timeline-panel">
@@ -1773,14 +1986,11 @@
                         <div class="consistency-bar"><span></span></div>
                     </aside>
 
-                    <aside class="floating-card result-card">
-                        <strong>Saídas prontas</strong>
-                        <p>Mesma ideia, múltiplas peças e formatos de entrega.</p>
-                        <div class="result-tags">
-                            <span>Shorts</span>
-                            <span>UGC</span>
-                            <span>Ads</span>
-                            <span>Thumb</span>
+                    <aside class="floating-card persona-card">
+                        <img src="/video/static/landing-media/persona-raposa.png?v=20260528-02" alt="Persona realista gerada na plataforma" />
+                        <div>
+                            <strong>Persona travada</strong>
+                            <p>Mesma identidade em todas as cenas, sem trocar de modelo no meio.</p>
                         </div>
                     </aside>
                 </div>
@@ -1803,7 +2013,7 @@
                 <div class="showcase-grid">
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>TikTok</span>
-                        <video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-tiktok.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">UGC viral</span>
                             <strong>Corte vertical pronto pra feed</strong>
@@ -1813,7 +2023,7 @@
 
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>Karaokê</span>
-                        <video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-karaoke.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">Legenda animada</span>
                             <strong>Letra sincronizada palavra a palavra</strong>
@@ -1823,7 +2033,7 @@
 
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>Reels</span>
-                        <video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-musica.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">Clipe musical</span>
                             <strong>Cena cinemática com IA</strong>
@@ -1833,7 +2043,7 @@
 
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>Decoração</span>
-                        <video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-decoracao.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">E-commerce</span>
                             <strong>Produto em cena cinematográfica</strong>
@@ -1843,17 +2053,17 @@
 
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>Pet</span>
-                        <video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-selvagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">Vida selvagem</span>
                             <strong>Cenário aberto com movimento natural</strong>
-                            <span class="showcase-desc">Wan 2.6 e Seedance em sequência consistente.</span>
+                            <span class="showcase-desc">Mega 1.5 Real em sequência consistente com referência visual.</span>
                         </div>
                     </article>
 
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>Imóveis</span>
-                        <video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-reforma.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">Antes e depois</span>
                             <strong>Storyboard rápido em ambientes reais</strong>
@@ -1863,7 +2073,7 @@
 
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>Inspiração</span>
-                        <video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-ceu.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">Conteúdo recorrente</span>
                             <strong>Cenas atmosféricas em loop</strong>
@@ -1873,11 +2083,61 @@
 
                     <article class="showcase-card">
                         <span class="showcase-badge"><span class="live-dot"></span>Mensagem</span>
-                        <video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-01" autoplay muted loop playsinline preload="metadata"></video>
+                        <video src="/video/static/landing-media/showcase-mensagem.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
                         <div class="showcase-meta">
                             <span class="showcase-tag">Devocional</span>
                             <strong>Texto, voz e visual no mesmo fluxo</strong>
                             <span class="showcase-desc">Pronto para publicar em Shorts e Reels.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Cinema</span>
+                        <video src="/video/static/landing-media/showcase-estelar.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Cinemático</span>
+                            <strong>Cena cinematográfica em 9:16</strong>
+                            <span class="showcase-desc">Mega 2.0 Ultra entregando movimento e profundidade reais.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Persona</span>
+                        <video src="/video/static/landing-media/showcase-pastor.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Persona com fala</span>
+                            <strong>Avatar realista falando direto pra câmera</strong>
+                            <span class="showcase-desc">Avatar 3.1 Plus com lip sync e duração ajustada ao áudio.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Esporte</span>
+                        <video src="/video/static/landing-media/showcase-corrida.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Movimento real</span>
+                            <strong>Ação contínua com câmera estável</strong>
+                            <span class="showcase-desc">Pro 3.1 Start segurando coerência entre cenas.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Realista</span>
+                        <video src="/video/static/landing-media/showcase-neve.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Ambiente natural</span>
+                            <strong>Cena realista guiada por referência</strong>
+                            <span class="showcase-desc">Ultra High 1.0 com áudio nativo e zero restrição de estilo.</span>
+                        </div>
+                    </article>
+
+                    <article class="showcase-card">
+                        <span class="showcase-badge"><span class="live-dot"></span>Nicho</span>
+                        <video src="/video/static/landing-media/showcase-lirio.mp4?v=20260528-02" autoplay muted loop playsinline preload="metadata"></video>
+                        <div class="showcase-meta">
+                            <span class="showcase-tag">Canal recorrente</span>
+                            <strong>Série visual com identidade fixa</strong>
+                            <span class="showcase-desc">Lite 2.0 Fast em fluxo contínuo de publicação.</span>
                         </div>
                     </article>
                 </div>
@@ -1959,22 +2219,26 @@
                 </div>
 
                 <div class="creative-grid">
-                    <article class="creative-card one">
+                    <article class="creative-card one has-image">
+                        <div class="creative-bg" style="background-image: url('/video/static/landing-media/creative-base.jpg?v=20260528-02');"></div>
                         <span class="creative-label">UGC e produto</span>
                         <h3>Vitrine de e-commerce</h3>
                         <p>Mostre benefício, textura, detalhe e CTA em blocos curtos prontos para conversão.</p>
                     </article>
-                    <article class="creative-card two">
+                    <article class="creative-card two has-image">
+                        <div class="creative-bg" style="background-image: url('/video/static/landing-media/persona-white-cat.jpg?v=20260528-02');"></div>
                         <span class="creative-label">Shorts e Reels</span>
                         <h3>Cortes com ritmo rápido</h3>
                         <p>Combine roteiro curto, fala enxuta e visuals orientados para retenção de feed.</p>
                     </article>
-                    <article class="creative-card three">
+                    <article class="creative-card three has-image">
+                        <div class="creative-bg" style="background-image: url('/video/static/landing-media/persona-gato-jacket.jpg?v=20260528-02');"></div>
                         <span class="creative-label">Conteúdo recorrente</span>
                         <h3>Séries e piloto de canal</h3>
                         <p>Mantenha tema, identidade e agenda em campanhas contínuas sem operar tudo manualmente.</p>
                     </article>
-                    <article class="creative-card four">
+                    <article class="creative-card four has-image">
+                        <div class="creative-bg" style="background-image: url('/video/static/landing-media/hero-animal-branco.jpg?v=20260528-02');"></div>
                         <span class="creative-label">Vídeo realista</span>
                         <h3>Cenas com referências visuais</h3>
                         <p>Trabalhe com frames base, ambientes e pessoas consistentes ao longo da narrativa.</p>
@@ -2006,7 +2270,7 @@
 
                     <figure class="result-frame">
                         <span class="result-badge">YouTube Studio · 28 dias</span>
-                        <img src="/video/static/landing-media/monetizacao-canal.png?v=20260528-01" alt="Estatísticas do canal mostrando 4 milhões de visualizações, 9,5 mil horas e 4,8 mil inscritos em 28 dias." loading="lazy">
+                        <img src="/video/static/landing-media/monetizacao-canal.png?v=20260528-02" alt="Estatísticas do canal mostrando 4 milhões de visualizações, 9,5 mil horas e 4,8 mil inscritos em 28 dias." loading="lazy">
                     </figure>
                 </div>
             </section>
@@ -2151,14 +2415,16 @@
                 <div class="models-shell">
                     <article class="model-column">
                         <h3>Vídeo e avatar</h3>
-                        <p>Escolha o motor de acordo com o formato, referência e proposta visual da criação.</p>
+                        <p>Escolha o motor de acordo com o formato, duração e proposta visual da criação.</p>
                         <div class="model-list">
-                            <div class="model-chip"><strong>Lite 2.0 Fast</strong><span>Seedance 2.0 Fast image-to-video com áudio nativo</span></div>
-                            <div class="model-chip"><strong>Seedance 2.0</strong><span>Text-to-video e image-to-video</span></div>
-                            <div class="model-chip"><strong>Wan 2.6</strong><span>Vídeos realistas e sequências guiadas</span></div>
-                            <div class="model-chip"><strong>MiniMax Hailuo</strong><span>Alternativa para geração de vídeo</span></div>
-                            <div class="model-chip"><strong>Cria 3.0 speed</strong><span>Fluxos mais rápidos quando prioridade é velocidade</span></div>
-                            <div class="model-chip"><strong>Avatar 3.1 Plus</strong><span>Avatar com fala e duração ajustada ao áudio</span></div>
+                            <div class="model-chip"><strong>Mega 2.0 Ultra</strong><span>Vídeo realista com áudio nativo, máxima qualidade</span></div>
+                            <div class="model-chip"><strong>Ultra High 1.0</strong><span>Vídeo realista com áudio nativo, sem restrição de estilo</span></div>
+                            <div class="model-chip"><strong>Mega 1.5 Real</strong><span>Vídeo realista com áudio nativo, alta qualidade</span></div>
+                            <div class="model-chip"><strong>Lite 2.0 Fast</strong><span>Versão leve com geração rápida do Mega 2.0 Ultra</span></div>
+                            <div class="model-chip"><strong>Pro 3.1 Start</strong><span>Vídeo com áudio nativo, duração flexível de 1 a 16s</span></div>
+                            <div class="model-chip"><strong>Cria 3.0 speed</strong><span>Cria vídeo com velocidade prioritária</span></div>
+                            <div class="model-chip"><strong>Avatar 3.1 Plus</strong><span>Avatar foto + áudio, lip sync e fala alinhada</span></div>
+                            <div class="model-chip"><strong>Avatar 2.5 Pro</strong><span>Avatar foto + áudio com foco em lip sync estável</span></div>
                         </div>
                     </article>
 
@@ -2166,11 +2432,12 @@
                         <h3>Imagem e apoio criativo</h3>
                         <p>Ferramentas auxiliares entram para estruturar melhor as peças e preparar a entrega final.</p>
                         <div class="model-list">
-                            <div class="model-chip"><strong>GPT Image</strong><span>Thumbnails e variações de apoio visual</span></div>
-                            <div class="model-chip"><strong>Nano Banana</strong><span>Fallback visual para gerações de imagem</span></div>
-                            <div class="model-chip"><strong>Referências multi-image</strong><span>Travar sujeito, ambiente e identidade visual</span></div>
+                            <div class="model-chip"><strong>Imagens com referência</strong><span>Crie personagens, produtos e cenários consistentes</span></div>
+                            <div class="model-chip"><strong>Personas travadas</strong><span>Mesma identidade visual em toda a série</span></div>
                             <div class="model-chip"><strong>Storyboard orientado</strong><span>Quadros por cena antes da geração final</span></div>
-                            <div class="model-chip"><strong>Publicação social</strong><span>Entrega para YouTube, TikTok e Instagram</span></div>
+                            <div class="model-chip"><strong>Thumbnails inteligentes</strong><span>Capa pronta com gancho e identidade do canal</span></div>
+                            <div class="model-chip"><strong>Edição em timeline</strong><span>Cortes, transições e karaokê no mesmo painel</span></div>
+                            <div class="model-chip"><strong>Publicação social</strong><span>Entrega e agendamento para YouTube, TikTok e Instagram</span></div>
                         </div>
                     </article>
                 </div>
@@ -2201,7 +2468,7 @@
 
                     <details class="faq-item">
                         <summary>Quais modelos entram no fluxo hoje?</summary>
-                        <p>O projeto já trabalha com motores como Mega 1.5 Real, Lite 2.0 Fast, Seedance 2.0, Wan 2.6, MiniMax Hailuo e Avatar 3.1 Plus para vídeo, além de GPT Image e Nano Banana como apoio visual e thumbnails.</p>
+                        <p>O CriaVideo usa motores próprios como Mega 2.0 Ultra, Ultra High 1.0, Mega 1.5 Real, Lite 2.0 Fast, Pro 3.1 Start, Cria 3.0 speed, Avatar 3.1 Plus e Avatar 2.5 Pro para vídeo e avatar, além de gerência de imagens com referência, personas travadas, storyboard, thumbnails e publicação social.</p>
                     </details>
 
                     <details class="faq-item">
@@ -2236,4 +2503,5 @@
     </div>
 </body>
 </html>
+
 
