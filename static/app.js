@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v586 loaded");
+console.log("[CriaVideo] app.js v587 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -5562,6 +5562,8 @@ function _syncSimilarAnalysisGateUi() {
     if (verifyBtn) {
         verifyBtn.hidden = isVerified;
         verifyBtn.disabled = isLocked || !hasSource || verificationStatus === "pending";
+        const shouldPulse = hasSource && !isVerified && !isLocked && verificationStatus !== "pending";
+        verifyBtn.classList.toggle("cta-pulse", shouldPulse);
     }
     if (sourceInputEl) {
         sourceInputEl.disabled = isLocked;

@@ -19412,3 +19412,37 @@ th,
 }
 .gallery-video-copy:hover { background: #fff; }
 .gallery-video-copy:disabled, .gallery-video-copy.loading { opacity: 0.6; cursor: progress; }
+
+/* v587 - Verificar video CTA pulse */
+@keyframes verifyCtaPulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.55);
+        transform: translateY(0);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(var(--accent-rgb), 0);
+        transform: translateY(-1px);
+    }
+}
+#similar-verify-source.cta-pulse:not(:disabled) {
+    animation: verifyCtaPulse 1.6s ease-in-out infinite;
+    border-color: rgba(var(--accent-rgb), 0.85);
+    color: var(--accent);
+}
+
+/* v587 - Verificar video CTA pulse */
+@keyframes verifyCtaPulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.55);
+        transform: translateY(0);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(var(--accent-rgb), 0);
+        transform: translateY(-1px);
+    }
+}
+#similar-verify-source.cta-pulse:not(:disabled) {
+    animation: verifyCtaPulse 1.6s ease-in-out infinite;
+    border-color: rgba(var(--accent-rgb), 0.85);
+    color: var(--accent);
+}
