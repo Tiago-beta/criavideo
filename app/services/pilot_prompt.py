@@ -16,7 +16,7 @@ import re
 
 import openai
 
-from app.config import settings
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +297,7 @@ async def _generate_timeline_with_llm(
 
 	Returns (timeline, meta). meta keys: hook_summary, scene_description, image_prompt.
 	"""
-	api_key = (settings.openai_api_key or "").strip()
+	api_key = (get_settings().openai_api_key or "").strip()
 	if not api_key:
 		return [], {}
 
