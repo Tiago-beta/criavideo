@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from pydantic import BaseModel
 from app.auth import get_current_user
 from app.database import get_db
@@ -364,6 +364,26 @@ async def disconnect_account(
     account = await db.get(SocialAccount, account_id)
     if not account or account.user_id != user["id"]:
         raise HTTPException(status_code=404, detail="Account not found")
+
+    # Limpar dependências que apontam para social_accounts sem ON DELETE CASCADE
+    # no schema do banco (publish_jobs / publish_schedules são NOT NULL,
+    # auto_schedules e channel_analysis_reports são nullable).
+    await db.execute(
+        text("DELETE FROM publish_jobs WHERE social_account_id = :sid"),
+        {"sid": account_id},
+    )
+    await db.execute(
+        text("DELETE FROM publish_schedules WHERE social_account_id = :sid"),
+        {"sid": account_id},
+    )
+    await db.execute(
+        text("UPDATE auto_schedules SET social_account_id = NULL, is_active = FALSE WHERE social_account_id = :sid"),
+        {"sid": account_id},
+    )
+    await db.execute(
+        text("UPDATE channel_analysis_reports SET social_account_id = NULL WHERE social_account_id = :sid"),
+        {"sid": account_id},
+    )
 
     await db.delete(account)
     await db.commit()
