@@ -10417,13 +10417,31 @@ function _similarPreviewAspectClass(aspectRatio) {
 
 function _setSimilarFrameCreateActionVisibility(sceneId, forceVisible = null) {
     const actionEl = document.getElementById(`similar-frame-create-action-${sceneId}`);
-    if (!actionEl) return;
+    const instructionEl = document.getElementById(`similar-frame-instruction-${sceneId}`);
+    const editorEl = instructionEl?.closest(".similar-reference-frame-editor") || null;
+    const primaryCreateBtn = document.getElementById(`similar-scene-create-image-primary-${sceneId}`);
+    const quickCreateBtn = editorEl?.querySelector(".similar-frame-tool-btn-primary") || null;
+
+    if (!actionEl && !primaryCreateBtn && !quickCreateBtn) return;
 
     const nextVisible = typeof forceVisible === "boolean"
         ? forceVisible
-        : !!String(document.getElementById(`similar-frame-instruction-${sceneId}`)?.value || "").trim();
+        : !!String(instructionEl?.value || "").trim();
 
-    actionEl.hidden = !nextVisible;
+    const sceneKey = _similarSceneStateKey(sceneId);
+    const draft = sceneKey ? (similarState.sceneDraftsBySceneId[sceneKey] || {}) : {};
+    const isFrameBusy = !!draft.frameBusy;
+    const hasPendingUploads = _getSimilarScenePendingUploads(sceneId).length > 0;
+    const canRunFrameAction = nextVisible || hasPendingUploads;
+
+    if (actionEl) {
+        actionEl.hidden = !nextVisible;
+    }
+
+    [primaryCreateBtn, quickCreateBtn].forEach((buttonEl) => {
+        if (!(buttonEl instanceof HTMLButtonElement)) return;
+        buttonEl.disabled = isFrameBusy || !canRunFrameAction;
+    });
 }
 
 function _normalizeSimilarBusySceneIds(rawSceneIds) {
