@@ -9404,13 +9404,14 @@ svg.spin {
     }
 
     .publish-analysis-actions {
-        flex-direction: column;
-        align-items: stretch;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
     }
 
     .publish-analysis-actions .btn,
     .publish-analysis-actions .credit-estimate-pill {
-        width: 100%;
+        width: auto;
     }
 
     .publish-render-preview {
