@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v597 loaded");
+console.log("[CriaVideo] app.js v598 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -17585,6 +17585,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             }
             imageUploadId = imageUploadIds[0] || "";
             _smoothProgressTarget = 15;
+            if (!disablePersonaReference && personaProfileIds.length > 0) {
+                const mergeRule = "\n\nREGRA DE COMPOSIÇÃO (OBRIGATÓRIA): a imagem enviada é o cenário/ambiente da cena. As personas selecionadas devem ser inseridas dentro desse cenário, mantendo a identidade facial de cada persona. Mantenha o local, iluminação e enquadramento da imagem enviada.";
+                if (!finalPrompt.includes("REGRA DE COMPOSIÇÃO")) {
+                    finalPrompt = `${finalPrompt}${mergeRule}`;
+                }
+            }
         } else if (engine === "grok" && personaProfileIds.length > 0) {
             setCreateProgress(8, "Gerando vídeo realista...", "Gerando imagem-base com personas para o Cria 3.0...");
 
@@ -23291,15 +23297,25 @@ function _renderPersonaPreview(context) {
                 : '<div class="realistic-persona-thumb"></div>';
 
             return `
-                <button
-                    class="realistic-persona-option${selectedClass}"
-                    type="button"
-                    onclick="togglePersonaSelectionFromPreview('${context}', ${pid})"
-                    title="${profileName}"
-                    aria-label="${profileName}"
-                    aria-pressed="${isSelected ? "true" : "false"}">
-                    ${imageHtml}
-                </button>
+                <div class="realistic-persona-option-wrap">
+                    <button
+                        class="realistic-persona-option${selectedClass}"
+                        type="button"
+                        onclick="togglePersonaSelectionFromPreview('${context}', ${pid})"
+                        title="${profileName}"
+                        aria-label="${profileName}"
+                        aria-pressed="${isSelected ? "true" : "false"}">
+                        ${imageHtml}
+                    </button>
+                    <button
+                        class="realistic-persona-thumb-delete"
+                        type="button"
+                        title="Excluir persona"
+                        aria-label="Excluir persona ${profileName}"
+                        onclick="deletePersonaFromThumb(event, '${context}', '${type}', ${pid})">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                </div>
             `;
         }).join("");
 
@@ -24651,6 +24667,29 @@ async function setDefaultPersonaFromManager(profileId) {
         alert(`Erro ao definir padrao: ${error.message}`);
     }
 }
+
+async function deletePersonaFromThumb(event, context, personaType, profileId) {
+    try { event?.stopPropagation?.(); event?.preventDefault?.(); } catch (_e) {}
+    const pid = parseInt(profileId || "0", 10) || 0;
+    const type = String(personaType || "").trim();
+    if (!pid || !type) return;
+    if (!confirm("Excluir esta persona?")) return;
+    try {
+        await api(`/persona/profiles/${pid}`, { method: "DELETE" });
+        PERSONA_CONTEXTS.forEach((ctx) => {
+            const selectedIds = _getSelectedPersonaProfileIds(ctx, type);
+            if (selectedIds.includes(pid)) {
+                _setSelectedPersonaProfileIds(ctx, type, selectedIds.filter((sid) => sid !== pid));
+            }
+        });
+        try { await _loadPersonaProfiles(type, false); } catch (_err) {}
+        try { _refreshPersonaContext(context, type); } catch (_err) {}
+        try { _refreshPersonaManagerList(); } catch (_err) {}
+    } catch (error) {
+        alert(`Erro ao excluir persona: ${error.message || error}`);
+    }
+}
+window.deletePersonaFromThumb = deletePersonaFromThumb;
 
 async function deletePersonaFromManager(profileId) {
     const pid = parseInt(profileId || "0", 10) || 0;
