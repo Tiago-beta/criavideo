@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v593 loaded");
+console.log("[CriaVideo] app.js v594 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -22578,9 +22578,8 @@ function _isAiSuggestCustomPersonaSelected() {
 }
 
 function _syncAiSuggestCustomImageSection() {
-    const group = document.getElementById("ai-suggest-custom-image-group");
-    if (!group) return;
-    group.hidden = !_isAiSuggestCustomPersonaSelected();
+    // Section is now always visible at the top of the AI suggest panel; nothing to sync.
+    return;
 }
 
 function resetAiSuggestCustomImages() {
@@ -22594,10 +22593,6 @@ function resetAiSuggestCustomImages() {
 }
 
 function triggerAiSuggestCustomImageUpload() {
-    if (!_isAiSuggestCustomPersonaSelected()) {
-        alert("Selecione Persona = Personalizado para adicionar referências visuais.");
-        return;
-    }
     document.getElementById("ai-suggest-custom-image-input")?.click();
 }
 
@@ -22608,11 +22603,6 @@ function handleAiSuggestCustomImageSelect(event) {
 }
 
 function addAiSuggestCustomImages(files) {
-    if (!_isAiSuggestCustomPersonaSelected()) {
-        alert("Selecione Persona = Personalizado para adicionar referências visuais.");
-        return;
-    }
-
     for (const file of files) {
         if (aiSuggestCustomImages.length >= MAX_AI_SUGGEST_CUSTOM_IMAGES) {
             alert(`Maximo de ${MAX_AI_SUGGEST_CUSTOM_IMAGES} referências atingido.`);
@@ -24770,13 +24760,15 @@ async function generateAiScript() {
         const engineLabel = getRealisticEngineLabel(engine);
         try {
             let customImageIds = [];
-            if (usePersonalizedReferences && aiSuggestCustomImages.length > 0) {
-                showCreateProgress("Enviando referencias visuais personalizadas...", {
-                    progress: 24,
-                    stage: "Enviando referencias...",
-                });
-                customImageIds = await _prepareAiSuggestCustomImageUploadIds();
-                renderAiSuggestCustomImagePreview();
+            if (usePersonalizedReferences || aiSuggestCustomImages.length > 0) {
+                if (aiSuggestCustomImages.length > 0) {
+                    showCreateProgress("Enviando referências visuais...", {
+                        progress: 24,
+                        stage: "Enviando referências...",
+                    });
+                    customImageIds = await _prepareAiSuggestCustomImageUploadIds();
+                    renderAiSuggestCustomImagePreview();
+                }
             }
 
             const hasReferenceImage = hasPersonaReference
@@ -24847,13 +24839,20 @@ async function generateAiScript() {
             stage: "Criando roteiro...",
         });
 
+        let extraImageIds = [];
+        if (aiSuggestCustomImages.length > 0) {
+            extraImageIds = await _prepareAiSuggestCustomImageUploadIds();
+            renderAiSuggestCustomImagePreview();
+        }
+        const allImageIds = [...uploadedImageIds, ...extraImageIds].slice(0, 8);
+
         const result = await api("/video/generate-script", {
             method: "POST",
             body: JSON.stringify({
                 topic,
                 tone: document.getElementById("ai-suggest-tone").value,
                 duration_seconds: parseInt(document.getElementById("ai-suggest-duration").value, 10),
-                custom_image_ids: uploadedImageIds,
+                custom_image_ids: allImageIds,
             }),
         });
 

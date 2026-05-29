@@ -6577,6 +6577,41 @@ th {
     animation: wizardFadeIn 0.25s ease-out;
 }
 
+.ai-suggest-top-images-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.ai-suggest-add-image-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(0, 212, 255, 0.12);
+    border: 1px solid rgba(0, 212, 255, 0.32);
+    color: var(--text-primary, #e6edf6);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.ai-suggest-add-image-btn:hover {
+    background: rgba(0, 212, 255, 0.2);
+    border-color: rgba(0, 212, 255, 0.55);
+}
+
+.ai-suggest-add-image-btn svg {
+    flex-shrink: 0;
+}
+
+.ai-suggest-top-images-hint {
+    color: var(--text-muted, #8aa0b8);
+}
+
 .create-progress {
     display: flex;
     flex-direction: column;
