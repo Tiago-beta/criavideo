@@ -167,6 +167,50 @@ _DIALOGUE_TIMING_LINE_RE = re.compile(
     r"^(?P<start>\d+(?:\.\d)?)s\s*-\s*(?P<end>\d+(?:\.\d)?)s\s*\|\s*Speaker:\s*(?P<speaker>.+)$"
 )
 
+_NO_DIALOGUE_INTENT_PATTERNS = (
+    r"sem\s+(?:fala|falas|dialogo|di[aá]logo|di[aá]logos|narra[cç][aã]o|narrador|voz|vozes)",
+    r"n[aã]o\s+(?:tem|ter|usar|use|usa|inclua|inclui|colocar|coloca|haver|h[aá])\s+(?:fala|falas|dialogo|di[aá]logo|di[aá]logos|narra[cç][aã]o|narrador|voz|vozes)",
+    r"sem\s+di[aá]logos?",
+    r"no\s+(?:dialogue|dialog|narration|voice[- ]?over)",
+)
+_NO_DIALOGUE_INTENT_RE = re.compile("|".join(_NO_DIALOGUE_INTENT_PATTERNS), re.IGNORECASE)
+
+
+def _detect_user_no_dialogue_intent(*texts: str) -> bool:
+    for text in texts:
+        if text and _NO_DIALOGUE_INTENT_RE.search(str(text)):
+            return True
+    return False
+
+
+def _strip_dialogue_blocks_from_prompt(prompt_text: str) -> str:
+    if not prompt_text:
+        return prompt_text
+    lines = prompt_text.splitlines()
+    cut_idx = None
+    for idx, line in enumerate(lines):
+        if line.strip().lower() == "dialogue timing:":
+            cut_idx = idx
+            break
+    if cut_idx is None:
+        return prompt_text
+    end_idx = cut_idx
+    j = cut_idx + 1
+    while j < len(lines):
+        stripped = lines[j].strip()
+        if not stripped:
+            j += 1
+            continue
+        if _DIALOGUE_TIMING_LINE_RE.match(stripped) or (
+            stripped.startswith('"') and stripped.endswith('"')
+        ):
+            j += 1
+            end_idx = j
+            continue
+        break
+    cleaned = lines[:cut_idx] + lines[end_idx:]
+    return "\n".join(cleaned).rstrip() + "\n"
+
 
 def _similar_scene_duration_seconds(scene: VideoScene | None) -> float:
     if not scene:
@@ -7009,6 +7053,15 @@ async def generate_realistic_prompt_endpoint(
     if has_reference_image:
         prompt_for_optimizer = _ensure_reference_image_instruction(prompt_for_optimizer, reference_mode=reference_mode)
 
+    user_no_dialogue = _detect_user_no_dialogue_intent(topic, context_hint)
+    if user_no_dialogue:
+        prompt_for_optimizer = (
+            f"{prompt_for_optimizer}\n\n"
+            "DIRETIVA DO USUARIO (OBRIGATORIA): nao incluir nenhum dialogo, fala, narracao, voz-off, "
+            "legenda ou bloco 'Dialogue timing'. O video deve ser totalmente silencioso em relacao a vozes. "
+            "Foque apenas em descricao visual e ambientacao."
+        )
+
     if bool(getattr(req, "static_camera", False)):
         prompt_for_optimizer = (
             f"{prompt_for_optimizer}\n\n"
@@ -7050,6 +7103,9 @@ async def generate_realistic_prompt_endpoint(
     final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
     if has_reference_image:
         final_prompt = _ensure_reference_image_instruction(final_prompt, reference_mode=reference_mode)
+
+    if user_no_dialogue:
+        final_prompt = _strip_dialogue_blocks_from_prompt(final_prompt)
 
     if bool(getattr(req, "static_camera", False)):
         final_prompt = (
