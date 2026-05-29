@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v598 loaded");
+console.log("[CriaVideo] app.js v599 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -23206,13 +23206,13 @@ function _renderPersonaPreview(context) {
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
     const supportsQuickAdd = ["wizard", "script", "ai", "auto", "pilot"].includes(String(context || "").toLowerCase());
-    const addOptionLabel = type === "local" ? "Adicionar local pela foto" : "Adicionar persona pela foto";
+    const addOptionLabel = type === "local" ? "Gerenciar locais" : "Gerenciar personas";
     const addOptionHtml = supportsQuickAdd
         ? `
             <button
                 class="realistic-persona-option realistic-persona-add"
                 type="button"
-                onclick="openPersonaQuickAdd('${context}')"
+                onclick="openPersonaManager('${context}')"
                 title="${addOptionLabel}"
                 aria-label="${addOptionLabel}">
                 <span class="realistic-persona-add-icon" aria-hidden="true">+</span>
@@ -23321,9 +23321,9 @@ function _renderPersonaPreview(context) {
 
         el.innerHTML = `
             <div class="realistic-persona-grid">
-                ${addOptionHtml}
                 ${noneOptionHtml}
                 ${cards}
+                ${addOptionHtml}
             </div>
         `;
         return;

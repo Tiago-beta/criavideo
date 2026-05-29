@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260529-05">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260529-06">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 598;
+        var REQUIRED_VER = 599;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1567,17 +1567,12 @@
                                 </div>
                                 <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
                                 <div id="wizard-realistic-persona-preview" class="realistic-persona-preview"></div>
-                                <div class="realistic-persona-actions">
-                                    <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('wizard')" title="Gerenciar personas" aria-label="Gerenciar personas">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                    </button>
-                                </div>
                             </div>
                         </div>
 
                         <div class="form-group collapsible-section" id="wizard-realistic-engine-group">
                             <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
-                                <span class="section-title">Motor de IA</span>
+                                <span class="section-title">Motor de geração</span>
                                 <span class="collapsible-arrow">&#9660;</span>
                             </button>
                             <div class="collapsible-body" hidden>
@@ -2333,17 +2328,12 @@
                                 </div>
                                 <small class="pause-hint">A cena segue a letra do trecho e inclui essa persona em interação.</small>
                                 <div id="script-realistic-persona-preview" class="realistic-persona-preview"></div>
-                                <div class="realistic-persona-actions">
-                                    <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('script')" title="Gerenciar personas" aria-label="Gerenciar personas">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                    </button>
-                                </div>
                             </div>
                         </div>
 
                         <div class="form-group collapsible-section" id="script-realistic-engine-group">
                             <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
-                                <span class="section-title">Motor de IA</span>
+                                <span class="section-title">Motor de geração</span>
                                 <span class="collapsible-arrow">&#9660;</span>
                             </button>
                             <div class="collapsible-body" hidden>
@@ -2643,13 +2633,21 @@
                             <p id="similar-detected-profile" class="similar-detected-profile" hidden>Perfil do vídeo sendo analisado...</p>
                         </div>
 
-                        <div id="similar-engine-options" class="engine-options">
+                        <div class="form-group collapsible-section" id="similar-engine-group">
+                            <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                <span class="section-title">Motor de geração</span>
+                                <span class="collapsible-arrow">&#9660;</span>
+                            </button>
+                            <div class="collapsible-body" hidden>
+                            <div id="similar-engine-options" class="engine-options">
                             <button class="similar-scene-engine-btn similar-generation-engine-btn selected" data-value="lite2" type="button" title="Mega 1.5 Real" aria-label="Mega 1.5 Real">Mega 1.5 Real</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="mega15" type="button" title="Lite 2.0 Fast" aria-label="Lite 2.0 Fast">Lite 2.0 Fast</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="viduq3" type="button" title="Pro 3.1 Start" aria-label="Pro 3.1 Start">Pro 3.1 Start</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="grok" type="button" title="Cria Speed 2.5 (Grok)" aria-label="Cria Speed 2.5 (Grok)">Cria 2.5</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="wan2" type="button" title="Ultra High 3.0" aria-label="Ultra High 3.0">Ultra 3.0</button>
                             <button class="similar-scene-engine-btn similar-generation-engine-btn" data-value="seedance" type="button" title="Mega 2.0 Ultra" aria-label="Mega 2.0 Ultra">Mega 2.0</button>
+                            </div>
+                            </div>
                         </div>
 
                         <div class="similar-generation-actions">
@@ -2763,7 +2761,7 @@
 
                                 <section class="workflow-node workflow-node-model" data-node-id="model" style="left: 2420px; top: 1136px;">
                                     <header>Gerador de vídeo</header>
-                                    <label>Motor de IA</label>
+                                    <label>Motor de geração</label>
                                     <select id="workflow-engine" class="input workflow-input">
                                         <option value="wan2" selected>Ultra High 1.0</option>
                                         <option value="avatar25">Avatar 2.5 Pro</option>
@@ -2974,11 +2972,6 @@
                         </div>
                         <small class="pause-hint">A IA vai manter essa persona no contexto da cena.</small>
                         <div id="ai-suggest-persona-preview" class="realistic-persona-preview"></div>
-                        <div class="realistic-persona-actions">
-                            <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('ai')" title="Gerenciar personas" aria-label="Gerenciar personas">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                            </button>
-                        </div>
                     </div>
                     <div class="form-group" id="ai-suggest-realistic-duration-group" hidden>
                         <label>Duração do vídeo para o prompt</label>
@@ -3327,11 +3320,7 @@
                     </div>
                     <small class="pause-hint">Escolha cada tipo que o piloto deve testar (pessoa e/ou local) e selecione a persona ou Nenhum.</small>
                     <div id="pilot-realistic-persona-preview" class="realistic-persona-preview"></div>
-                    <div class="realistic-persona-actions">
-                        <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('pilot')" title="Gerenciar personas" aria-label="Gerenciar personas">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                        </button>
-                    </div>
+
                 </div>
 
                 <div class="form-group">
@@ -3613,14 +3602,13 @@
                             </div>
                             <div id="auto-realistic-persona-composition" class="auto-pilot-persona-summary auto-realistic-persona-summary"></div>
                             <div id="auto-realistic-persona-preview" class="realistic-persona-preview"></div>
-                            <div class="realistic-persona-actions">
-                                <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('auto')" title="Gerenciar personas" aria-label="Gerenciar personas">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                </button>
-                            </div>
                         </div>
-                        <div class="form-group" id="auto-realistic-engine-group">
-                            <label>Motor de IA</label>
+                        <div class="form-group collapsible-section" id="auto-realistic-engine-group">
+                            <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                <span class="section-title">Motor de geração</span>
+                                <span class="collapsible-arrow">&#9660;</span>
+                            </button>
+                            <div class="collapsible-body" hidden>
                             <div class="engine-options" id="auto-realistic-engine">
                                 <button class="engine-option selected" data-value="wan2" type="button">
                                     <strong>Ultra High 1.0</strong>
@@ -3654,6 +3642,7 @@
                                     <strong>Avatar 3.1 Plus</strong>
                                     <small class="engine-option-desc">Avatar com foto + áudio, focado em lip sync e fala.</small>
                                 </button>
+                            </div>
                             </div>
                         </div>
                         <div class="form-group realistic-audio-toggle" id="auto-seedance-last-frame-group" hidden>
@@ -4696,8 +4685,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260529-05"></script>
-    <script src="/video/static/pwa.js?v=20260529-05"></script>
+    <script src="/video/static/app.js?v=20260529-06"></script>
+    <script src="/video/static/pwa.js?v=20260529-06"></script>
 </body>
 </html>
 
