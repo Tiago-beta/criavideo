@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v601 loaded");
+console.log("[CriaVideo] app.js v602 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -33716,7 +33716,6 @@ const _editor = {
     playbackRate: 1,
     mobileControlMode: "tools",
     mobileSubtitleModalOpen: false,
-    rotationDeg: 0,
     _virtualPlaybackActive: false,
     _virtualPlaybackRaf: 0,
     _virtualPlaybackLastTs: 0,
@@ -37791,14 +37790,7 @@ async function _editorBuildLocalSequenceImportSession(entries = []) {
 async function _editorUploadSingleVideoProject(file, options = {}) {
     const formData = new FormData();
     formData.append("file", file);
-    if (options && (options.onUploadProgress || options.onUploadProcessing || options.method)) {
-        return apiFormWithProgress("/video/editor/upload-video", formData, { method: "POST", ...(options || {}) });
-    }
-    return _editorUploadWithTranscodeOverlay("/video/editor/upload-video", file, {
-        title: "Preparando vídeo",
-        subtitle: file?.name || "",
-        formData,
-    });
+    return apiFormWithProgress("/video/editor/upload-video", formData, { method: "POST", ...(options || {}) });
 }
 
 async function _editorUploadSingleAudioProject(file, options = {}) {
@@ -37806,102 +37798,6 @@ async function _editorUploadSingleAudioProject(file, options = {}) {
     formData.append("file", file);
     formData.append("aspect_ratio", "9:16");
     return apiFormWithProgress("/video/editor/upload-audio-project", formData, { method: "POST", ...(options || {}) });
-}
-
-// ---------- Transcode overlay (upload + processing phases) ----------
-function _editorEnsureTranscodeOverlay() {
-    let overlay = document.getElementById("editor-transcode-overlay");
-    if (overlay) return overlay;
-    overlay = document.createElement("div");
-    overlay.id = "editor-transcode-overlay";
-    overlay.className = "editor-transcode-overlay";
-    overlay.innerHTML = `
-        <div class="editor-transcode-card" role="status" aria-live="polite">
-            <div class="editor-transcode-thumb">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 4 21 10 15 10"/>
-                </svg>
-            </div>
-            <div class="editor-transcode-body">
-                <strong id="editor-transcode-title">Preparando vídeo</strong>
-                <span id="editor-transcode-subtitle"></span>
-                <div class="editor-transcode-progress">
-                    <div id="editor-transcode-fill" class="editor-transcode-progress-fill" style="width:0%"></div>
-                </div>
-                <div id="editor-transcode-phase" class="editor-transcode-phase">Enviando…</div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-    return overlay;
-}
-
-function _editorShowTranscodeOverlay({ title, subtitle } = {}) {
-    const overlay = _editorEnsureTranscodeOverlay();
-    const titleEl = overlay.querySelector("#editor-transcode-title");
-    const subEl = overlay.querySelector("#editor-transcode-subtitle");
-    const fill = overlay.querySelector("#editor-transcode-fill");
-    const phase = overlay.querySelector("#editor-transcode-phase");
-    if (titleEl) titleEl.textContent = String(title || "Preparando vídeo");
-    if (subEl) subEl.textContent = String(subtitle || "");
-    if (fill) {
-        fill.classList.remove("indeterminate");
-        fill.style.width = "0%";
-    }
-    if (phase) phase.textContent = "Enviando…";
-    overlay.classList.add("visible");
-}
-
-function _editorUpdateTranscodeProgress(progress) {
-    const fill = document.getElementById("editor-transcode-fill");
-    if (!fill) return;
-    const pct = Math.max(0, Math.min(1, Number(progress) || 0)) * 100;
-    fill.classList.remove("indeterminate");
-    fill.style.width = `${pct.toFixed(1)}%`;
-}
-
-function _editorSwitchToTranscodingPhase() {
-    const fill = document.getElementById("editor-transcode-fill");
-    const phase = document.getElementById("editor-transcode-phase");
-    if (fill) {
-        fill.classList.add("indeterminate");
-        fill.style.width = "40%";
-    }
-    if (phase) phase.textContent = "Convertendo…";
-}
-
-function _editorHideTranscodeOverlay() {
-    const overlay = document.getElementById("editor-transcode-overlay");
-    if (!overlay) return;
-    overlay.classList.remove("visible");
-}
-
-async function _editorUploadWithTranscodeOverlay(path, file, { title, subtitle, formData, totalBytes } = {}) {
-    const fd = formData || (() => {
-        const local = new FormData();
-        local.append("file", file);
-        return local;
-    })();
-    const expectedBytes = Number(totalBytes || file?.size || 0);
-    _editorShowTranscodeOverlay({ title, subtitle });
-    try {
-        const result = await apiFormWithProgress(path, fd, {
-            method: "POST",
-            onUploadProgress: ({ loaded, total, lengthComputable }) => {
-                if (lengthComputable && total > 0) {
-                    _editorUpdateTranscodeProgress(loaded / total);
-                } else if (expectedBytes > 0) {
-                    _editorUpdateTranscodeProgress(Math.min(loaded / expectedBytes, 0.99));
-                }
-            },
-            onUploadProcessing: () => {
-                _editorSwitchToTranscodingPhase();
-            },
-        });
-        return result;
-    } finally {
-        _editorHideTranscodeOverlay();
-    }
 }
 
 async function _editorUploadSingleLayerImage(file) {
@@ -37913,11 +37809,7 @@ async function _editorUploadSingleLayerImage(file) {
 async function _editorUploadSingleLayerVideo(file) {
     const formData = new FormData();
     formData.append("file", file);
-    return _editorUploadWithTranscodeOverlay("/video/editor/upload-layer-video", file, {
-        title: "Preparando vídeo",
-        subtitle: file?.name || "",
-        formData,
-    });
+    return apiForm("/video/editor/upload-layer-video", formData, { method: "POST" });
 }
 
 async function _editorUploadSingleLayerAudio(file) {
@@ -37934,17 +37826,7 @@ async function _editorUploadMediaSequenceProject(entries = [], options = {}) {
 
     const formData = new FormData();
     orderedEntries.forEach((entry) => formData.append("files", entry.file));
-    if (options && (options.onUploadProgress || options.onUploadProcessing || options.method)) {
-        return apiFormWithProgress("/video/editor/upload-media-sequence", formData, { method: "POST", ...(options || {}) });
-    }
-    const totalBytes = orderedEntries.reduce((acc, entry) => acc + (Number(entry?.file?.size) || 0), 0);
-    const firstName = orderedEntries[0]?.file?.name || "";
-    return _editorUploadWithTranscodeOverlay("/video/editor/upload-media-sequence", null, {
-        title: `Preparando ${orderedEntries.length} mídia(s)`,
-        subtitle: firstName + (orderedEntries.length > 1 ? ` (+${orderedEntries.length - 1})` : ""),
-        formData,
-        totalBytes,
-    });
+    return apiFormWithProgress("/video/editor/upload-media-sequence", formData, { method: "POST", ...(options || {}) });
 }
 
 async function _editorUploadImageSequenceProject(files = [], options = {}) {
@@ -41179,7 +41061,6 @@ async function openEditor(projectId, options = {}) {
         _editor.timelineZoom = 1;
         _editor.playbackRate = 1;
         _editor.mobileControlMode = "tools";
-        _editor.rotationDeg = 0;
         _editor._virtualPlaybackActive = false;
         _editorStopPlaybackFollowLoop();
         _editorSetLocalObjectUrls(options?.localObjectUrls || []);
@@ -41266,8 +41147,6 @@ async function openEditor(projectId, options = {}) {
             _editorRefreshQuickActions();
             _editorRefreshProjectSyncUi();
             _editorRenderTimeline();
-            _editorEnsureBaseVideoSprite();
-            _editorApplyRotationTransform();
             _editorCenterTimelineOnTime(Number(_editor.timelineTime || 0));
             _editorSelectTool(_editorResolveInitialActiveTool(restored ? _editor.activeTool : "trim", _editor.selectedClip));
             if (shouldRestoreDraft && restored) {
@@ -43343,40 +43222,6 @@ function _editorCloseMobileSubtitleSheet() {
 }
 window._editorCloseMobileSubtitleSheet = _editorCloseMobileSubtitleSheet;
 
-// ---------- Editor rotation (free 0-360°) ----------
-function _editorApplyRotationTransform() {
-    const wrapper = document.getElementById("editor-canvas-wrapper");
-    if (!wrapper) return;
-    const deg = Number(_editor.rotationDeg) || 0;
-    wrapper.style.setProperty("--editor-rotation-deg", `${deg}deg`);
-    if (deg > 0.05 && deg < 359.95) {
-        wrapper.classList.add("rotated");
-    } else {
-        wrapper.classList.remove("rotated");
-    }
-}
-
-function _editorSetRotation(value, liveUpdate) {
-    let deg = Number(value);
-    if (!Number.isFinite(deg)) deg = 0;
-    deg = ((deg % 360) + 360) % 360;
-    _editor.rotationDeg = deg;
-    const label = document.getElementById("editor-rotation-label");
-    if (label) label.textContent = `${Math.round(deg)}°`;
-    _editorApplyRotationTransform();
-    if (!liveUpdate) {
-        try { _editorSaveState && _editorSaveState(); } catch {}
-    }
-}
-
-function _editorRotateBy(delta) {
-    const current = Number(_editor.rotationDeg) || 0;
-    _editorSetRotation(current + Number(delta || 0), false);
-}
-
-window._editorSetRotation = _editorSetRotation;
-window._editorRotateBy = _editorRotateBy;
-
 // ---------- Render properties panel based on tool ----------
 function _editorRenderProps() {
     const container = document.getElementById("editor-props-content");
@@ -43629,32 +43474,6 @@ function _editorRenderProps() {
                         </div>
                     </div>
                 ` : ""}
-                <div class="editor-props-group editor-track-props-volume-group">
-                    <label>Girar vídeo</label>
-                    <div class="editor-track-props-volume-item">
-                        <div class="editor-track-props-volume-head">
-                            <span class="editor-track-props-volume-name-wrap">
-                                <span class="editor-track-props-volume-name">Rotação</span>
-                            </span>
-                            <span class="editor-track-props-volume-value" id="editor-rotation-label">${Math.round(Number(_editor.rotationDeg) || 0)}°</span>
-                        </div>
-                        <input
-                            class="editor-track-props-volume-slider"
-                            type="range"
-                            min="0"
-                            max="360"
-                            step="1"
-                            value="${Math.round(Number(_editor.rotationDeg) || 0)}"
-                            oninput="_editorSetRotation(this.value, true)"
-                            onchange="_editorSetRotation(this.value, false)"
-                        >
-                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-                            <button class="editor-add-btn" type="button" style="margin-top:0;padding:6px 10px;min-width:0" onclick="_editorRotateBy(-90)">-90°</button>
-                            <button class="editor-add-btn" type="button" style="margin-top:0;padding:6px 10px;min-width:0" onclick="_editorRotateBy(90)">+90°</button>
-                            <button class="editor-add-btn" type="button" style="margin-top:0;padding:6px 10px;min-width:0;background:rgba(255,255,255,0.04)" onclick="_editorSetRotation(0, false)">Resetar</button>
-                        </div>
-                    </div>
-                </div>
             </div>
         `;
     } else if (tool === "music") {
@@ -45508,18 +45327,13 @@ function _editorRenderTimeline() {
             if (sourceVideoWaveStyle) {
                 styleParts.push(sourceVideoWaveStyle);
             }
-            const spriteStyle = _editorGetBaseVideoSpriteStyle();
-            const filmstripClass = spriteStyle ? " with-filmstrip" : "";
-            if (spriteStyle) {
-                styleParts.push(spriteStyle);
-            }
 
             if (!baseVideoClipsByTrack.has(trackIndex)) {
                 baseVideoClipsByTrack.set(trackIndex, []);
             }
 
             baseVideoClipsByTrack.get(trackIndex).push(
-                `<div class="editor-track-clip clip-video clip-resizable${filmstripClass}${waveClass}${selectedClass}${reversedClass}" data-kind="segment" data-track="${clipTrack}" data-id="${seg.id}" style="${styleParts.join(";")}">${_editorBuildTimelineClipContent(`Video ${idx + 1}`, { resizable: true })}</div>`
+                `<div class="editor-track-clip clip-video clip-resizable${waveClass}${selectedClass}${reversedClass}" data-kind="segment" data-track="${clipTrack}" data-id="${seg.id}" style="${styleParts.join(";")}">${_editorBuildTimelineClipContent(`Video ${idx + 1}`, { resizable: true })}</div>`
             );
         });
     }
@@ -46559,88 +46373,6 @@ function _editorBuildTimelineClipContent(label, options = {}) {
     `;
 }
 
-// ---------- Base-video filmstrip thumbnails (timeline) ----------
-const _editorBaseVideoSprite = {
-    url: "",
-    spriteDataUrl: "",
-    generating: false,
-    failed: false,
-};
-
-async function _editorGenerateVideoSpriteDataUrl(videoUrl, { frames = 8, cellW = 120, cellH = 68 } = {}) {
-    return new Promise((resolve, reject) => {
-        const v = document.createElement("video");
-        v.crossOrigin = "anonymous";
-        v.muted = true;
-        v.playsInline = true;
-        v.preload = "auto";
-        v.src = videoUrl;
-        let done = false;
-        const cleanup = () => {
-            try { v.removeAttribute("src"); v.load(); } catch {}
-        };
-        v.addEventListener("error", () => { if (!done) { done = true; cleanup(); reject(new Error("video load error")); } });
-        v.addEventListener("loadedmetadata", async () => {
-            try {
-                const dur = Math.max(0.05, Number(v.duration || 0));
-                const canvas = document.createElement("canvas");
-                canvas.width = cellW * frames;
-                canvas.height = cellH;
-                const ctx = canvas.getContext("2d");
-                if (!ctx) throw new Error("canvas ctx");
-                for (let i = 0; i < frames; i += 1) {
-                    const t = ((i + 0.5) / frames) * dur;
-                    await new Promise((seekRes, seekRej) => {
-                        const onSeek = () => { v.removeEventListener("seeked", onSeek); seekRes(); };
-                        const onErr = () => { v.removeEventListener("error", onErr); seekRej(new Error("seek err")); };
-                        v.addEventListener("seeked", onSeek, { once: true });
-                        v.addEventListener("error", onErr, { once: true });
-                        try { v.currentTime = Math.min(dur - 0.05, Math.max(0, t)); } catch (err) { seekRej(err); }
-                    });
-                    ctx.drawImage(v, i * cellW, 0, cellW, cellH);
-                }
-                done = true;
-                const dataUrl = canvas.toDataURL("image/jpeg", 0.55);
-                cleanup();
-                resolve(dataUrl);
-            } catch (err) {
-                done = true;
-                cleanup();
-                reject(err);
-            }
-        });
-        setTimeout(() => { if (!done) { done = true; cleanup(); reject(new Error("timeout")); } }, 25000);
-    });
-}
-
-function _editorEnsureBaseVideoSprite() {
-    const url = String(_editor.videoUrl || "").trim();
-    if (!url) return;
-    if (_editorBaseVideoSprite.url === url && (_editorBaseVideoSprite.spriteDataUrl || _editorBaseVideoSprite.failed)) return;
-    if (_editorBaseVideoSprite.generating && _editorBaseVideoSprite.url === url) return;
-    _editorBaseVideoSprite.url = url;
-    _editorBaseVideoSprite.spriteDataUrl = "";
-    _editorBaseVideoSprite.failed = false;
-    _editorBaseVideoSprite.generating = true;
-    _editorGenerateVideoSpriteDataUrl(url).then((data) => {
-        if (_editorBaseVideoSprite.url !== url) return;
-        _editorBaseVideoSprite.spriteDataUrl = String(data || "");
-        _editorBaseVideoSprite.generating = false;
-        if (!_editorBaseVideoSprite.spriteDataUrl) _editorBaseVideoSprite.failed = true;
-        try { _editorRenderTimeline(); } catch {}
-    }).catch(() => {
-        if (_editorBaseVideoSprite.url !== url) return;
-        _editorBaseVideoSprite.generating = false;
-        _editorBaseVideoSprite.failed = true;
-    });
-}
-
-function _editorGetBaseVideoSpriteStyle() {
-    if (!_editorBaseVideoSprite.spriteDataUrl) return "";
-    if (_editorBaseVideoSprite.url !== String(_editor.videoUrl || "").trim()) return "";
-    return `--clip-filmstrip:url(${_editorBaseVideoSprite.spriteDataUrl})`;
-}
-
 function _editorGetTimelineRange(kind, id, track = "") {
     if (kind === "segment") {
         const item = _editorFindSegment(track || "video", id);
@@ -47238,7 +46970,6 @@ async function _editorExport(exportKind = "video") {
             end: Number(word?.end || word?.start || 0),
         })) : [],
         smart_cut_subtitle_style: approvedSmartCuts.length ? _editorBuildSmartCutSubtitleCfg() : null,
-        rotation_deg: Number(_editor.rotationDeg || 0),
     };
 
     // Show export overlay
