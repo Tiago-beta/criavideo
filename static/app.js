@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v595 loaded");
+console.log("[CriaVideo] app.js v596 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -409,7 +409,7 @@ function _normalizeAutomaticAudioDurationSeconds(value) {
 }
 
 function _getRealisticSelectedEngine(prefix) {
-    const fallback = (prefix === "wizard" || prefix === "script") ? "viduq3" : "wan2";
+    const fallback = (prefix === "wizard" || prefix === "script") ? "mega15" : "wan2";
     return document.querySelector(`#${prefix}-realistic-engine .engine-option.selected`)?.dataset.value || fallback;
 }
 
@@ -573,7 +573,7 @@ function _setCreatePersonaSectionCollapsed(prefix, collapsed = true) {
 function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
-    const engine = engineBtn?.dataset.value || "viduq3";
+    const engine = engineBtn?.dataset.value || "mega15";
     const options = _getCreateRealisticDurationOptions(engine);
     _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
 }
@@ -4550,7 +4550,7 @@ function _createLiveSessionDefaultState() {
         videoType: "",
         title: "",
         engineLabel: "",
-        selectedEngine: "viduq3",
+        selectedEngine: "mega15",
         aspectRatio: "9:16",
         returnFrameEnabled: true,
         useLastImageAsFinalFrame: false,
@@ -4589,7 +4589,7 @@ function _normalizeCreateLiveEngine(engineValue) {
     if (availableValues.includes(normalized)) {
         return normalized;
     }
-    return availableValues[0] || "viduq3";
+    return availableValues[0] || "mega15";
 }
 
 function _getCreateLiveSelectedEngine() {
@@ -8007,12 +8007,59 @@ function _getCreateLiveSceneStatusLabel(sceneItem) {
         return "Frame final";
     }
     if (_isCreateLiveSceneItemActive(sceneItem)) {
-        return `${Math.max(4, Math.min(99, Number(sceneItem.progress || 0) || 4))}%`;
+        return `${_getCreateLiveSceneDisplayProgress(sceneItem)}%`;
     }
     if (String(sceneItem.videoUrl || "").trim()) {
         return "Vídeo pronto";
     }
     return "Processando";
+}
+
+const _createLiveSceneSyntheticProgress = new Map();
+let _createLiveSceneSyntheticTimer = null;
+
+function _getCreateLiveSceneDisplayProgress(sceneItem) {
+    const projectId = Number(sceneItem?.projectId || 0);
+    const realProgress = Math.max(0, Math.min(99, Number(sceneItem?.progress || 0) || 0));
+    if (!(projectId > 0)) {
+        return Math.max(4, Math.round(realProgress) || 4);
+    }
+    const now = Date.now();
+    let tracked = _createLiveSceneSyntheticProgress.get(projectId);
+    if (!tracked) {
+        tracked = { value: Math.max(4, realProgress), startedAt: now, updatedAt: now };
+        _createLiveSceneSyntheticProgress.set(projectId, tracked);
+    }
+    if (realProgress > tracked.value) {
+        tracked.value = realProgress;
+    } else {
+        const cap = 92;
+        if (tracked.value < cap) {
+            const elapsed = (now - tracked.updatedAt) / 1000;
+            if (elapsed > 0.4) {
+                const remaining = cap - tracked.value;
+                const step = Math.max(0.4, remaining * 0.025);
+                tracked.value = Math.min(cap, tracked.value + step);
+            }
+        }
+    }
+    tracked.updatedAt = now;
+    _ensureCreateLiveSceneSyntheticTimer();
+    return Math.max(4, Math.round(tracked.value));
+}
+
+function _ensureCreateLiveSceneSyntheticTimer() {
+    if (_createLiveSceneSyntheticTimer) return;
+    _createLiveSceneSyntheticTimer = setInterval(() => {
+        const sceneProjects = _getCreateLiveSceneProjects();
+        const hasActive = sceneProjects.some((item) => _isCreateLiveSceneItemActive(item));
+        if (!hasActive) {
+            clearInterval(_createLiveSceneSyntheticTimer);
+            _createLiveSceneSyntheticTimer = null;
+            return;
+        }
+        _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+    }, 1100);
 }
 
 function _getCreateLiveFrameDownloadName(sceneNumber, badge, fallbackPrefix = "frame") {
@@ -17355,7 +17402,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     let finalPrompt = String(prompt || "").trim();
 
     const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value
-        || (prefix === "auto" ? "wan2" : "viduq3");
+        || (prefix === "auto" ? "wan2" : "mega15");
     if (!finalPrompt && selectedEngineForPromptCheck !== "avatar31") {
         alert("Descreva a cena que você quer ver no vídeo.");
         return;
