@@ -6699,6 +6699,7 @@ class GenerateRealisticPromptRequest(BaseModel):
     persona_profile_ids: list[int] = Field(default_factory=list)
     custom_image_ids: list[str] = Field(default_factory=list)
     has_reference_image: bool = False
+    static_camera: bool = False
 
 
 class PreviewGrokAnchorRequest(BaseModel):
@@ -7008,6 +7009,15 @@ async def generate_realistic_prompt_endpoint(
     if has_reference_image:
         prompt_for_optimizer = _ensure_reference_image_instruction(prompt_for_optimizer, reference_mode=reference_mode)
 
+    if bool(getattr(req, "static_camera", False)):
+        prompt_for_optimizer = (
+            f"{prompt_for_optimizer}\n\n"
+            "CAMERA FIXA (OBRIGATORIO): a camera deve permanecer totalmente estatica durante todo o video. "
+            "Sem panoramica, sem zoom, sem dolly, sem travelling, sem grua, sem push in, sem pull out, sem orbit. "
+            "Apenas o sujeito e os elementos da cena podem se mover. "
+            "Descreva sempre a camera como 'camera fixa' ou 'camera estatica em tripe'."
+        )
+
     if engine == "grok":
         from app.services.grok_video import optimize_prompt_for_grok
 
@@ -7040,6 +7050,14 @@ async def generate_realistic_prompt_endpoint(
     final_prompt = _inject_interaction_persona_instruction(temporal_prompt, interaction_persona)
     if has_reference_image:
         final_prompt = _ensure_reference_image_instruction(final_prompt, reference_mode=reference_mode)
+
+    if bool(getattr(req, "static_camera", False)):
+        final_prompt = (
+            f"{final_prompt}\n\n"
+            "REGRA DE CAMERA (OBRIGATORIA): camera fixa em tripe durante todo o video. "
+            "Sem panoramica, zoom, dolly, travelling, grua, push in, pull out ou orbit. "
+            "Apenas os sujeitos e elementos da cena podem se mover."
+        )
 
     return {"prompt": final_prompt}
 

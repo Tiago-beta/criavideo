@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v594 loaded");
+console.log("[CriaVideo] app.js v595 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -24700,6 +24700,8 @@ function showAiSuggestPanel() {
     document.getElementById("ai-suggest-style-group").hidden = !isRealistic;
     document.getElementById("ai-suggest-persona-group").hidden = !isRealistic;
     document.getElementById("ai-suggest-realistic-duration-group").hidden = !isRealistic;
+    const staticCameraGroup = document.getElementById("ai-suggest-static-camera-group");
+    if (staticCameraGroup) staticCameraGroup.hidden = !isRealistic;
     document.getElementById("ai-suggest-duration-group").hidden = isRealistic;
     document.getElementById("ai-suggest-generate-text").textContent = isRealistic ? "Gerar Prompt" : "Gerar Roteiro";
     _syncAiSuggestCustomImageSection();
@@ -24711,6 +24713,14 @@ function hideAiSuggestPanel() {
     document.getElementById("ai-suggest-panel").hidden = true;
     document.getElementById("create-panel-script").hidden = false;
 }
+
+function toggleAiSuggestStaticCamera() {
+    const btn = document.getElementById("ai-suggest-static-camera-btn");
+    if (!btn) return;
+    const next = btn.getAttribute("aria-pressed") !== "true";
+    btn.setAttribute("aria-pressed", next ? "true" : "false");
+}
+window.toggleAiSuggestStaticCamera = toggleAiSuggestStaticCamera;
 
 async function generateAiScript() {
     const isRealistic = scriptData.videoType === "realista";
@@ -24796,6 +24806,7 @@ async function generateAiScript() {
                     persona_profile_ids: selectedPersonaIds,
                     custom_image_ids: customImageIds,
                     has_reference_image: hasReferenceImage,
+                    static_camera: document.getElementById("ai-suggest-static-camera-btn")?.getAttribute("aria-pressed") === "true",
                 }),
             });
             hideCreateProgress();
