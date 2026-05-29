@@ -354,10 +354,7 @@ def _build_interaction_persona_instruction(interaction_persona: str) -> str:
             "Inclua obrigatoriamente a persona personalizada definida pelo usuário, mantendo os traços, estilo "
             "e identidade visual descritos na referencia."
         )
-    return (
-        "Priorize natureza viva e inclua obrigatoriamente pelo menos um elemento visual de conexão "
-        "(animal, flor, ave, borboleta ou outro ser vivo natural) em destaque e coerente com o tema."
-    )
+    return ""
 
 
 def _inject_interaction_persona_instruction(prompt: str, interaction_persona: str) -> str:

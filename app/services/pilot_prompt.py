@@ -172,7 +172,7 @@ def _single_persona_instruction(persona: str) -> str:
 	if persona == "personalizado":
 		return "PERSONA: usar a persona personalizada definida pelo usuario, respeitando os tracos da referencia."
 	if persona == "natureza":
-		return "PERSONA: protagonista visual e natureza viva (animal, ave, planta, paisagem) com forte presenca."
+		return ""
 	return ""
 
 
