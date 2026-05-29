@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v599 loaded");
+console.log("[CriaVideo] app.js v600 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -859,7 +859,7 @@ function _getSessionPlanPresentation() {
     };
 }
 
-const ROLE_RESTRICTED_PAGES = ["editor", "analyze", "publish", "automate"];
+const ROLE_RESTRICTED_PAGES = ["analyze", "publish", "automate"];
 
 function _applyRoleBasedNav() {
     const isAdmin = _isProfileAdminUser();
@@ -886,10 +886,6 @@ function _applyRoleBasedNav() {
         const mobileItem = document.querySelector(`.mobile-nav-tab[data-mobile-page="${page}"]`);
         if (mobileItem) mobileItem.hidden = true;
     });
-    if (liveEditorBtn) {
-        liveEditorBtn.hidden = true;
-        liveEditorBtn.dataset.roleHidden = "1";
-    }
 }
 
 function renderSession() {
@@ -8403,10 +8399,15 @@ function _buildCreateLiveNextSceneCard() {
     const nextSceneDurationOptionsMarkup = _buildCreateLiveNextSceneDurationOptionsMarkup(nextSceneDisabled);
     const nextSceneEngineMarkup = nextSceneEngineOptionsMarkup
         ? `
-                        <div class="form-group create-live-session-next-engine-group">
-                            <label>Motor de IA</label>
+                        <div class="form-group collapsible-section create-live-session-next-engine-group">
+                            <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                                <span class="section-title">Motor de geração</span>
+                                <span class="collapsible-arrow">&#9660;</span>
+                            </button>
+                            <div class="collapsible-body" hidden>
                             <div class="engine-options" id="create-live-session-next-engine">
                                 ${nextSceneEngineOptionsMarkup}
+                            </div>
                             </div>
                         </div>
                     `
@@ -12069,17 +12070,25 @@ function _renderSimilarScenes(project, options = {}) {
                 ${uploadsSectionMarkup}
 
                 <div class="similar-scene-pickers">
-                    <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
-                        ${SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
-                            <button
-                                class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
-                                data-value="${engineValue}"
-                                type="button"
-                                onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
-                                title="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
-                                aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
-                            >${_similarSceneEngineLabel(engineValue)}</button>
-                        `).join("")}
+                    <div class="form-group collapsible-section similar-scene-engine-collapsible">
+                        <button class="collapsible-toggle realistic-persona-collapsible-toggle" type="button" aria-expanded="false" onclick="toggleCollapsible(this)">
+                            <span class="section-title">Motor de geração</span>
+                            <span class="collapsible-arrow">&#9660;</span>
+                        </button>
+                        <div class="collapsible-body" hidden>
+                            <div class="similar-scene-engine-picker" aria-label="Motor da cena ${idx + 1}">
+                                ${SIMILAR_ENGINE_OPTIONS.map((engineValue) => `
+                                    <button
+                                        class="similar-scene-engine-btn${selectedSceneEngine === engineValue ? " selected" : ""}"
+                                        data-value="${engineValue}"
+                                        type="button"
+                                        onclick="similarSelectSceneEngine(${sceneId}, '${engineValue}')"
+                                        title="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
+                                        aria-label="Usar ${_similarEngineDisplayLabel(engineValue)} nesta cena"
+                                    >${_similarSceneEngineLabel(engineValue)}</button>
+                                `).join("")}
+                            </div>
+                        </div>
                     </div>
                 </div>
 
