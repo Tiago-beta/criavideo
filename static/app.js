@@ -1,7 +1,9 @@
-console.log("[CriaVideo] app.js v604 loaded");
+console.log("[CriaVideo] app.js v605 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
+const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
+const CRIAVIDEO_WINDOWS_DESKTOP_FILENAME = "criavideo-desktop-windows-latest.zip";
 function resolveCriaVideoApiBase() {
     if (!IS_CAPACITOR_APP) return "/api";
     const configuredApi = String(window.CRIAVIDEO_API_BASE || localStorage.getItem("criavideo_api_base") || "").trim();
@@ -10,6 +12,30 @@ function resolveCriaVideoApiBase() {
     return host === "staging.criavideo.pro" ? CRIAVIDEO_STAGING_API : CRIAVIDEO_DEFAULT_API;
 }
 const API = resolveCriaVideoApiBase();
+
+function _resolveDesktopWindowsDownloadUrl() {
+    if (typeof window === "undefined") return `/video/static/downloads/${CRIAVIDEO_WINDOWS_DESKTOP_FILENAME}`;
+    try {
+        return new URL(`/video/static/downloads/${CRIAVIDEO_WINDOWS_DESKTOP_FILENAME}`, window.location.origin).toString();
+    } catch (error) {
+        return `/video/static/downloads/${CRIAVIDEO_WINDOWS_DESKTOP_FILENAME}`;
+    }
+}
+
+function _initDesktopDownloadButton() {
+    const link = document.getElementById("editor-desktop-download-btn");
+    if (!link) return;
+
+    if (IS_DESKTOP_SHELL) {
+        link.hidden = true;
+        document.body.classList.add("desktop-shell-active");
+        return;
+    }
+
+    link.href = _resolveDesktopWindowsDownloadUrl();
+    link.hidden = false;
+}
+
 const APP_TOKEN_KEY = "criavideo_token";
 const LEVITA_TOKEN_KEY = "levita_token";
 const TEVOXI_DEFAULT_SIGNUP_URL = "https://tevoxi.com";
@@ -47485,6 +47511,12 @@ if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", _bindEditorEvents);
 } else {
     _bindEditorEvents();
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", _initDesktopDownloadButton, { once: true });
+} else {
+    _initDesktopDownloadButton();
 }
 
 bootstrap();

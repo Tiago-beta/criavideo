@@ -16040,6 +16040,22 @@ th,
     min-width: 0;
 }
 
+.editor-topbar-desktop-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.editor-topbar-desktop-label {
+    display: inline-flex;
+}
+
+.desktop-shell-active .editor-topbar-desktop-btn {
+    display: none !important;
+}
+
 .editor-topbar-export-btn {
     display: inline-flex;
     align-items: center;
@@ -19057,6 +19073,16 @@ th,
     #editor-new-btn {
         min-width: 72px;
         padding: 0 10px;
+    }
+
+    .editor-topbar-desktop-label {
+        display: none;
+    }
+
+    .editor-topbar-desktop-btn {
+        width: 34px;
+        min-width: 34px;
+        padding: 0;
     }
 
     #editor-export-btn,

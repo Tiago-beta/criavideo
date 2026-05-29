@@ -1,0 +1,10 @@
+﻿{
+    "targetUrl":  "https://staging.criavideo.pro/video",
+    "window":  {
+                   "width":  1480,
+                   "height":  960,
+                   "minWidth":  1220,
+                   "minHeight":  760
+               }
+}
+

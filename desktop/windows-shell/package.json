@@ -1,0 +1,39 @@
+{
+  "name": "criavideo-desktop-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shell Windows do editor CriaVideo",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win:dir": "electron-builder --win dir",
+    "build:win:portable": "electron-builder --win portable",
+    "build:win:nsis": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "pro.criavideo.desktop",
+    "productName": "CriaVideo Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop-config.json",
+        "to": "desktop-config.json"
+      }
+    ],
+    "win": {
+      "icon": "../../static/icons/icon-512.png",
+      "artifactName": "CriaVideo-Desktop-Windows-${version}.exe"
+    }
+  }
+}
