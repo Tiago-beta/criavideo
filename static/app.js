@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v603 loaded");
+console.log("[CriaVideo] app.js v604 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -34953,6 +34953,57 @@ function _resolveAspectRatio() {
     return _normalizeAspectValue(_editor.outputAspectRatio).replace("source", source);
 }
 
+function _editorResolveAspectRatioNumber() {
+    const resolved = _resolveAspectRatio();
+    if (resolved === "16:9") return 16 / 9;
+    if (resolved === "1:1") return 1;
+    return 9 / 16;
+}
+
+function _editorFitCanvasWrapper() {
+    const wrapper = document.getElementById("editor-canvas-wrapper");
+    const previewArea = wrapper?.closest?.(".editor-preview-area");
+    if (!wrapper || !previewArea) return;
+
+    if (window.innerWidth <= 768) {
+        wrapper.style.removeProperty("--editor-fit-width");
+        wrapper.style.removeProperty("--editor-fit-height");
+        return;
+    }
+
+    const previewStyles = window.getComputedStyle(previewArea);
+    const horizontalPadding = (parseFloat(previewStyles.paddingLeft || "0") || 0)
+        + (parseFloat(previewStyles.paddingRight || "0") || 0);
+    const verticalPadding = (parseFloat(previewStyles.paddingTop || "0") || 0)
+        + (parseFloat(previewStyles.paddingBottom || "0") || 0);
+    const gap = parseFloat(previewStyles.rowGap || previewStyles.gap || "0") || 0;
+    const controls = previewArea.querySelector(".editor-play-controls");
+    const stagePanel = previewArea.querySelector(".editor-mobile-stage-panel");
+    const stagePanelVisible = Boolean(stagePanel && !stagePanel.hidden && window.getComputedStyle(stagePanel).display !== "none");
+    const occupiedHeight = (controls?.offsetHeight || 0)
+        + (stagePanelVisible ? (stagePanel?.offsetHeight || 0) : 0)
+        + gap * (stagePanelVisible ? 2 : 1);
+    const availableWidth = Math.max(0, previewArea.clientWidth - horizontalPadding);
+    const availableHeight = Math.max(0, previewArea.clientHeight - verticalPadding - occupiedHeight);
+    const ratio = _editorResolveAspectRatioNumber();
+
+    if (!(availableWidth > 0) || !(availableHeight > 0) || !(ratio > 0)) {
+        wrapper.style.removeProperty("--editor-fit-width");
+        wrapper.style.removeProperty("--editor-fit-height");
+        return;
+    }
+
+    let fitWidth = availableWidth;
+    let fitHeight = fitWidth / ratio;
+    if (fitHeight > availableHeight) {
+        fitHeight = availableHeight;
+        fitWidth = fitHeight * ratio;
+    }
+
+    wrapper.style.setProperty("--editor-fit-width", `${Math.max(1, Math.floor(fitWidth))}px`);
+    wrapper.style.setProperty("--editor-fit-height", `${Math.max(1, Math.floor(fitHeight))}px`);
+}
+
 function _editorApplyAspectRatio() {
     const wrapper = document.getElementById("editor-canvas-wrapper");
     if (!wrapper) return;
@@ -34964,6 +35015,7 @@ function _editorApplyAspectRatio() {
         "1:1": "1 / 1",
     }[resolved] || "9 / 16";
     wrapper.style.setProperty("--editor-aspect-ratio", cssVal);
+    _editorFitCanvasWrapper();
 
     _editorRefreshAspectControls();
 
@@ -43419,23 +43471,38 @@ function _editorRenderProps() {
         const selectedSegVolume = selectedSeg ? _editorSegmentVolumePercent(selectedSeg) : 100;
         const selectedTrackSpeedState = _editorGetTrackSpeedState(selectedTrackTargets);
         const selectedTrackLabel = selectedTrackTargets
-            .map((track) => track === "audio" ? "Faixa de audio" : "Faixa de video")
+            .map((track) => track === "audio" ? "Audio" : "Video")
             .join(" + ");
         const selectedTrackInfo = selectedTrackTargets.length
-            ? `${selectedTrackLabel} (${selectedTrackSpeedState.count} trecho(s))`
+            ? `${selectedTrackLabel} · ${selectedTrackSpeedState.count}`
             : "";
         const segInfo = selectedSeg
             ? `${_fmtTime(selectedSeg.start)} - ${_fmtTime(selectedSeg.end)} (${_fmtTime(selectedSeg.end - selectedSeg.start)})`
-            : selectedTrackInfo || "Nenhum trecho selecionado";
+            : selectedTrackInfo || "Sem selecao";
         const selectedTracksLabel = _editorGetSelectedSegmentTracks()
             .map(track => track === "video" ? "Video" : "Audio")
-            .join(" + ");
+            .join(" + ") || "Nenhuma";
         const tracksSummary = hasExternalAudio
-            ? `Trechos: Video ${_editor.videoSegments.length} | Audio ${_editor.audioSegments.length}`
-            : `Trechos: Video ${_editor.videoSegments.length}`;
-        const trimHint = hasExternalAudio
-            ? "Marque as faixas Video/Audio na timeline. O corte e ajuste serao aplicados somente nas faixas marcadas."
-            : "Sem audio externo, o audio original acompanha os cortes do video automaticamente.";
+            ? `V${_editor.videoSegments.length} · A${_editor.audioSegments.length}`
+            : `V${_editor.videoSegments.length}`;
+        const cutIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="6" r="2"></circle><circle cx="6" cy="18" r="2"></circle><path d="M20 4 8.12 15.88"></path><path d="M14.47 14.48 20 20"></path><path d="M8.12 8.12 12 12"></path></svg>`;
+        const restoreIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path></svg>`;
+        const tracksIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="4" rx="1"></rect><rect x="3" y="14" width="18" height="4" rx="1"></rect></svg>`;
+        const selectIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 4 7v5c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V7l-8-4Z"></path></svg>`;
+        const targetIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>`;
+        const trimSummaryHtml = [
+            { icon: tracksIcon, label: "Trechos", value: tracksSummary },
+            { icon: selectIcon, label: "Selecao", value: segInfo },
+            { icon: targetIcon, label: "Faixas", value: selectedTracksLabel },
+        ].map((item) => `
+            <div class="editor-trim-summary-item">
+                <span class="editor-trim-summary-icon">${item.icon}</span>
+                <span class="editor-trim-summary-copy">
+                    <span class="editor-trim-summary-label">${item.label}</span>
+                    <span class="editor-trim-summary-value">${item.value}</span>
+                </span>
+            </div>
+        `).join("");
         const selectedVolumeTracks = _editorGetSelectedSegmentTracks().filter(track => track === "video" || (track === "audio" && hasExternalAudio));
         const volumeControlsHtml = selectedVolumeTracks.map((track) => {
             const isVideo = track === "video";
@@ -43465,32 +43532,29 @@ function _editorRenderProps() {
             `;
         }).join("");
         container.innerHTML = `
-            <div class="editor-props-title">Cortar video</div>
-            <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${trimHint}</p>
-            <div class="editor-trim-range" style="display:grid;gap:8px">
-                <button class="editor-add-btn" type="button" onclick="_editorSplitAtCurrentTime()">Cortar no ponto atual</button>
-                <button class="editor-add-btn" type="button" onclick="_editorResetVideoSegments()" style="background:rgba(255,255,255,0.04)">Restaurar video inteiro</button>
-                <div class="editor-trim-values">
-                    <span>${tracksSummary}</span>
-                    <span style="margin-left:10px">Selecionado: ${segInfo}</span>
+            <div class="editor-props-title">Cortes</div>
+            <div class="editor-trim-range editor-trim-compact">
+                <div class="editor-trim-actions">
+                    <button class="editor-add-btn editor-trim-action-btn" type="button" onclick="_editorSplitAtCurrentTime()">${cutIcon}<span>Cortar</span></button>
+                    <button class="editor-add-btn editor-trim-action-btn muted" type="button" onclick="_editorResetVideoSegments()">${restoreIcon}<span>Restaurar</span></button>
                 </div>
-                <div class="editor-trim-values">
-                    <span>Faixas marcadas: ${selectedTracksLabel}</span>
+                <div class="editor-trim-summary-grid">
+                    ${trimSummaryHtml}
                 </div>
                 ${selectedVolumeTracks.length ? `
                     <div class="editor-props-group editor-track-props-volume-group">
-                        <label>Volume das faixas selecionadas</label>
+                        <label>Volume faixas</label>
                         <div class="editor-track-props-volume-list">${volumeControlsHtml}</div>
                     </div>
                 ` : ""}
                 ${selectedSeg ? `
                     <div class="editor-props-group editor-track-props-volume-group">
-                        <label>Volume do trecho selecionado</label>
+                        <label>Volume trecho</label>
                         <div class="editor-track-props-volume-item">
                             <div class="editor-track-props-volume-head">
                                 <span class="editor-track-props-volume-name-wrap">
                                     <span class="editor-track-props-volume-icon">${_editorTimelineVolumeIcon(selectedSegTrack === "audio" ? "audio" : "video")}</span>
-                                    <span class="editor-track-props-volume-name">${selectedSegTrack === "audio" ? "Trecho do audio externo" : "Trecho do video"}</span>
+                                    <span class="editor-track-props-volume-name">${selectedSegTrack === "audio" ? "Trecho audio" : "Trecho video"}</span>
                                 </span>
                                 <span class="editor-track-props-volume-value" id="editor-seg-vol-label">${selectedSegVolume}%</span>
                             </div>
@@ -43507,11 +43571,11 @@ function _editorRenderProps() {
                 ` : ""}
                 ${(selectedSeg || selectedTrackTargets.length) ? `
                     <div class="editor-props-group editor-track-props-volume-group">
-                        <label>${selectedSeg ? "Velocidade do trecho selecionado" : "Velocidade das faixas selecionadas"}</label>
+                        <label>${selectedSeg ? "Velocidade trecho" : "Velocidade faixas"}</label>
                         <div class="editor-track-props-volume-item">
                             <div class="editor-track-props-volume-head">
                                 <span class="editor-track-props-volume-name-wrap">
-                                    <span class="editor-track-props-volume-name">${selectedSeg ? (selectedSegTrack === "audio" ? "Trecho do audio externo" : "Trecho do video") : selectedTrackLabel}</span>
+                                    <span class="editor-track-props-volume-name">${selectedSeg ? (selectedSegTrack === "audio" ? "Trecho audio" : "Trecho video") : selectedTrackLabel}</span>
                                 </span>
                                 <span class="editor-track-props-volume-value">${_editorFormatRateLabel(selectedSeg ? selectedSegSpeed : selectedTrackSpeedState.value)}</span>
                             </div>
@@ -43527,10 +43591,10 @@ function _editorRenderProps() {
                             <div class="editor-trim-values">
                                 ${selectedSeg ? `
                                     <span>Origem: ${_fmtTime(selectedSegSourceDuration)}</span>
-                                    <span>Duração na timeline: ${_fmtTime(selectedSeg.end - selectedSeg.start)}</span>
+                                    <span>Timeline: ${_fmtTime(selectedSeg.end - selectedSeg.start)}</span>
                                 ` : `
-                                    <span>Trechos afetados: ${selectedTrackSpeedState.count}</span>
-                                    <span>${selectedTrackSpeedState.mixed ? "Velocidade atual: mista" : `Velocidade atual: ${_editorFormatRateLabel(selectedTrackSpeedState.value)}`}</span>
+                                    <span>Trechos: ${selectedTrackSpeedState.count}</span>
+                                    <span>${selectedTrackSpeedState.mixed ? "Atual: mista" : `Atual: ${_editorFormatRateLabel(selectedTrackSpeedState.value)}`}</span>
                                 `}
                             </div>
                             <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
@@ -47247,6 +47311,7 @@ function _bindEditorEvents() {
     document.getElementById("editor-media-layer-host")?.addEventListener("pointerdown", _editorOnMediaLayerPointerDown);
     document.addEventListener("pointermove", _editorOnMediaLayerDragMove);
     document.addEventListener("pointerup", _editorOnMediaLayerDragEnd);
+    window.addEventListener("resize", _editorFitCanvasWrapper);
     window.addEventListener("resize", _editorRenderMediaLayers);
     window.addEventListener("resize", _editorRenderTimeline);
     window.addEventListener("resize", _editorRenderMobileStagePanel);
