@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v596 loaded");
+console.log("[CriaVideo] app.js v597 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -8038,7 +8038,7 @@ function _getCreateLiveSceneDisplayProgress(sceneItem) {
             const elapsed = (now - tracked.updatedAt) / 1000;
             if (elapsed > 0.4) {
                 const remaining = cap - tracked.value;
-                const step = Math.max(0.4, remaining * 0.025);
+                const step = Math.max(0.12, remaining * 0.006) * Math.min(elapsed, 3);
                 tracked.value = Math.min(cap, tracked.value + step);
             }
         }
@@ -8059,7 +8059,7 @@ function _ensureCreateLiveSceneSyntheticTimer() {
             return;
         }
         _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
-    }, 1100);
+    }, 1800);
 }
 
 function _getCreateLiveFrameDownloadName(sceneNumber, badge, fallbackPrefix = "frame") {
@@ -18059,11 +18059,8 @@ function resetCreateWizard(options = {}) {
         }
         tag.classList.remove("selected");
     });
-    const defAiPersona = document.querySelector('#ai-suggest-persona-tags [data-persona="natureza"]');
-    if (defAiPersona) {
-        document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
-        defAiPersona.classList.add("selected");
-    }
+    // Persona de interacao comeca SEMPRE sem selecao no painel de IA.
+    document.querySelectorAll("#ai-suggest-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
     if (!preserveScriptImageCreatorState) {
         document.querySelectorAll("#script-image-generator-persona-tags .style-tag").forEach((t) => t.classList.remove("selected"));
     }
@@ -24769,6 +24766,34 @@ function toggleAiSuggestStaticCamera() {
 }
 window.toggleAiSuggestStaticCamera = toggleAiSuggestStaticCamera;
 
+function _adoptAiSuggestImagesAsScriptPhotos() {
+    if (!Array.isArray(aiSuggestCustomImages) || aiSuggestCustomImages.length === 0) {
+        return;
+    }
+    let added = 0;
+    aiSuggestCustomImages.forEach((item) => {
+        const file = item?.file;
+        if (!file) return;
+        const exists = scriptPhotos.some((existing) => existing
+            && existing.name === file.name
+            && existing.size === file.size
+            && existing.lastModified === file.lastModified);
+        if (exists) return;
+        if (scriptPhotos.length >= 8) return;
+        if (item.upload_id) file.upload_id = item.upload_id;
+        if (item.preview_url) file.preview_url = item.preview_url;
+        scriptPhotos.push(file);
+        added += 1;
+    });
+    if (added === 0) return;
+    const photoCb = document.getElementById("script-use-photos");
+    if (photoCb && !photoCb.checked) {
+        photoCb.checked = true;
+        try { togglePhotoUpload(); } catch (_e) {}
+    }
+    try { renderPhotoPreview(); } catch (_e) {}
+}
+
 async function generateAiScript() {
     const isRealistic = scriptData.videoType === "realista";
     const hasScriptTevoxiClip = isRealistic
@@ -24860,6 +24885,7 @@ async function generateAiScript() {
             document.getElementById("script-text").value = result.prompt;
             document.getElementById("script-char-count").textContent = result.prompt.length.toLocaleString("pt-BR");
             scriptData.promptOptimized = true;
+            _adoptAiSuggestImagesAsScriptPhotos();
             hideAiSuggestPanel();
         } catch (error) {
             hideCreateProgress();
