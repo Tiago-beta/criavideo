@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v606 loaded");
+console.log("[CriaVideo] app.js v607 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -33870,6 +33870,18 @@ function _editorAttachPreviewSeekHandlers(videoEl) {
     });
 }
 
+function _editorResetPreviewSeekState(videoEl, options = {}) {
+    if (!videoEl) return;
+
+    _editorAttachPreviewSeekHandlers(videoEl);
+    videoEl._editorPendingSeekTime = Number.NaN;
+    videoEl._editorSeekInFlight = false;
+    videoEl._editorLastSeekTs = 0;
+    if (options.syncLastApplied !== false) {
+        videoEl._editorLastSeekApplied = Number(videoEl.currentTime || 0);
+    }
+}
+
 function _editorFlushPendingPreviewSeek(videoEl) {
     if (!videoEl) return;
 
@@ -41647,7 +41659,10 @@ function _editorTogglePlay() {
     } else {
         _editor._virtualPlaybackActive = false;
         _editorStopVirtualTimelinePlayback();
-        video.currentTime = _editorTimelineToSourceTime(startTime);
+        const sourceTime = _editorTimelineToSourceTime(startTime);
+        _editorResetPreviewSeekState(video, { syncLastApplied: false });
+        video._editorLastSeekApplied = Number(sourceTime || 0);
+        video.currentTime = sourceTime;
         const playPromise = video.play();
         if (playPromise?.catch) {
             playPromise.catch(() => {
@@ -41787,9 +41802,12 @@ function _editorSeekByClientX(clientX) {
 
     if (rawTime <= videoPlaybackEnd + 0.01) {
         const nextTime = _editorClampToVideoSegments(rawTime);
+        const sourceTime = _editorTimelineToSourceTime(nextTime);
         _editorStopVirtualTimelinePlayback();
         _editor._virtualPlaybackActive = false;
-        video.currentTime = _editorTimelineToSourceTime(nextTime);
+        _editorResetPreviewSeekState(video, { syncLastApplied: false });
+        video._editorLastSeekApplied = Number(sourceTime || 0);
+        video.currentTime = sourceTime;
         if (_editor.playing && video.paused) {
             const playPromise = video.play();
             if (playPromise?.catch) {
