@@ -3732,7 +3732,11 @@ async def get_project(
     )
     renders = result_renders.scalars().all()
 
-    response_tags = project.tags
+    project_tags = _safe_tags_dict(project.tags)
+    preview_video_path = str(project_tags.get("editor_preview_video_path") or "").strip()
+    preview_video_url = _to_media_url(preview_video_path) if preview_video_path and os.path.exists(preview_video_path) else None
+    response_tags = dict(project_tags)
+    response_tags.pop("editor_preview_video_path", None)
     source_image_paths = _collect_project_source_image_paths(project, _safe_tags_dict(project.tags))
     source_image_urls = [url for url in (_to_media_url(path) for path in source_image_paths) if url]
     reference_frame_map: dict[str, str] = {}
@@ -3771,6 +3775,7 @@ async def get_project(
         "description": project.description,
         "lyrics_text": project.lyrics_text or "",
         "tags": response_tags,
+        "preview_video_url": preview_video_url,
         "source_image_urls": source_image_urls,
         "status": project.status.value,
         "progress": project.progress,

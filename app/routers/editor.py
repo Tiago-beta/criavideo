@@ -39,6 +39,14 @@ _export_jobs: dict[str, dict] = {}
 _EDITOR_EXPORT_PRESET = "veryfast"
 _EDITOR_EXPORT_CRF = "23"
 _EDITOR_EXPORT_AUDIO_BITRATE = "160k"
+_EDITOR_PREVIEW_PROXY_PRESET = "veryfast"
+_EDITOR_PREVIEW_PROXY_CRF = "31"
+_EDITOR_PREVIEW_PROXY_AUDIO_BITRATE = "96k"
+_EDITOR_PREVIEW_PROXY_MIN_FILE_SIZE_BYTES = 150 * 1024 * 1024
+_EDITOR_PREVIEW_PROXY_MIN_LONG_SIDE = 2048
+_EDITOR_PREVIEW_PROXY_MIN_DURATION_SECONDS = 480.0
+_EDITOR_PREVIEW_PROXY_MIN_LONG_SIDE_FOR_DURATION = 1280
+_EDITOR_PREVIEW_PROXY_TARGET_LONG_SIDE = 960
 _EDITOR_EXPORT_AUDIO_MP3_BITRATE = "192k"
 _SUBTITLE_PROPER_NAMES = ("Senhor", "Deus", "Pastor", "Jesus", "Cristo", "Pai")
 _EDITOR_IMAGE_SEQUENCE_CLIP_SECONDS = 5.0
@@ -659,6 +667,126 @@ def _probe_media_dimensions(path: str) -> tuple[int, int]:
         return width, height
     except Exception:
         return 0, 0
+
+
+def _should_create_editor_preview_proxy(
+    duration_seconds: float,
+    file_size_bytes: int,
+    width: int,
+    height: int,
+) -> bool:
+    long_side = max(int(width or 0), int(height or 0))
+    resolved_duration = max(0.0, float(duration_seconds or 0.0))
+    resolved_size = max(0, int(file_size_bytes or 0))
+
+    if resolved_size >= _EDITOR_PREVIEW_PROXY_MIN_FILE_SIZE_BYTES:
+        return True
+    if long_side >= _EDITOR_PREVIEW_PROXY_MIN_LONG_SIDE:
+        return True
+    if (
+        resolved_duration >= _EDITOR_PREVIEW_PROXY_MIN_DURATION_SECONDS
+        and long_side >= _EDITOR_PREVIEW_PROXY_MIN_LONG_SIDE_FOR_DURATION
+    ):
+        return True
+    return False
+
+
+def _build_editor_preview_proxy(
+    video_path: Path,
+    duration_seconds: float = 0.0,
+    file_size_bytes: int = 0,
+    width: int = 0,
+    height: int = 0,
+) -> Path | None:
+    source_path = Path(video_path)
+    if not source_path.exists() or source_path.stat().st_size <= 0:
+        return None
+
+    safe_width = max(0, int(width or 0))
+    safe_height = max(0, int(height or 0))
+    if safe_width <= 0 or safe_height <= 0:
+        safe_width, safe_height = _probe_media_dimensions(str(source_path))
+    if safe_width <= 0 or safe_height <= 0:
+        return None
+
+    resolved_size = max(int(file_size_bytes or 0), int(source_path.stat().st_size or 0))
+    resolved_duration = max(0.0, float(duration_seconds or 0.0))
+    if not _should_create_editor_preview_proxy(resolved_duration, resolved_size, safe_width, safe_height):
+        return None
+
+    preview_path = source_path.with_name(f"{source_path.stem}_preview.mp4")
+    if preview_path.exists() and preview_path.stat().st_size > 0:
+        return preview_path
+
+    long_side = max(safe_width, safe_height)
+    scale_ratio = min(1.0, _EDITOR_PREVIEW_PROXY_TARGET_LONG_SIDE / float(long_side or 1))
+    target_width = max(2, _round_up_even(safe_width * scale_ratio))
+    target_height = max(2, _round_up_even(safe_height * scale_ratio))
+    preview_path.unlink(missing_ok=True)
+
+    timeout_seconds = max(180, min(900, int(max(resolved_duration, 60.0) * 1.5)))
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(source_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-vf",
+                f"scale={target_width}:{target_height}:flags=lanczos",
+                "-r",
+                "24",
+                "-c:v",
+                "libx264",
+                "-preset",
+                _EDITOR_PREVIEW_PROXY_PRESET,
+                "-crf",
+                _EDITOR_PREVIEW_PROXY_CRF,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                _EDITOR_PREVIEW_PROXY_AUDIO_BITRATE,
+                "-movflags",
+                "+faststart",
+                str(preview_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except Exception as exc:
+        logger.warning("[editor] Failed to build preview proxy for %s: %s", source_path, exc)
+        preview_path.unlink(missing_ok=True)
+        return None
+
+    if proc.returncode != 0 or not preview_path.exists() or preview_path.stat().st_size <= 0:
+        logger.warning(
+            "[editor] Preview proxy generation failed for %s: %s",
+            source_path,
+            (proc.stderr or "")[-1200:],
+        )
+        preview_path.unlink(missing_ok=True)
+        return None
+
+    preview_duration, _ = _probe_video_metadata(str(preview_path))
+    if preview_duration <= 0:
+        preview_path.unlink(missing_ok=True)
+        return None
+
+    logger.info(
+        "[editor] Preview proxy ready for %s -> %s (%sx%s)",
+        source_path,
+        preview_path,
+        target_width,
+        target_height,
+    )
+    return preview_path
 
 
 def _editor_detect_aspect_from_dimensions(width: int, height: int) -> str:
@@ -1954,6 +2082,7 @@ async def _create_editor_video_project(
     description: str = "Vídeo enviado para edição",
 ) -> dict:
     duration, detected_aspect = _probe_video_metadata(str(video_path))
+    source_width, source_height = _probe_media_dimensions(str(video_path))
     title = (Path(original_name or "Vídeo enviado").stem or "Vídeo enviado").strip()[:500]
     if not title:
         title = "Vídeo enviado"
@@ -1965,12 +2094,23 @@ async def _create_editor_video_project(
         except Exception:
             resolved_size = 0
 
+    preview_video_path = _build_editor_preview_proxy(
+        video_path=video_path,
+        duration_seconds=duration,
+        file_size_bytes=resolved_size,
+        width=source_width,
+        height=source_height,
+    )
+    project_tags = {"type": "editor"}
+    if preview_video_path:
+        project_tags["editor_preview_video_path"] = str(preview_video_path)
+
     project = VideoProject(
         user_id=user_id,
         track_id=0,
         title=title,
         description=description,
-        tags={"type": "editor"},
+        tags=project_tags,
         aspect_ratio=detected_aspect or "16:9",
         status=VideoStatus.COMPLETED,
         progress=100,
@@ -1991,9 +2131,12 @@ async def _create_editor_video_project(
     await db.commit()
 
     video_url = _to_media_url(str(video_path))
+    preview_video_url = _to_media_url(str(preview_video_path)) if preview_video_path else None
     return {
         "project_id": project.id,
         "video_url": video_url,
+        "preview_video_url": preview_video_url,
+        "uses_preview_proxy": bool(preview_video_url and preview_video_url != video_url),
         "duration": duration,
         "aspect_ratio": project.aspect_ratio,
     }
@@ -3347,6 +3490,7 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
                 source_title = (project.title or project.track_title or "Vídeo").strip() or "Vídeo"
                 edited_title = source_title[:500]
                 source_tags = dict(project.tags) if isinstance(project.tags, dict) else {}
+                source_tags.pop("editor_preview_video_path", None)
                 source_tags["type"] = "editor"
                 source_tags["editor_export"] = True
                 source_tags["editor_source_project_id"] = int(project.id or 0)

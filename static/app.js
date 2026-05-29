@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v602 loaded");
+console.log("[CriaVideo] app.js v603 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
 const CRIAVIDEO_STAGING_API = "https://staging.criavideo.pro/api";
@@ -37621,6 +37621,55 @@ function _editorApplySyncedLayerPayloads(syncedLayers = []) {
     });
 }
 
+function _editorResolvePreviewVideoUrl(payload = null) {
+    return String(payload?.preview_video_url || payload?.previewVideoUrl || "").trim();
+}
+
+function _editorSwapBaseVideoSource(nextUrl, options = {}) {
+    const resolvedNextUrl = String(nextUrl || "").trim();
+    if (!resolvedNextUrl) return false;
+
+    const normalizedCurrentUrl = _editorNormalizeMediaUrl(_editor.videoUrl);
+    const normalizedNextUrl = _editorNormalizeMediaUrl(resolvedNextUrl);
+    _editor.videoUrl = resolvedNextUrl;
+    if (normalizedCurrentUrl && normalizedCurrentUrl === normalizedNextUrl) {
+        return false;
+    }
+
+    const video = document.getElementById("editor-video");
+    if (!video) {
+        _editorResetSourceWaveformState();
+        return true;
+    }
+
+    const desiredTime = Math.max(
+        0,
+        Number((options?.timelineTime ?? _editor.timelineTime ?? video.currentTime) || 0),
+    );
+    const shouldResume = Boolean(options?.resumePlayback && _editor.playing);
+    let settled = false;
+    const finishSwap = () => {
+        if (settled) return;
+        settled = true;
+        _editorResetSourceWaveformState();
+        _editorApplyAspectRatio();
+        _editorRenderMediaLayers();
+        _editorRenderTimeline();
+        _editorApplyTimelineFrame(desiredTime, shouldResume);
+    };
+
+    _editorStopPlaybackFollowLoop();
+    _editorStopVirtualTimelinePlayback();
+    video.pause();
+    video.removeAttribute("src");
+    video.addEventListener("loadedmetadata", finishSwap, { once: true });
+    video.addEventListener("loadeddata", finishSwap, { once: true });
+    video.src = resolvedNextUrl;
+    video.load();
+    window.setTimeout(finishSwap, 1500);
+    return true;
+}
+
 function _editorFinalizePendingImportedProject(syncToken, payload, options = {}) {
     if (!_editorPendingProjectSyncMatches(syncToken)) {
         return false;
@@ -37628,6 +37677,7 @@ function _editorFinalizePendingImportedProject(syncToken, payload, options = {})
 
     const nextProjectId = Number(payload?.project_id || 0);
     const nextServerVideoUrl = String(payload?.video_url || "").trim();
+    const nextPreviewVideoUrl = _editorResolvePreviewVideoUrl(payload);
     if (nextProjectId > 0) {
         _editor.projectId = nextProjectId;
     }
@@ -37640,6 +37690,16 @@ function _editorFinalizePendingImportedProject(syncToken, payload, options = {})
 
     if (Array.isArray(options.syncedLayers) && options.syncedLayers.length) {
         _editorApplySyncedLayerPayloads(options.syncedLayers);
+    }
+
+    if (
+        nextPreviewVideoUrl
+        && _editorNormalizeMediaUrl(nextPreviewVideoUrl) !== _editorNormalizeMediaUrl(nextServerVideoUrl)
+    ) {
+        _editorSwapBaseVideoSource(nextPreviewVideoUrl, {
+            timelineTime: Number(_editor.timelineTime || 0),
+            resumePlayback: Boolean(_editor.playing),
+        });
     }
 
     _editorFinishPendingProjectSync(syncToken);
@@ -37944,7 +38004,12 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
                     });
                     await loadEditorVideosList();
                     if (applied) {
-                        showToast("Upload concluído. Exportação liberada.", "success");
+                        showToast(
+                            _editorResolvePreviewVideoUrl(payload)
+                                ? "Upload concluído. Prévia leve ativada e exportação liberada."
+                                : "Upload concluído. Exportação liberada.",
+                            "success",
+                        );
                     }
                 })
                 .catch((err) => {
@@ -37989,7 +38054,12 @@ async function _editorStartWithOrderedMediaEntries(entries = []) {
                 const applied = _editorFinalizePendingImportedProject(syncToken, payload);
                 await loadEditorVideosList();
                 if (applied) {
-                    showToast("Upload concluído. Exportação liberada.", "success");
+                    showToast(
+                        _editorResolvePreviewVideoUrl(payload)
+                            ? "Upload concluído. Prévia leve ativada e exportação liberada."
+                            : "Upload concluído. Exportação liberada.",
+                        "success",
+                    );
                 }
             })
             .catch((err) => {
@@ -41004,7 +41074,9 @@ async function openEditor(projectId, options = {}) {
             ? options.projectDetail
             : await api(`/video/projects/${projectId}`);
         const render = _pickLatestAvailableRender(detail.renders || []);
-        const baseVideoUrl = String(options?.baseVideoUrl || render?.video_url || "").trim();
+        const serverVideoUrl = String(options?.serverVideoUrl || render?.video_url || "").trim();
+        const previewVideoUrl = _editorResolvePreviewVideoUrl(options) || _editorResolvePreviewVideoUrl(detail);
+        const baseVideoUrl = String(options?.baseVideoUrl || previewVideoUrl || serverVideoUrl || "").trim();
         const allowVirtualBase = Boolean(options?.allowVirtualBase || (!baseVideoUrl && hideBaseVideoTrack));
         if (!baseVideoUrl && !allowVirtualBase) {
             showToast("Este vídeo não tem arquivo disponível.", "error");
@@ -41015,7 +41087,7 @@ async function openEditor(projectId, options = {}) {
         // Reset editor state
         _editor.projectId = Number(projectId || 0);
         _editor.videoUrl = baseVideoUrl;
-        _editor._serverVideoUrl = String(options?.serverVideoUrl || render?.video_url || "").trim();
+        _editor._serverVideoUrl = serverVideoUrl;
         _editor.sourceProjectTitle = String(detail.title || "").trim();
         _editor.editProjectName = "";
         _editorProjectNameEditState.active = false;
@@ -41112,7 +41184,7 @@ async function openEditor(projectId, options = {}) {
             _editorInitVideoSegments();
             let restored = false;
             if (shouldRestoreDraft) {
-                restored = _editorRestoreDraft(projectId, _editor.videoUrl);
+                restored = _editorRestoreDraft(projectId, _editor._serverVideoUrl || _editor.videoUrl);
             } else {
                 _editorClearDraft(projectId);
             }
