@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v605 loaded");
+console.log("[CriaVideo] app.js v606 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -37703,6 +37703,15 @@ function _editorResolvePreviewVideoUrl(payload = null) {
     return String(payload?.preview_video_url || payload?.previewVideoUrl || "").trim();
 }
 
+function _editorShouldKeepLocalBasePreview() {
+    if (!IS_DESKTOP_SHELL) return false;
+
+    const liveUrl = String(_editor.videoUrl || "").trim();
+    if (!liveUrl.startsWith("blob:")) return false;
+
+    return (_editor._localObjectUrls || []).some((url) => String(url || "").trim() === liveUrl);
+}
+
 function _editorSwapBaseVideoSource(nextUrl, options = {}) {
     const resolvedNextUrl = String(nextUrl || "").trim();
     if (!resolvedNextUrl) return false;
@@ -37770,8 +37779,10 @@ function _editorFinalizePendingImportedProject(syncToken, payload, options = {})
         _editorApplySyncedLayerPayloads(options.syncedLayers);
     }
 
+    const keepLocalBasePreview = _editorShouldKeepLocalBasePreview();
     if (
         nextPreviewVideoUrl
+        && !keepLocalBasePreview
         && _editorNormalizeMediaUrl(nextPreviewVideoUrl) !== _editorNormalizeMediaUrl(nextServerVideoUrl)
     ) {
         _editorSwapBaseVideoSource(nextPreviewVideoUrl, {
