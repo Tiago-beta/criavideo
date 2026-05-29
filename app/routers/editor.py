@@ -1320,6 +1320,7 @@ class ExportRequest(BaseModel):
     smart_cuts: list[SmartCutEntry] = []
     smart_cut_words: list[SmartCutWordEntry] = []
     smart_cut_subtitle_style: Optional[SmartCutSubtitleStyle] = None
+    rotation_deg: float = 0.0
 
 
 class AddLayerVideoFromLibraryRequest(BaseModel):
@@ -1646,10 +1647,9 @@ def _extract_audio_from_editor_video(src_video: Path, output_dir: Path, log_labe
 def _normalize_editor_uploaded_video(video_path: Path, content_type: str | None = None) -> Path:
     source_path = Path(video_path)
     source_duration, _ = _probe_video_metadata(str(source_path))
-    source_ext = source_path.suffix.lower()
-    raw_content_type = str(content_type or "").strip().lower()
-    should_normalize = source_ext == ".webm" or "webm" in raw_content_type or source_duration <= 0.0
-    if not should_normalize:
+    # Always normalize editor uploads so the timeline gets a consistent H.264/AAC MP4.
+    # Skip only when the file is already a normalized output from a previous run.
+    if source_path.stem.endswith("_normalized") and source_path.suffix.lower() == ".mp4" and source_duration > 0:
         return source_path
 
     normalized_path = source_path.with_name(f"{source_path.stem}_normalized.mp4")
@@ -2771,6 +2771,13 @@ def _run_export(job_id: str, project, render, req: ExportRequest, user_id: int, 
 
         if req.hide_base_video_track:
             vfilters.append("drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill")
+
+        # User-controlled rotation (0–360°). Apply after aspect adjustment so the
+        # rotated frame stays inside the chosen canvas.
+        rotation_norm = float(getattr(req, "rotation_deg", 0.0) or 0.0) % 360.0
+        if 0.05 <= rotation_norm <= 359.95:
+            rotation_rad = rotation_norm * math.pi / 180.0
+            vfilters.append(f"rotate={rotation_rad:.6f}:ow=iw:oh=ih:c=black")
 
         overlay_timeline_end = 0.0
 
