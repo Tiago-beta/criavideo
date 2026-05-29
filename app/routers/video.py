@@ -591,12 +591,12 @@ def _build_temporal_prompt_fallback(briefing: str, duration: int, topic_seed: st
     dialogue_seed = dialogue_seed or "o tema principal"
 
     scene_templates = [
-        "Establishing shot focused on {seed}, with clear environment details, smooth camera flow, and consistent subject identity.",
-        "The camera tracks the main action around {seed}, showing natural interaction, readable expressions, and coherent movement.",
-        "Mid-sequence framing reinforces continuity of {seed} with layered foreground and stable scene geography.",
-        "A closer composition highlights key details and emotional clarity while preserving location, lighting, and character consistency.",
-        "Transition beat keeps pacing steady and visual logic intact, sustaining the same thematic direction.",
-        "Final cinematic beat resolves {seed} with a clean visual payoff and continuous identity lock.",
+        "Plano de abertura focado em {seed}, com detalhes claros do ambiente, movimento de camera suave e identidade do sujeito consistente.",
+        "A camera acompanha a acao principal em torno de {seed}, mostrando interacao natural, expressoes legiveis e movimento coerente.",
+        "Enquadramento intermediario reforca a continuidade de {seed} com profundidade em camadas e geografia de cena estavel.",
+        "Composicao mais fechada destaca detalhes-chave e clareza emocional, preservando local, iluminacao e consistencia do personagem.",
+        "Batida de transicao mantem o ritmo constante e a logica visual intacta, sustentando a mesma direcao tematica.",
+        "Batida cinematografica final resolve {seed} com um desfecho visual limpo e identidade continua.",
     ]
 
     lines: list[str] = []
@@ -747,8 +747,7 @@ async def _generate_temporal_realistic_prompt(
     system_prompt = (
         "You convert realistic video briefs into strict temporal prompt blocks. "
         "Return plain text only, never markdown, never JSON. "
-        "Scene descriptions must be in English. "
-        "Dialogue must be in PT-BR."
+        "Scene descriptions and dialogue MUST be written in Brazilian Portuguese (PT-BR)."
     )
     user_prompt = (
         f"Total duration: {duration:.1f}s\n\n"
@@ -757,13 +756,13 @@ async def _generate_temporal_realistic_prompt(
         "Output rules (mandatory):\n"
         "1) For each scene block, write exactly:\n"
         "   X.Xs - Y.Ys\n"
-        "   <One detailed English description for this interval>\n"
+        "   <Uma descricao visual detalhada em portugues do Brasil para este intervalo>\n"
         "2) Use continuous timeline from 0.0s to total duration with no gaps.\n"
         "3) After scene blocks, write exactly:\n"
         "   Dialogue timing:\n"
         "4) Then write at least one dialogue block exactly as:\n"
-        "   X.Xs - Y.Ys | Speaker: Name\n"
-        "   \"<spoken line in PT-BR>\"\n"
+        "   X.Xs - Y.Ys | Speaker: Nome\n"
+        "   \"<fala em portugues do Brasil>\"\n"
         "5) No markdown and no JSON.\n\n"
         "Use exactly these scene ranges:\n"
         f"{scene_ranges_text}\n\n"
@@ -806,7 +805,7 @@ async def _generate_temporal_realistic_prompt(
         "You repair temporal prompt blocks into a strict format. "
         "Return plain text only, never markdown, never JSON. "
         "Keep the main theme, core characters, location, and action unchanged. "
-        "Scene descriptions must be in English and dialogue must be in PT-BR."
+        "Scene descriptions and dialogue MUST be written in Brazilian Portuguese (PT-BR)."
     )
     repair_user = (
         f"Total duration: {duration:.1f}s\n\n"
@@ -819,13 +818,13 @@ async def _generate_temporal_realistic_prompt(
         "Mandatory output format:\n"
         "1) For each scene block, write exactly:\n"
         "   X.Xs - Y.Ys\n"
-        "   <One detailed English description for this interval>\n"
+        "   <Uma descricao visual detalhada em portugues do Brasil para este intervalo>\n"
         "2) Use continuous timeline from 0.0s to total duration with no gaps.\n"
         "3) After scene blocks, write exactly:\n"
         "   Dialogue timing:\n"
         "4) Then write at least one dialogue block exactly as:\n"
-        "   X.Xs - Y.Ys | Speaker: Name\n"
-        "   \"<spoken line in PT-BR>\"\n"
+        "   X.Xs - Y.Ys | Speaker: Nome\n"
+        "   \"<fala em portugues do Brasil>\"\n"
         "5) No markdown and no JSON.\n\n"
         "Use exactly these scene ranges:\n"
         f"{scene_ranges_text}\n\n"
