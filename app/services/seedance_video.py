@@ -12,6 +12,7 @@ import mimetypes
 import httpx
 import openai
 from app.config import get_settings
+from app.services.atlas_chat import create_atlas_chat_async_client, get_atlas_prompt_model
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -482,8 +483,6 @@ async def optimize_prompt_for_seedance(
     temperature: float | None = None,
 ) -> str:
     """Converte a descricao do usuario em um prompt otimizado em portugues do Brasil para Seedance 2.0."""
-    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
-
     system = _SEEDANCE_SYSTEM_PROMPT.replace("{duration}", str(duration))
     user_msg = user_description
     if tone:
@@ -497,8 +496,9 @@ async def optimize_prompt_for_seedance(
     prompt_temperature = _clamp_prompt_temperature(temperature, default_value=0.7)
 
     try:
+        client = create_atlas_chat_async_client()
         resp = await client.chat.completions.create(
-            model="gpt-4o",
+            model=get_atlas_prompt_model(),
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_msg},
@@ -534,10 +534,10 @@ Example:
 
 async def sanitize_prompt_for_retry(rejected_prompt: str) -> str:
     """Rewrite a prompt that was flagged by Seedance's content filter."""
-    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
     try:
+        client = create_atlas_chat_async_client()
         resp = await client.chat.completions.create(
-            model="gpt-4o",
+            model=get_atlas_prompt_model(),
             messages=[
                 {"role": "system", "content": _SANITIZE_PROMPT},
                 {"role": "user", "content": rejected_prompt},

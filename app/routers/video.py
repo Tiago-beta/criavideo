@@ -25,6 +25,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import VideoProject, VideoScene, VideoRender, VideoStatus
 from app.config import get_settings
+from app.services.atlas_chat import create_atlas_chat_async_client, get_atlas_prompt_model
 from app.services.persona_registry import (
     build_persona_reference_montage,
     resolve_persona_reference_image,
@@ -779,6 +780,7 @@ async def _generate_temporal_realistic_prompt(
     topic_seed: str = "",
 ) -> str:
     cleaned_briefing = _strip_non_visual_briefing_directives(optimized_prompt)
+    atlas_prompt_model = get_atlas_prompt_model()
 
     scene_count = 4 if duration <= 6 else 5 if duration <= 12 else 6 if duration <= 20 else 7
     dialogue_count = 1 if duration <= 6 else 2 if duration <= 16 else 3
@@ -818,8 +820,9 @@ async def _generate_temporal_realistic_prompt(
     first_reason = "empty_output"
 
     try:
-        resp = await _openai.chat.completions.create(
-            model="gpt-4o-mini",
+        atlas_client = create_atlas_chat_async_client()
+        resp = await atlas_client.chat.completions.create(
+            model=atlas_prompt_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -877,8 +880,9 @@ async def _generate_temporal_realistic_prompt(
     )
 
     try:
-        repair_resp = await _openai.chat.completions.create(
-            model="gpt-4o-mini",
+        atlas_client = create_atlas_chat_async_client()
+        repair_resp = await atlas_client.chat.completions.create(
+            model=atlas_prompt_model,
             messages=[
                 {"role": "system", "content": repair_system},
                 {"role": "user", "content": repair_user},

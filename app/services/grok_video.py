@@ -9,6 +9,7 @@ import hashlib
 import httpx
 import openai
 from app.config import get_settings
+from app.services.atlas_chat import create_atlas_chat_async_client, get_atlas_prompt_model
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -328,7 +329,6 @@ async def optimize_prompt_for_grok(
     reference_mode: str = "",
 ) -> str:
     """Convert user's description into an optimized Grok video prompt with PT-BR audio."""
-    client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
     system = _GROK_SYSTEM_PROMPT.replace("{duration}", str(duration))
     user_msg = user_description
     style_map = {
@@ -366,8 +366,10 @@ async def optimize_prompt_for_grok(
     temperature = 0.20 if has_reference_image else 0.55
 
     try:
+        client = create_atlas_chat_async_client()
+        prompt_model = get_atlas_prompt_model()
         resp = await client.chat.completions.create(
-            model="gpt-4o",
+            model=prompt_model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_msg},
@@ -378,7 +380,7 @@ async def optimize_prompt_for_grok(
         optimized = resp.choices[0].message.content.strip()
         if _looks_like_english_template(optimized):
             rewrite = await client.chat.completions.create(
-                model="gpt-4o",
+                model=prompt_model,
                 messages=[
                     {"role": "system", "content": _PT_BR_REWRITE_SYSTEM_PROMPT},
                     {"role": "user", "content": optimized},
