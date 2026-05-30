@@ -15077,6 +15077,17 @@ th,
     .create-panel-action-row {
         gap: 10px;
     }
+
+    .create-realistic-persona-action-preview {
+        width: 100%;
+        justify-items: start;
+        margin-left: 0;
+    }
+
+    .create-realistic-persona-inline-preview--footer {
+        justify-content: flex-start;
+    }
+
     .create-panel-action-aspect {
         width: 96px;
         flex-basis: 96px;
@@ -15204,6 +15215,43 @@ th,
 
 .create-realistic-persona-inline-preview[hidden] {
     display: none !important;
+}
+
+.create-realistic-persona-inline-preview--footer {
+    margin-bottom: 0;
+    padding: 0;
+    justify-content: flex-end;
+}
+
+.create-realistic-persona-action-preview,
+.create-live-session-persona-preview {
+    display: grid;
+    gap: 8px;
+}
+
+.create-realistic-persona-action-preview {
+    width: min(100%, 440px);
+    align-self: flex-end;
+    justify-items: end;
+    margin: 0 0 10px auto;
+}
+
+.create-realistic-persona-action-preview[hidden] {
+    display: none !important;
+}
+
+.create-realistic-persona-action-preview-label {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.create-live-session-persona-preview {
+    margin-bottom: 12px;
+}
+
+.create-live-session-persona-preview .create-realistic-persona-inline-preview--footer {
+    justify-content: flex-start;
 }
 
 .create-realistic-persona-inline-chip {

@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v615 loaded");
+console.log("[CriaVideo] app.js v616 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -4591,6 +4591,8 @@ function _createLiveSessionDefaultState() {
         nextSceneError: "",
         pendingApprovalArgs: null,
         pendingApprovalLaunching: false,
+        pendingApprovalPersonaProfiles: [],
+        pendingApprovalPersonaReferenceUploads: {},
         pendingApprovalEditOpen: false,
         pendingApprovalEditInstruction: "",
         pendingApprovalEditBusy: false,
@@ -4996,19 +4998,17 @@ function _getCreateSelectedPersonaProfiles(prefix) {
         .slice(0, 6);
 }
 
-function _renderCreatePersonaInlinePreview(prefix) {
-    const preview = document.getElementById(`${prefix}-realistic-persona-inline-preview`);
-    if (!preview) return;
+function _cloneCreatePersonaProfile(profile) {
+    return {
+        id: parseInt(profile?.id || "0", 10) || 0,
+        persona_type: _normalizeRealisticPersonaType(profile?.persona_type || "natureza"),
+        name: String(profile?.name || "").trim(),
+        image_url: String(profile?.image_url || "").trim(),
+    };
+}
 
-    const profiles = _getCreateSelectedPersonaProfiles(prefix);
-    if (!profiles.length) {
-        preview.innerHTML = "";
-        preview.hidden = true;
-        return;
-    }
-
-    preview.hidden = false;
-    preview.innerHTML = profiles.map((profile, index) => {
+function _buildCreatePersonaPreviewChipMarkup(profiles) {
+    return profiles.map((profile, index) => {
         const profileName = esc(profile?.name || `Persona ${index + 1}`);
         const imageUrl = String(profile?.image_url || "").trim();
         return imageUrl
@@ -5023,6 +5023,50 @@ function _renderCreatePersonaInlinePreview(prefix) {
                 </div>
             `;
     }).join("");
+}
+
+function _buildCreatePersonaPreviewSummaryInnerMarkup(profiles, label = "") {
+    if (!profiles.length) {
+        return "";
+    }
+    const normalizedLabel = String(label || "").trim();
+    return `
+        ${normalizedLabel ? `<span class="create-realistic-persona-action-preview-label">${esc(normalizedLabel)}</span>` : ""}
+        <div class="create-realistic-persona-inline-preview create-realistic-persona-inline-preview--footer">
+            ${_buildCreatePersonaPreviewChipMarkup(profiles)}
+        </div>
+    `;
+}
+
+function _syncCreateActionPersonaPreview(prefix) {
+    const actionPreview = document.getElementById(`${prefix}-realistic-persona-action-preview`);
+    const createBtn = document.getElementById(`${prefix}-create-btn`);
+    if (!actionPreview) {
+        return;
+    }
+    const isRealistic = _getSelectedCreateVideoType(prefix) === "realista";
+    const hasProfiles = _getCreateSelectedPersonaProfiles(prefix).length > 0;
+    actionPreview.hidden = !isRealistic || !!createBtn?.hidden || !hasProfiles;
+}
+
+function _renderCreatePersonaInlinePreview(prefix) {
+    const preview = document.getElementById(`${prefix}-realistic-persona-inline-preview`);
+    const actionPreview = document.getElementById(`${prefix}-realistic-persona-action-preview`);
+    const profiles = _getCreateSelectedPersonaProfiles(prefix);
+    const chipsMarkup = _buildCreatePersonaPreviewChipMarkup(profiles);
+
+    if (preview) {
+        preview.innerHTML = chipsMarkup;
+        preview.hidden = !profiles.length;
+    }
+
+    if (actionPreview) {
+        actionPreview.innerHTML = profiles.length
+            ? _buildCreatePersonaPreviewSummaryInnerMarkup(profiles, "Personas enviadas para a imagem")
+            : "";
+    }
+
+    _syncCreateActionPersonaPreview(prefix);
 }
 
 function _shouldCreateRealisticImageFirst(prefix) {
@@ -7762,6 +7806,8 @@ function _syncCreateActionRow(prefix) {
     } else {
         createBtn.textContent = nextLabel;
     }
+
+    _syncCreateActionPersonaPreview(prefix);
 }
 
 function updateFlowUI(panelId, stepIndex, flow, prefix) {
@@ -8130,6 +8176,24 @@ function _getCreateLivePendingInitialImage(prefix) {
     };
 }
 
+function _getCreateLivePendingApprovalPersonaProfiles() {
+    return Array.isArray(createLiveSessionState.pendingApprovalPersonaProfiles)
+        ? createLiveSessionState.pendingApprovalPersonaProfiles.filter(Boolean)
+        : [];
+}
+
+function _buildCreateLivePendingApprovalPersonaSummaryMarkup() {
+    const profiles = _getCreateLivePendingApprovalPersonaProfiles();
+    if (!profiles.length) {
+        return "";
+    }
+    return `
+        <div class="create-live-session-persona-preview">
+            ${_buildCreatePersonaPreviewSummaryInnerMarkup(profiles, "Personas enviadas para esta imagem")}
+        </div>
+    `;
+}
+
 function _getCreateLivePendingApprovalEditModels() {
     return SCRIPT_IMAGE_CREATOR_MODELS.filter((item) => (Number(item?.maxReferences || 0) || 0) > 0);
 }
@@ -8163,6 +8227,7 @@ function _getCreateLivePendingApprovalEditModelMeta(modelId = _getCreateLivePend
 function _buildCreateLivePendingApprovalEditPrompt(basePrompt, instruction) {
     const normalizedBasePrompt = String(basePrompt || "").trim();
     const normalizedInstruction = String(instruction || "").trim();
+    const personaCount = _getCreateLivePendingApprovalPersonaProfiles().length;
     const promptBlocks = [];
 
     if (normalizedBasePrompt) {
@@ -8170,6 +8235,13 @@ function _buildCreateLivePendingApprovalEditPrompt(basePrompt, instruction) {
     }
 
     promptBlocks.push("Use a imagem de referencia enviada como base principal desta cena.");
+    promptBlocks.push("As imagens de referencia servem apenas como guia de identidade e composicao. Gere uma unica imagem cinematografica em tela cheia, sem colagem, sem mosaico, sem diptico, sem antes-e-depois e sem dividir a tela em quadros.");
+
+    if (personaCount > 1) {
+        promptBlocks.push("Todas as personas selecionadas devem aparecer juntas na mesma cena final, preservando a identidade facial de cada uma sem separar os personagens em telas diferentes.");
+    } else if (personaCount === 1) {
+        promptBlocks.push("Preserve a identidade facial da persona selecionada e mantenha a cena em um unico enquadramento.");
+    }
 
     if (normalizedInstruction) {
         promptBlocks.push(`Ajuste solicitado: ${normalizedInstruction}`);
@@ -8255,6 +8327,7 @@ function _startCreateLiveInitialApproval(options = {}) {
     const sourceItems = _collectCreateLiveSessionSourceItems(prefix);
     const aspectRatio = _resolveCreateLiveAspectRatio(prefix, options.aspectRatio);
     const sceneTitle = String(options.sceneTitle || options.title || "Cena 1").trim() || "Cena 1";
+    const pendingApprovalPersonaProfiles = _getCreateSelectedPersonaProfiles(prefix).map((profile) => _cloneCreatePersonaProfile(profile));
 
     _resetCreateLiveSession();
 
@@ -8284,6 +8357,8 @@ function _startCreateLiveInitialApproval(options = {}) {
         realisticStyle: String(options.realisticStyle || "").trim(),
     };
     createLiveSessionState.pendingApprovalLaunching = false;
+    createLiveSessionState.pendingApprovalPersonaProfiles = pendingApprovalPersonaProfiles;
+    createLiveSessionState.pendingApprovalPersonaReferenceUploads = {};
     createLiveSessionState.pendingApprovalEditOpen = false;
     createLiveSessionState.pendingApprovalEditInstruction = "";
     createLiveSessionState.pendingApprovalEditBusy = false;
@@ -8419,6 +8494,13 @@ async function createLiveApplyInitialImageEdit() {
     _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
 
     try {
+        const maxReferences = Math.max(1, Number.parseInt(String(selectedMeta.maxReferences || 5), 10) || 5);
+        const personaReferenceUploadIds = await _prepareCreateLivePendingApprovalPersonaReferenceUploadIds(Math.max(0, maxReferences - 1));
+        const referenceUploadIds = [referenceUploadId, ...personaReferenceUploadIds]
+            .map((value) => String(value || "").trim())
+            .filter((value, index, values) => value && values.indexOf(value) === index)
+            .slice(0, maxReferences);
+
         const response = await api("/video/script-image/generate", {
             method: "POST",
             body: JSON.stringify({
@@ -8429,7 +8511,7 @@ async function createLiveApplyInitialImageEdit() {
                 n: 1,
                 seed: -1,
                 thinking_mode: false,
-                reference_upload_ids: [referenceUploadId],
+                reference_upload_ids: referenceUploadIds,
             }),
         });
 
@@ -8861,6 +8943,10 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
         `;
     const afterMarkupParts = [];
     if (pendingApproval) {
+        const personaSummaryMarkup = _buildCreateLivePendingApprovalPersonaSummaryMarkup();
+        if (personaSummaryMarkup) {
+            afterMarkupParts.push(personaSummaryMarkup);
+        }
         if (pendingEditOpen) {
             afterMarkupParts.push(_buildCreateLivePendingApprovalEditMarkup(sceneItem));
         }
@@ -19745,15 +19831,17 @@ async function _refreshScriptImageCreatorReferenceContexts() {
     await _refreshPersonaContext(IMAGE_CREATOR_LOCATION_CONTEXT, "local");
 }
 
-async function _prepareScriptImageCreatorProfileReferenceUploadIds(maxReferences = 5) {
+async function _preparePersonaProfileReferenceUploadIds(selectedProfiles, cacheStore, maxReferences = 5) {
     const uploadIds = [];
-    const selectedProfiles = _getScriptImageCreatorSelectedReferenceProfiles();
-    for (let index = 0; index < selectedProfiles.length; index += 1) {
+    const referenceProfiles = Array.isArray(selectedProfiles) ? selectedProfiles : [];
+    const uploadCache = cacheStore && typeof cacheStore === "object" ? cacheStore : {};
+
+    for (let index = 0; index < referenceProfiles.length; index += 1) {
         if (uploadIds.length >= maxReferences) {
             break;
         }
 
-        const profile = selectedProfiles[index];
+        const profile = referenceProfiles[index];
         const profileType = _normalizeRealisticPersonaType(profile?.persona_type || "natureza");
         const profileId = parseInt(profile?.id || "0", 10) || 0;
         const imageUrl = String(profile?.image_url || "").trim();
@@ -19762,10 +19850,12 @@ async function _prepareScriptImageCreatorProfileReferenceUploadIds(maxReferences
         }
 
         const cacheKey = `${profileType}:${profileId}:${imageUrl}`;
-        const cachedUpload = _scriptImageCreatorState.profileReferenceUploads?.[cacheKey];
+        const cachedUpload = uploadCache[cacheKey];
         const cachedUploadId = String(cachedUpload?.upload_id || "").trim();
         if (cachedUploadId) {
-            uploadIds.push(cachedUploadId);
+            if (!uploadIds.includes(cachedUploadId)) {
+                uploadIds.push(cachedUploadId);
+            }
             continue;
         }
 
@@ -19791,14 +19881,32 @@ async function _prepareScriptImageCreatorProfileReferenceUploadIds(maxReferences
             throw new Error(`Falha ao enviar a referencia de ${profileType === "local" ? "local" : "persona"}.`);
         }
 
-        _scriptImageCreatorState.profileReferenceUploads[cacheKey] = {
+        uploadCache[cacheKey] = {
             upload_id: uploadId,
             image_url: imageUrl,
         };
-        uploadIds.push(uploadId);
+        if (!uploadIds.includes(uploadId)) {
+            uploadIds.push(uploadId);
+        }
     }
 
     return uploadIds;
+}
+
+async function _prepareCreateLivePendingApprovalPersonaReferenceUploadIds(maxReferences = 5) {
+    return _preparePersonaProfileReferenceUploadIds(
+        _getCreateLivePendingApprovalPersonaProfiles(),
+        createLiveSessionState.pendingApprovalPersonaReferenceUploads,
+        maxReferences,
+    );
+}
+
+async function _prepareScriptImageCreatorProfileReferenceUploadIds(maxReferences = 5) {
+    return _preparePersonaProfileReferenceUploadIds(
+        _getScriptImageCreatorSelectedReferenceProfiles(),
+        _scriptImageCreatorState.profileReferenceUploads,
+        maxReferences,
+    );
 }
 
 function _cloneScriptImageCreatorReferenceFiles(items) {
