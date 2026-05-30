@@ -1,5 +1,15 @@
 ﻿{
     "targetUrl":  "https://staging.criavideo.pro/video",
+    "runtime":  {
+                    "mode":  "remote",
+                    "localUrl":  "http://127.0.0.1:3232/video",
+                    "healthUrl":  "http://127.0.0.1:3232/video/health",
+                    "apiTargetUrl":  "https://staging.criavideo.pro",
+                    "pythonCommand":  "",
+                    "entryScript":  "local-runtime/app.py",
+                    "staticDir":  "static",
+                    "startupTimeoutMs":  25000
+                },
     "window":  {
                    "width":  1480,
                    "height":  960,

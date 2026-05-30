@@ -29,6 +29,18 @@
       {
         "from": "desktop-config.json",
         "to": "desktop-config.json"
+      },
+      {
+        "from": "../local-runtime",
+        "to": "local-runtime"
+      },
+      {
+        "from": "../../static",
+        "to": "static",
+        "filter": [
+          "**/*",
+          "!downloads/**"
+        ]
       }
     ],
     "win": {
