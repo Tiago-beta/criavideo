@@ -2003,9 +2003,12 @@ def _to_media_url(path: str | None) -> str | None:
     """Convert absolute file path to web-accessible URL."""
     if not path:
         return None
-    media_prefix = settings.media_dir.rstrip("/")
-    if path.startswith(media_prefix):
-        return "/video/media" + path[len(media_prefix):]
+    normalized_path = str(path).replace("\\", "/")
+    media_prefix = str(settings.media_dir or "").replace("\\", "/").rstrip("/")
+    if normalized_path == media_prefix:
+        return "/video/media"
+    if normalized_path.startswith(media_prefix + "/"):
+        return "/video/media" + normalized_path[len(media_prefix):]
     return None
 
 

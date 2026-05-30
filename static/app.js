@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v619 loaded");
+console.log("[CriaVideo] app.js v620 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -22067,21 +22067,13 @@ function _syncScriptRealisticNarrationBuilderPlacement({ openWhenEnabled = false
     const anchor = _ensureScriptRealisticNarrationDockAnchor();
     if (!slot || !summary || !builder || !anchor) return;
 
-    const shouldDockInAudioSection = !!document.getElementById("script-use-user-audio")?.checked;
-    const shouldOpenBuilder = openWhenEnabled || (!scriptGeneratedAudioUploadId && !scriptUserAudioFile);
+    const userAudioEnabled = !!document.getElementById("script-use-user-audio")?.checked;
+    const shouldDockInAudioSection = _isScriptRealisticNarrationBuilderActive() && !_isCreateAudioFirstMode();
+    const shouldOpenBuilder = userAudioEnabled && (openWhenEnabled || (!scriptGeneratedAudioUploadId && !scriptUserAudioFile));
 
     if (shouldDockInAudioSection) {
         if (summary.parentElement !== slot) slot.appendChild(summary);
         if (builder.parentElement !== slot) slot.appendChild(builder);
-        if (shouldOpenBuilder) {
-            builder.hidden = false;
-            loadVoiceProfiles();
-            const builderText = document.getElementById("script-audio-builder-text");
-            if (builderText && !builderText.value.trim()) {
-                builderText.value = String(scriptGeneratedAudioText || "").trim();
-                syncScriptAudioBuilderDraft();
-            }
-        }
     } else {
         const originalParent = anchor.parentElement;
         if (originalParent) {
@@ -22091,6 +22083,16 @@ function _syncScriptRealisticNarrationBuilderPlacement({ openWhenEnabled = false
             if (builder.parentElement !== originalParent) {
                 originalParent.insertBefore(builder, summary.nextSibling);
             }
+        }
+    }
+
+    if (shouldOpenBuilder) {
+        builder.hidden = false;
+        loadVoiceProfiles();
+        const builderText = document.getElementById("script-audio-builder-text");
+        if (builderText && !builderText.value.trim()) {
+            builderText.value = String(scriptGeneratedAudioText || "").trim();
+            syncScriptAudioBuilderDraft();
         }
     }
 
