@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v618 loaded");
+console.log("[CriaVideo] app.js v619 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -21969,6 +21969,15 @@ function _setScriptAudioBuilderStatus(message = "", tone = "") {
     statusEl.className = `script-audio-builder-status${tone ? ` is-${tone}` : ""}`;
 }
 
+function _setScriptAudioNarrationButtonState(isLoading = false) {
+    const actionBtn = document.getElementById("script-audio-builder-ai-btn");
+    const actionLabel = document.getElementById("script-audio-builder-ai-btn-label");
+    if (!actionBtn || !actionLabel) return;
+    actionBtn.disabled = !!isLoading;
+    actionBtn.classList.toggle("is-loading", !!isLoading);
+    actionLabel.textContent = isLoading ? "Gerando..." : "Gerar narração";
+}
+
 function _setScriptAudioDictationStatus(message = "", tone = "") {
     const statusEl = document.getElementById("script-audio-dictation-status");
     if (!statusEl) return;
@@ -22553,6 +22562,49 @@ function syncScriptAudioBuilderDraft() {
     if (scriptGeneratedAudioUploadId && currentText.trim() !== String(scriptGeneratedAudioText || "").trim()) {
         clearScriptGeneratedAudio(true);
         _setScriptAudioBuilderStatus("Texto alterado. Gere o áudio novamente para manter tudo sincronizado.", "info");
+    }
+}
+
+async function generateScriptAudioNarration() {
+    const textEl = document.getElementById("script-audio-builder-text");
+    const instructionText = String(textEl?.value || "").trim();
+    if (!instructionText) {
+        alert("Escreva um pedido ou rascunho antes de gerar a narração.");
+        return;
+    }
+
+    const selectedTone = _getSelectedSegmentedOptionValue(
+        "script-audio-builder-tone-options",
+        scriptData.tone || "informativo",
+    );
+
+    _setScriptAudioNarrationButtonState(true);
+    _setScriptAudioBuilderStatus("Lapidando a narração com IA...", "info");
+
+    try {
+        const result = await api("/video/generate-narration-text", {
+            method: "POST",
+            body: JSON.stringify({
+                text: instructionText,
+                tone: selectedTone,
+            }),
+        });
+        const narrationText = String(result?.text || "").trim();
+        if (!narrationText) {
+            throw new Error("A IA não retornou uma narração.");
+        }
+
+        if (textEl) {
+            textEl.value = narrationText;
+        }
+        syncScriptAudioBuilderDraft();
+        _setScriptTextValue(narrationText);
+        scriptGeneratedAudioText = narrationText;
+        _setScriptAudioBuilderStatus("Narração pronta. Revise o texto e gere o áudio quando quiser.", "success");
+    } catch (error) {
+        _setScriptAudioBuilderStatus(`Erro ao gerar a narração: ${error.message}`, "error");
+    } finally {
+        _setScriptAudioNarrationButtonState(false);
     }
 }
 
@@ -33740,6 +33792,7 @@ window.openScriptVideoPicker = openScriptVideoPicker;
 window.clearScriptVideoSelection = clearScriptVideoSelection;
 window.toggleScriptAudioBuilder = toggleScriptAudioBuilder;
 window.syncScriptAudioBuilderDraft = syncScriptAudioBuilderDraft;
+window.generateScriptAudioNarration = generateScriptAudioNarration;
 window.toggleScriptAudioDictationRecording = toggleScriptAudioDictationRecording;
 window.generateScriptVideoAudio = generateScriptVideoAudio;
 window.clearScriptGeneratedAudio = clearScriptGeneratedAudio;

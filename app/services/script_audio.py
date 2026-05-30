@@ -16,6 +16,7 @@ from PIL import Image
 from pypdf import PdfReader
 
 from app.config import get_settings
+from app.services.atlas_chat import create_atlas_chat_async_client, get_atlas_narration_model
 from app.services.voice_catalog import (
     build_elevenlabs_ptbr_instructions,
     build_gemini_ptbr_instructions,
@@ -34,6 +35,14 @@ HYPNOSIS_REFERENCE_EXTS = {".pdf", ".txt", ".md"}
 HYPNOSIS_REFERENCE_NAME_HINTS = ("hipnose", "ficar", "inteligente", "base")
 HYPNOSIS_TOPIC_HINTS = ("hipnose", "hipnot", "hipnoterap", "inducao", "transe")
 MAX_HYPNOSIS_REFERENCE_CHARS = 5000
+_NARRATION_TONE_LABELS = {
+    "informativo": "informativo, claro e confiante",
+    "inspirador": "inspirador, emotivo e encorajador",
+    "descontraido": "descontraido, leve e natural",
+    "profundo": "profundo, reflexivo e marcante",
+    "dramatico": "dramatico, cinematografico e intenso",
+    "motivacional": "motivacional, energico e persuasivo",
+}
 
 
 def _normalize_lookup_text(value: str) -> str:
@@ -313,6 +322,95 @@ async def expand_narration_for_duration(
         logger.warning("Failed to expand narration text: %s", e)
 
     return narration_text
+
+
+def _sanitize_generated_narration_text(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+    text = text.strip().strip('"').strip("'").strip()
+    text = re.sub(r"^(?:narra[cç][aã]o|roteiro|texto final)\s*:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+async def generate_powerful_narration_text(
+    instruction_text: str,
+    tone: str = "informativo",
+) -> str:
+    """Turn a chat-like request or rough draft into a final narration ready for recording."""
+    cleaned_instruction = str(instruction_text or "").strip()
+    if not cleaned_instruction:
+        raise ValueError("Escreva um pedido ou rascunho antes de gerar a narração.")
+
+    tone_label = _NARRATION_TONE_LABELS.get(
+        str(tone or "informativo").strip().lower(),
+        "forte, claro e natural",
+    )
+    system_prompt = (
+        "Voce e um roteirista brasileiro especialista em narracoes poderosas para voz IA. "
+        "O usuario pode enviar uma instrução curta, um pedido em formato de chat, um comando solto "
+        "ou um rascunho incompleto. Sua tarefa e transformar isso em uma narracao final pronta para gravacao.\n"
+        "REGRAS OBRIGATORIAS:\n"
+        "- Escreva em portugues do Brasil.\n"
+        "- Entregue somente o texto final que sera narrado.\n"
+        "- Nunca devolva analise, explicacoes, listas, markdown, titulos ou comentarios sobre o processo.\n"
+        "- Se o usuario mandou apenas uma instrução, desenvolva uma narracao completa.\n"
+        "- Se o usuario mandou um rascunho, reescreva e eleve muito a qualidade sem perder a intencao central.\n"
+        "- A narracao precisa soar humana, fluida, envolvente, convincente e forte.\n"
+        "- Use pausas retoricas com '...' apenas quando ajudarem a interpretacao.\n"
+        "- Evite frases roboticas, genericas, tecnicas demais ou com cara de prompt."
+    )
+    user_prompt = (
+        f"TOM DESEJADO: {tone_label}\n\n"
+        "PEDIDO OU TEXTO BASE DO USUARIO:\n"
+        f"{cleaned_instruction}\n\n"
+        "Entregue agora a versao final da narracao, pronta para ser gravada."
+    )
+
+    request_kwargs = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 2048,
+    }
+
+    atlas_error = None
+    try:
+        atlas_client = create_atlas_chat_async_client()
+        atlas_response = await atlas_client.chat.completions.create(
+            model=get_atlas_narration_model(),
+            **request_kwargs,
+        )
+        final_text = _sanitize_generated_narration_text(atlas_response.choices[0].message.content)
+        if final_text:
+            return final_text
+    except Exception as exc:
+        atlas_error = exc
+        logger.warning("Atlas narration generation failed: %s", exc)
+
+    try:
+        fallback_response = await _openai.chat.completions.create(
+            model=SCRIPT_TEXT_MODEL,
+            **request_kwargs,
+        )
+        final_text = _sanitize_generated_narration_text(fallback_response.choices[0].message.content)
+        if final_text:
+            return final_text
+    except Exception as exc:
+        logger.warning("OpenAI fallback narration generation failed: %s", exc)
+        if atlas_error:
+            raise RuntimeError("Nao foi possivel gerar a narracao agora.") from atlas_error
+        raise RuntimeError("Nao foi possivel gerar a narracao agora.") from exc
+
+    raise RuntimeError("Nao foi possivel gerar a narracao agora.")
 
 
 async def generate_script(

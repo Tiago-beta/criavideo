@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     atlascloud_openai_api_base_url: str = "https://api.atlascloud.ai/v1"
     atlascloud_console_api_base_url: str = "https://console.atlascloud.ai/api/v1"
     atlascloud_prompt_model: str = "deepseek-ai/deepseek-v4-flash"
+    atlascloud_narration_model: str = "qwen/qwen3.6-35b-a3b"
     atlascloud_seedance_t2v_model: str = "bytedance/seedance-2.0/text-to-video"
     atlascloud_seedance_i2v_model: str = "bytedance/seedance-2.0/image-to-video"
     atlascloud_seedance_fast_i2v_model: str = "bytedance/seedance-2.0-fast/image-to-video"

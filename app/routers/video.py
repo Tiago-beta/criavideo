@@ -1166,6 +1166,11 @@ class GenerateTempAudioRequest(BaseModel):
     filename: str = "audio-gerado.mp3"
 
 
+class GenerateNarrationTextRequest(BaseModel):
+    text: str
+    tone: str = "informativo"
+
+
 async def _resolve_tts_voice_selection(
     user_id: int,
     db: AsyncSession,
@@ -1355,6 +1360,39 @@ async def generate_temp_audio(
         "filename": safe_filename,
         "voice": voice,
         "voice_type": voice_type,
+    }
+
+
+@router.post("/generate-narration-text")
+async def generate_narration_text(
+    req: GenerateNarrationTextRequest,
+    user: dict = Depends(get_current_user),
+):
+    from app.services.script_audio import generate_powerful_narration_text
+
+    text = str(req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Escreva um pedido antes de gerar a narração")
+    if len(text) > 20000:
+        raise HTTPException(status_code=400, detail="Texto muito longo para gerar a narração")
+
+    try:
+        narration_text = await generate_powerful_narration_text(
+            instruction_text=text,
+            tone=str(req.tone or "informativo").strip() or "informativo",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Narration text generation failed for user %s: %s", user["id"], exc)
+        raise HTTPException(status_code=500, detail="Não foi possível gerar a narração agora") from exc
+
+    return {
+        "text": narration_text,
+        "char_count": len(narration_text),
+        "word_count": len(narration_text.split()),
     }
 
 

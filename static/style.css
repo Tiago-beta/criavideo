@@ -9095,6 +9095,38 @@ svg.spin {
     margin-bottom: 0;
 }
 
+.script-audio-builder-text-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+.script-audio-builder-text-head label {
+    margin-bottom: 0;
+}
+
+.script-audio-ai-btn {
+    min-height: 38px;
+    padding: 8px 14px;
+    gap: 8px;
+}
+
+.script-audio-ai-btn.is-loading {
+    opacity: 0.78;
+    cursor: wait;
+}
+
+.script-audio-builder-text-hint {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
 .script-audio-builder-voice-selector {
     max-width: none;
     margin: 0 0 14px;
@@ -9217,6 +9249,15 @@ svg.spin {
 @media (max-width: 768px) {
     .script-media-toggle-group {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .script-audio-builder-text-head {
+        align-items: stretch;
+    }
+
+    .script-audio-ai-btn {
+        width: 100%;
+        justify-content: center;
     }
 
     .realistic-voice-grid,
