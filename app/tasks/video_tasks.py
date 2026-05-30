@@ -2484,7 +2484,7 @@ async def run_realistic_video_pipeline(project_id: int):
                     on_progress=_on_progress,
                 )
 
-            elif engine in {"wan2", "avatar25"}:
+            elif engine == "wan2":
                 # ── Wan via Atlas Cloud ──
                 from app.services.runpod_video import generate_wan_video
                 from app.services.multi_clip import concatenate_clips, extract_last_frame
@@ -2504,6 +2504,28 @@ async def run_realistic_video_pipeline(project_id: int):
                         model_id_override=(settings.atlascloud_wan_i2v_flash_model or "").strip() or None if engine == "avatar25" else None,
                         input_audio_path=avatar25_input_audio_path or None,
                     )
+
+            elif engine == "avatar25":
+                from app.services.avatar_video import generate_avatar_video
+
+                avatar_reference_path = upload_reference_paths[0] if upload_reference_paths else (image_path or scene_reference_path)
+                if not avatar25_input_audio_path or not os.path.exists(avatar25_input_audio_path):
+                    raise RuntimeError("Avatar 2.5 Pro exige um audio enviado pelo usuario ou um trecho do Tevoxi.")
+                if not avatar_reference_path or not os.path.exists(avatar_reference_path):
+                    raise RuntimeError("Avatar 2.5 Pro exige uma imagem de referencia valida.")
+
+                await _on_progress(18, "Iniciando geracao de video Avatar 2.5 Pro...")
+                await generate_avatar_video(
+                    prompt=optimized_prompt,
+                    image_path=avatar_reference_path,
+                    audio_source=avatar25_input_audio_path,
+                    output_path=output_path,
+                    aspect_ratio=aspect_ratio,
+                    on_progress=_on_progress,
+                    model_id_override=(settings.atlascloud_infinite_talk_model or "").strip() or None,
+                    engine_label="Avatar 2.5 Pro",
+                    resolution="480p",
+                )
 
                 if shadow_audio_from_grok:
                     from app.services.grok_video import generate_video_clip

@@ -7336,11 +7336,13 @@ async def generate_realistic_endpoint(
     uploaded_audio_is_narration = bool(
         resolved_audio_upload_path
         and audio_upload_role == "narration"
-        and engine != "avatar31"
+        and engine not in {"avatar25", "avatar31"}
     )
-    if engine == "avatar31":
+    if engine in {"avatar25", "avatar31"}:
         if not resolved_audio_source:
-            raise HTTPException(status_code=400, detail="Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.")
+            engine_label = "Avatar 2.5 Pro" if engine == "avatar25" else "Avatar 3.1 Plus"
+            raise HTTPException(status_code=400, detail=f"{engine_label} exige um áudio enviado ou um trecho do Tevoxi.")
+    if engine == "avatar31":
         avatar_duration = 0
         if req.clip_duration and req.clip_duration > 0:
             avatar_duration = int(round(float(req.clip_duration or 0)))
@@ -7509,7 +7511,7 @@ async def generate_realistic_endpoint(
     effective_add_narration = bool((uploaded_audio_is_narration or (req.add_narration and narration_text)) and not dialogue_enabled)
     effective_add_music = bool(
         (req.add_music and not uploaded_audio_is_narration)
-        or (resolved_audio_source and not uploaded_audio_is_narration)
+        or (resolved_audio_source and not uploaded_audio_is_narration and engine != "avatar25")
     )
     provider_generate_audio = bool(req.generate_audio)
     seedance_native_audio_only = False

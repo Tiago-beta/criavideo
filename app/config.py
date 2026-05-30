@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     atlascloud_wan_i2v_flash_model: str = "alibaba/wan-2.6/image-to-video-flash"
     atlascloud_vidu_q3_start_end_model: str = "vidu/q3-pro/start-end-to-video"
     atlascloud_avatar_model: str = "kwaivgi/kling-v2.6-std/avatar"
+    atlascloud_infinite_talk_model: str = "atlascloud/infinitetalk"
     mp_access_token: str = ""
     host: str = "0.0.0.0"
     port: int = 8000

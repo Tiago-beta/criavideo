@@ -1,7 +1,4 @@
-"""
-Avatar Video — Uses Atlas Cloud API to call Kling V2.6 STD Avatar
-for audio-driven avatar video generation.
-"""
+"""Atlas avatar video generation via the Atlas Cloud video API."""
 import os
 import time
 import mimetypes
@@ -17,7 +14,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 ATLAS_VIDEO_API_BASE_URL = (settings.atlascloud_api_base_url or "https://api.atlascloud.ai/api/v1").rstrip("/")
-AVATAR_MODEL = (settings.atlascloud_avatar_model or "kwaivgi/kling-v2.6-std/avatar").strip()
+DEFAULT_AVATAR_MODEL = (settings.atlascloud_avatar_model or "kwaivgi/kling-v2.6-std/avatar").strip()
 _ALLOWED_ASPECT_RATIOS = {"16:9", "9:16", "1:1", "4:3", "3:4"}
 
 
@@ -212,7 +209,7 @@ async def _fetch_result_video_candidates(prediction_id: str, api_key: str) -> li
     return _dedupe_preserve_order(candidates)
 
 
-async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
+async def _upload_media_to_atlas(file_path: str, api_key: str, engine_label: str = "Avatar 3.1 Plus") -> str:
     if not file_path or not os.path.exists(file_path):
         raise RuntimeError("Arquivo de referencia nao encontrado para upload")
 
@@ -231,7 +228,7 @@ async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
                     )
             except httpx.RequestError as e:
                 if attempt >= 3:
-                    raise RuntimeError(f"Falha no upload de media para o Avatar 3.1 Plus: {e}")
+                    raise RuntimeError(f"Falha no upload de media para o {engine_label}: {e}")
                 wait_s = min(12, 2 ** (attempt + 1))
                 logger.warning(
                     "Avatar upload request error (attempt %d/4): %s. Retrying in %ds",
@@ -244,7 +241,7 @@ async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
 
             if resp.status_code == 429:
                 if attempt >= 3:
-                    raise RuntimeError("Avatar 3.1 Plus esta com alta demanda no momento (429).")
+                    raise RuntimeError(f"{engine_label} esta com alta demanda no momento (429).")
                 wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(20, 2 ** (attempt + 2)))
                 logger.warning(
                     "Avatar upload rate-limited (attempt %d/4). Retrying in %ds",
@@ -256,7 +253,7 @@ async def _upload_media_to_atlas(file_path: str, api_key: str) -> str:
 
             if resp.is_error:
                 message = _extract_atlas_error_message(resp)
-                raise RuntimeError(f"Falha no upload de media do Avatar 3.1 Plus (HTTP {resp.status_code}): {message}")
+                raise RuntimeError(f"Falha no upload de media do {engine_label} (HTTP {resp.status_code}): {message}")
 
             data = resp.json() if resp.content else {}
             uploaded_reference = _extract_upload_reference(data) if isinstance(data, dict) else ""
@@ -277,14 +274,19 @@ async def generate_avatar_video(
     aspect_ratio: str = "16:9",
     timeout_seconds: int = 900,
     on_progress=None,
+    model_id_override: str | None = None,
+    engine_label: str = "Avatar 3.1 Plus",
+    resolution: str | None = None,
 ) -> str:
+    engine_name = str(engine_label or "Avatar 3.1 Plus").strip() or "Avatar 3.1 Plus"
+    selected_model = str(model_id_override or DEFAULT_AVATAR_MODEL).strip() or DEFAULT_AVATAR_MODEL
     api_key = _atlas_api_key()
     if not api_key:
         raise RuntimeError("ATLASCLOUD_API_KEY not configured")
     if not image_path or not os.path.exists(image_path):
-        raise RuntimeError("Avatar 3.1 Plus exige uma imagem de referencia valida")
+        raise RuntimeError(f"{engine_name} exige uma imagem de referencia valida")
     if not audio_source:
-        raise RuntimeError("Avatar 3.1 Plus exige um audio valido")
+        raise RuntimeError(f"{engine_name} exige um audio valido")
 
     submit_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/generateVideo"
     headers = {
@@ -292,22 +294,25 @@ async def generate_avatar_video(
         "Content-Type": "application/json",
     }
 
-    uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key)
+    uploaded_image_ref = await _upload_media_to_atlas(image_path, api_key, engine_name)
     if _is_http_url(audio_source):
         uploaded_audio_ref = audio_source.strip()
     elif os.path.exists(audio_source):
-        uploaded_audio_ref = await _upload_media_to_atlas(audio_source, api_key)
+        uploaded_audio_ref = await _upload_media_to_atlas(audio_source, api_key, engine_name)
     else:
-        raise RuntimeError("Audio do Avatar 3.1 Plus nao foi encontrado")
+        raise RuntimeError(f"Audio do {engine_name} nao foi encontrado")
 
     payload = {
-        "model": AVATAR_MODEL,
+        "model": selected_model,
         "audio": uploaded_audio_ref,
         "image": uploaded_image_ref,
     }
     cleaned_prompt = str(prompt or "").strip()
     if cleaned_prompt:
         payload["prompt"] = cleaned_prompt
+    cleaned_resolution = str(resolution or "").strip().lower()
+    if cleaned_resolution:
+        payload["resolution"] = cleaned_resolution
 
     prediction_id = ""
     selected_variant = "default"
@@ -318,7 +323,7 @@ async def generate_avatar_video(
                 resp = await client.post(submit_url, headers=headers, json=payload)
             except httpx.RequestError as e:
                 if attempt >= 4:
-                    raise RuntimeError(f"Falha de conexao ao iniciar Avatar 3.1 Plus: {e}")
+                    raise RuntimeError(f"Falha de conexao ao iniciar {engine_name}: {e}")
                 wait_s = min(20, 2 ** attempt)
                 logger.warning(
                     "Avatar create request error (%s, attempt %d/5): %s. Retrying in %ds",
@@ -332,7 +337,7 @@ async def generate_avatar_video(
 
             if resp.status_code == 429:
                 if attempt >= 4:
-                    raise RuntimeError("Avatar 3.1 Plus esta com alta demanda no momento (429).")
+                    raise RuntimeError(f"{engine_name} esta com alta demanda no momento (429).")
                 wait_s = _retry_delay_from_header(resp.headers.get("Retry-After"), default_seconds=min(30, 2 ** (attempt + 2)))
                 logger.warning(
                     "Avatar rate-limited on create (%s, attempt %d/5). Retrying in %ds",
@@ -345,26 +350,26 @@ async def generate_avatar_video(
 
             if resp.is_error:
                 details = _extract_atlas_error_message(resp)
-                last_error_message = f"Erro ao iniciar Avatar 3.1 Plus (HTTP {resp.status_code}): {details}"
+                last_error_message = f"Erro ao iniciar {engine_name} (HTTP {resp.status_code}): {details}"
                 raise RuntimeError(last_error_message)
 
             response_payload = resp.json() if resp.content else {}
             data_node = response_payload.get("data") if isinstance(response_payload, dict) else None
             prediction_id = str((data_node or {}).get("id") or response_payload.get("id") or "").strip()
             if not prediction_id:
-                raise RuntimeError("Atlas Cloud nao retornou prediction id para o Avatar 3.1 Plus")
+                raise RuntimeError(f"Atlas Cloud nao retornou prediction id para o {engine_name}")
             break
 
         if not prediction_id and last_error_message:
             raise RuntimeError(last_error_message)
 
     if not prediction_id:
-        raise RuntimeError("Nao foi possivel iniciar a geracao no Avatar 3.1 Plus.")
+        raise RuntimeError(f"Nao foi possivel iniciar a geracao no {engine_name}.")
 
-    logger.info("Avatar 3.1 Plus prediction created: %s (variant=%s)", prediction_id, selected_variant or "default")
+    logger.info("%s prediction created: %s (variant=%s, model=%s)", engine_name, prediction_id, selected_variant or "default", selected_model)
 
     if on_progress:
-        await on_progress(20, "Gerando video com Avatar 3.1 Plus...")
+        await on_progress(20, f"Gerando video com {engine_name}...")
 
     poll_url = f"{ATLAS_VIDEO_API_BASE_URL}/model/prediction/{prediction_id}"
     poll_headers = {"Authorization": f"Bearer {api_key}"}
@@ -389,7 +394,7 @@ async def generate_avatar_video(
 
             if resp.is_error:
                 details = _extract_atlas_error_message(resp)
-                raise RuntimeError(f"Erro ao consultar status do Avatar 3.1 Plus (HTTP {resp.status_code}): {details}")
+                raise RuntimeError(f"Erro ao consultar status do {engine_name} (HTTP {resp.status_code}): {details}")
 
             data = resp.json() if resp.content else {}
             data_node = data.get("data") if isinstance(data, dict) else {}
@@ -401,28 +406,28 @@ async def generate_avatar_video(
                 _collect_video_url_candidates(data, poll_candidates)
                 candidate_urls = _dedupe_preserve_order(poll_candidates)
                 if not candidate_urls:
-                    raise RuntimeError("Avatar 3.1 Plus returned empty output")
+                    raise RuntimeError(f"{engine_name} returned empty output")
                 break
             if status in {"failed", "error", "canceled", "cancelled"}:
                 error = (data_node or {}).get("error") or data.get("error") or "Unknown error"
-                raise RuntimeError(f"Avatar 3.1 Plus generation failed: {error}")
+                raise RuntimeError(f"{engine_name} generation failed: {error}")
 
             elapsed = time.time() - start_time
             progress = min(75, 20 + int((elapsed / timeout_seconds) * 55))
             if progress > last_progress and on_progress:
                 last_progress = progress
-                await on_progress(progress, "Gerando video com Avatar 3.1 Plus...")
+                await on_progress(progress, f"Gerando video com {engine_name}...")
 
             await asyncio.sleep(5)
         else:
-            raise TimeoutError(f"Avatar 3.1 Plus generation timed out after {timeout_seconds}s")
+            raise TimeoutError(f"{engine_name} generation timed out after {timeout_seconds}s")
 
     result_candidates = await _fetch_result_video_candidates(prediction_id, api_key)
     if result_candidates:
         candidate_urls = _dedupe_preserve_order(result_candidates + candidate_urls)
 
     if not candidate_urls:
-        raise RuntimeError("Avatar 3.1 Plus nao retornou URL de video valida")
+        raise RuntimeError(f"{engine_name} nao retornou URL de video valida")
 
     if on_progress:
         await on_progress(80, "Baixando video gerado...")
@@ -479,7 +484,7 @@ async def generate_avatar_video(
                 break
 
     if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-        raise RuntimeError("Falha ao baixar o video final do Avatar 3.1 Plus")
+        raise RuntimeError(f"Falha ao baixar o video final do {engine_name}")
 
-    logger.info("Avatar 3.1 Plus video ready: %s", output_path)
+    logger.info("%s video ready: %s", engine_name, output_path)
     return output_path
