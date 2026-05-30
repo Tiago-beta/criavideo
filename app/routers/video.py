@@ -1169,6 +1169,7 @@ class GenerateTempAudioRequest(BaseModel):
 class GenerateNarrationTextRequest(BaseModel):
     text: str
     tone: str = "informativo"
+    duration_seconds: int = 5
 
 
 async def _resolve_tts_voice_selection(
@@ -1380,6 +1381,7 @@ async def generate_narration_text(
         narration_text = await generate_powerful_narration_text(
             instruction_text=text,
             tone=str(req.tone or "informativo").strip() or "informativo",
+            duration_seconds=int(req.duration_seconds or 5),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

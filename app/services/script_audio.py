@@ -45,6 +45,20 @@ _NARRATION_TONE_LABELS = {
 }
 
 
+def _normalize_narration_duration_seconds(value: int | float | str | None) -> int:
+    parsed = int(float(value or 0)) if value not in (None, "") else 0
+    if parsed <= 0:
+        return 5
+    return max(5, min(3600, parsed))
+
+
+def _estimate_narration_word_range(duration_seconds: int) -> tuple[int, int]:
+    normalized_seconds = _normalize_narration_duration_seconds(duration_seconds)
+    center_words = max(12, round(normalized_seconds * 2.4))
+    tolerance = max(4, round(center_words * 0.12))
+    return max(8, center_words - tolerance), center_words + tolerance
+
+
 def _normalize_lookup_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value or "")
     return "".join(ch for ch in normalized if not unicodedata.combining(ch)).lower()
@@ -342,12 +356,15 @@ def _sanitize_generated_narration_text(value: str) -> str:
 async def generate_powerful_narration_text(
     instruction_text: str,
     tone: str = "informativo",
+    duration_seconds: int = 5,
 ) -> str:
     """Turn a chat-like request or rough draft into a final narration ready for recording."""
     cleaned_instruction = str(instruction_text or "").strip()
     if not cleaned_instruction:
         raise ValueError("Escreva um pedido ou rascunho antes de gerar a narração.")
 
+    normalized_duration_seconds = _normalize_narration_duration_seconds(duration_seconds)
+    min_words, max_words = _estimate_narration_word_range(normalized_duration_seconds)
     tone_label = _NARRATION_TONE_LABELS.get(
         str(tone or "informativo").strip().lower(),
         "forte, claro e natural",
@@ -364,10 +381,14 @@ async def generate_powerful_narration_text(
         "- Se o usuario mandou um rascunho, reescreva e eleve muito a qualidade sem perder a intencao central.\n"
         "- A narracao precisa soar humana, fluida, envolvente, convincente e forte.\n"
         "- Use pausas retoricas com '...' apenas quando ajudarem a interpretacao.\n"
-        "- Evite frases roboticas, genericas, tecnicas demais ou com cara de prompt."
+        "- Evite frases roboticas, genericas, tecnicas demais ou com cara de prompt.\n"
+        f"- A duracao alvo e de cerca de {normalized_duration_seconds} segundos de fala.\n"
+        f"- Mire aproximadamente entre {min_words} e {max_words} palavras, ajustando de forma natural para caber nessa duracao."
     )
     user_prompt = (
         f"TOM DESEJADO: {tone_label}\n\n"
+        f"DURACAO ALVO: {normalized_duration_seconds} segundos\n"
+        f"FAIXA DE PALAVRAS ESPERADA: {min_words} a {max_words} palavras\n\n"
         "PEDIDO OU TEXTO BASE DO USUARIO:\n"
         f"{cleaned_instruction}\n\n"
         "Entregue agora a versao final da narracao, pronta para ser gravada."

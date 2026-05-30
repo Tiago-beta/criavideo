@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v620 loaded");
+console.log("[CriaVideo] app.js v621 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -496,6 +496,119 @@ function handleAiSuggestCustomDurationInput() {
     _selectAiSuggestCustomDurationButton();
 }
 window.handleAiSuggestCustomDurationInput = handleAiSuggestCustomDurationInput;
+
+const SCRIPT_NARRATION_DURATION_PRESET_OPTIONS = [5, 10, 15, 60];
+const SCRIPT_NARRATION_DURATION_MAX_SECONDS = 3600;
+
+function _normalizeScriptNarrationDurationSeconds(value) {
+    const parsed = parseInt(value || 0, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return 0;
+    }
+    return Math.max(1, Math.min(SCRIPT_NARRATION_DURATION_MAX_SECONDS, parsed));
+}
+
+function _getScriptNarrationCustomDurationElements() {
+    return {
+        wrap: document.getElementById("script-audio-builder-duration-custom"),
+        input: document.getElementById("script-audio-builder-duration-value"),
+        unit: document.getElementById("script-audio-builder-duration-unit"),
+    };
+}
+
+function _showScriptNarrationCustomDurationControls(visible) {
+    const { wrap } = _getScriptNarrationCustomDurationElements();
+    if (!wrap) return;
+    wrap.hidden = !visible;
+}
+
+function _setScriptNarrationCustomDurationFromSeconds(seconds) {
+    const normalized = _normalizeScriptNarrationDurationSeconds(seconds);
+    const { input, unit } = _getScriptNarrationCustomDurationElements();
+    if (!input || !unit || !normalized) return;
+
+    if (normalized >= 60 && normalized % 60 === 0) {
+        input.value = String(normalized / 60);
+        unit.value = "minutes";
+        return;
+    }
+
+    input.value = String(normalized);
+    unit.value = "seconds";
+}
+
+function _getScriptNarrationCustomDurationSeconds() {
+    const { input, unit } = _getScriptNarrationCustomDurationElements();
+    if (!input || !unit) return 0;
+
+    const rawValue = parseInt(input.value || 0, 10);
+    if (!Number.isFinite(rawValue) || rawValue <= 0) {
+        return 0;
+    }
+
+    const multiplier = unit.value === "minutes" ? 60 : 1;
+    return _normalizeScriptNarrationDurationSeconds(rawValue * multiplier);
+}
+
+function _selectScriptNarrationCustomDurationButton() {
+    const group = document.getElementById("script-audio-builder-duration-options");
+    if (!group) return;
+    group.querySelectorAll(".duration-option").forEach((button) => {
+        button.classList.toggle("selected", button.dataset.value === "custom");
+    });
+}
+
+function _syncScriptNarrationDurationOptions(preferredSeconds = null) {
+    const container = document.getElementById("script-audio-builder-duration-options");
+    if (!container) return;
+
+    let desiredSeconds = preferredSeconds != null
+        ? _normalizeScriptNarrationDurationSeconds(preferredSeconds)
+        : 0;
+
+    if (!(desiredSeconds > 0)) {
+        const selected = container.querySelector(".duration-option.selected");
+        if (selected) {
+            desiredSeconds = selected.dataset.value === "custom"
+                ? _getScriptNarrationCustomDurationSeconds()
+                : _normalizeScriptNarrationDurationSeconds(selected.dataset.value);
+        }
+    }
+
+    if (!(desiredSeconds > 0)) {
+        desiredSeconds = SCRIPT_NARRATION_DURATION_PRESET_OPTIONS[0];
+    }
+
+    const useCustom = !SCRIPT_NARRATION_DURATION_PRESET_OPTIONS.includes(desiredSeconds);
+    container.innerHTML = SCRIPT_NARRATION_DURATION_PRESET_OPTIONS.map((value) => {
+        const selected = !useCustom && value === desiredSeconds ? " selected" : "";
+        return `<button class="duration-option${selected}" data-value="${value}" type="button">${value}s</button>`;
+    }).join("") + `<button class="duration-option${useCustom ? " selected" : ""}" data-value="custom" type="button">+</button>`;
+
+    _showScriptNarrationCustomDurationControls(useCustom);
+    if (useCustom) {
+        _setScriptNarrationCustomDurationFromSeconds(desiredSeconds);
+    }
+}
+
+function _getSelectedScriptNarrationDurationSeconds() {
+    const selected = document.querySelector("#script-audio-builder-duration-options .duration-option.selected");
+    if (!selected) {
+        return SCRIPT_NARRATION_DURATION_PRESET_OPTIONS[0];
+    }
+    if ((selected.dataset.value || "") === "custom") {
+        return _getScriptNarrationCustomDurationSeconds();
+    }
+    return _normalizeScriptNarrationDurationSeconds(selected.dataset.value) || SCRIPT_NARRATION_DURATION_PRESET_OPTIONS[0];
+}
+
+function handleScriptNarrationCustomDurationInput() {
+    const customSeconds = _getScriptNarrationCustomDurationSeconds();
+    _showScriptNarrationCustomDurationControls(true);
+    if (!customSeconds) return;
+    _selectScriptNarrationCustomDurationButton();
+}
+window.handleScriptNarrationCustomDurationInput = handleScriptNarrationCustomDurationInput;
 
 function _formatDurationOptionLabel(value) {
     const parsed = parseInt(value || 0, 10);
@@ -7482,6 +7595,21 @@ function initCreateWizard() {
                     }
                 } else {
                     _showAiSuggestCustomDurationControls(false);
+                }
+            } else if (durationGroupId === "script-audio-builder-duration-options") {
+                if ((dur.dataset.value || "") === "custom") {
+                    _showScriptNarrationCustomDurationControls(true);
+                    const customValue = _getScriptNarrationCustomDurationSeconds();
+                    if (customValue > 0) {
+                        _setScriptNarrationCustomDurationFromSeconds(customValue);
+                    }
+                    const customInput = document.getElementById("script-audio-builder-duration-value");
+                    if (customInput) {
+                        customInput.focus();
+                        customInput.select();
+                    }
+                } else {
+                    _showScriptNarrationCustomDurationControls(false);
                 }
             } else if (durationGroupId === "similar-unified-duration-options") {
                 similarState.unifiedDuration = parseInt(dur.dataset.value || "10", 10) || 10;
@@ -21975,7 +22103,7 @@ function _setScriptAudioNarrationButtonState(isLoading = false) {
     if (!actionBtn || !actionLabel) return;
     actionBtn.disabled = !!isLoading;
     actionBtn.classList.toggle("is-loading", !!isLoading);
-    actionLabel.textContent = isLoading ? "Gerando..." : "Gerar narração";
+    actionLabel.textContent = isLoading ? "Gerando..." : "Gerar";
 }
 
 function _setScriptAudioDictationStatus(message = "", tone = "") {
@@ -22544,6 +22672,7 @@ function toggleScriptAudioBuilder(forceOpen = null) {
     if (trigger) trigger.classList.toggle("active", shouldOpen);
 
     if (shouldOpen) {
+        _syncScriptNarrationDurationOptions();
         loadVoiceProfiles();
         const builderText = document.getElementById("script-audio-builder-text");
         if (builderText && !builderText.value.trim()) {
@@ -22574,6 +22703,11 @@ async function generateScriptAudioNarration() {
         alert("Escreva um pedido ou rascunho antes de gerar a narração.");
         return;
     }
+    const narrationDurationSeconds = _getSelectedScriptNarrationDurationSeconds();
+    if (!(narrationDurationSeconds > 0)) {
+        alert("Escolha uma duração válida para a narração.");
+        return;
+    }
 
     const selectedTone = _getSelectedSegmentedOptionValue(
         "script-audio-builder-tone-options",
@@ -22589,6 +22723,7 @@ async function generateScriptAudioNarration() {
             body: JSON.stringify({
                 text: instructionText,
                 tone: selectedTone,
+                duration_seconds: narrationDurationSeconds,
             }),
         });
         const narrationText = String(result?.text || "").trim();
@@ -22602,7 +22737,7 @@ async function generateScriptAudioNarration() {
         syncScriptAudioBuilderDraft();
         _setScriptTextValue(narrationText);
         scriptGeneratedAudioText = narrationText;
-        _setScriptAudioBuilderStatus("Narração pronta. Revise o texto e gere o áudio quando quiser.", "success");
+        _setScriptAudioBuilderStatus(`Narração pronta para cerca de ${narrationDurationSeconds}s. Revise o texto e gere o áudio quando quiser.`, "success");
     } catch (error) {
         _setScriptAudioBuilderStatus(`Erro ao gerar a narração: ${error.message}`, "error");
     } finally {
@@ -22810,11 +22945,13 @@ function _normalizeNarrationState(rawState = null) {
     }
 
     const voiceProfileId = parseInt(rawState.voice_profile_id ?? rawState.voiceProfileId ?? "0", 10) || 0;
+    const durationSeconds = _normalizeScriptNarrationDurationSeconds(rawState.duration_seconds ?? rawState.durationSeconds ?? "0");
     const state = {
         text: String(rawState.text || "").trim(),
         voice: String(rawState.voice || "").trim(),
         voiceType: String(rawState.voice_type || rawState.voiceType || "").trim().toLowerCase(),
         voiceProfileId,
+        durationSeconds,
         tone: String(rawState.tone || "").trim(),
         pauseLevel: String(rawState.pause_level || rawState.pauseLevel || "").trim(),
         style: String(rawState.style || "").trim(),
@@ -22827,7 +22964,7 @@ function _normalizeNarrationState(rawState = null) {
         state.voiceType = "profile";
     }
 
-    if (!state.text && !state.voice && !state.voiceProfileId && !state.tone && !state.pauseLevel && !state.style && !state.pace && !state.accent && !state.notes) {
+    if (!state.text && !state.voice && !state.voiceProfileId && !state.durationSeconds && !state.tone && !state.pauseLevel && !state.style && !state.pace && !state.accent && !state.notes) {
         return null;
     }
 
@@ -22841,6 +22978,7 @@ function _collectScriptAudioBuilderState() {
         voice: voiceSelection.voice,
         voice_type: voiceSelection.voiceType,
         voice_profile_id: voiceSelection.voiceProfileId,
+        duration_seconds: _getSelectedScriptNarrationDurationSeconds(),
         tone: _getSelectedSegmentedOptionValue("script-audio-builder-tone-options", scriptData.tone || "informativo"),
         pause_level: _getSelectedSegmentedOptionValue("script-audio-builder-pause-options", getSelectedPause("script-pause-options") || "normal"),
         style: String(document.getElementById("script-audio-style")?.value || "").trim(),
@@ -22968,6 +23106,7 @@ async function _restoreScriptAudioBuilderState(rawState = null, options = {}) {
     if (textEl) {
         textEl.value = state.text || "";
     }
+    _syncScriptNarrationDurationOptions(state.durationSeconds || SCRIPT_NARRATION_DURATION_PRESET_OPTIONS[0]);
     syncScriptAudioBuilderDraft();
 
     _setSelectedSegmentedOptionValue("script-audio-builder-tone-options", state.tone || "informativo");
@@ -23010,6 +23149,7 @@ function _syncScriptAudioBuilderVoiceUi() {
 }
 
 function _resetScriptAudioBuilderControls() {
+    _syncScriptNarrationDurationOptions(SCRIPT_NARRATION_DURATION_PRESET_OPTIONS[0]);
     _setSelectedSegmentedOptionValue("script-audio-builder-tone-options", "informativo");
     _setSelectedSegmentedOptionValue("script-audio-builder-pause-options", "normal");
 

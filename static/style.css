@@ -9097,8 +9097,7 @@ svg.spin {
 
 .script-audio-builder-text-head {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: flex-start;
     gap: 12px;
     flex-wrap: wrap;
     margin-bottom: 8px;
@@ -9108,10 +9107,45 @@ svg.spin {
     margin-bottom: 0;
 }
 
+.script-audio-builder-duration-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.script-audio-builder-duration-options .duration-option {
+    min-width: 64px;
+}
+
+.script-audio-builder-duration-options .duration-option[data-value="custom"] {
+    min-width: 48px;
+    padding-inline: 14px;
+    font-weight: 700;
+}
+
+.script-audio-builder-text-shell {
+    position: relative;
+}
+
+.script-audio-builder-textarea {
+    padding-top: 54px;
+}
+
 .script-audio-ai-btn {
     min-height: 38px;
     padding: 8px 14px;
     gap: 8px;
+}
+
+.script-audio-ai-btn--inside {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1;
+    min-height: 34px;
+    padding: 6px 12px;
+    border-radius: 999px;
 }
 
 .script-audio-ai-btn.is-loading {
@@ -9258,6 +9292,15 @@ svg.spin {
     .script-audio-ai-btn {
         width: 100%;
         justify-content: center;
+    }
+
+    .script-audio-ai-btn--inside {
+        left: 10px;
+        right: auto;
+    }
+
+    .script-audio-builder-textarea {
+        padding-top: 58px;
     }
 
     .realistic-voice-grid,
