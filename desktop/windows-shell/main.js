@@ -24,6 +24,14 @@ const CONFIG_FILE_NAME = "desktop-config.json";
 
 let desktopRuntimeProcess = null;
 
+function stripUtf8Bom(text) {
+    return String(text || "").replace(/^\uFEFF/, "");
+}
+
+function readDesktopEnvOverride(name) {
+    return String(process.env[name] || "").trim();
+}
+
 function resolveConfigPath() {
     const packagedPath = path.join(process.resourcesPath, CONFIG_FILE_NAME);
     if (app.isPackaged && fs.existsSync(packagedPath)) {
@@ -217,19 +225,27 @@ function buildRuntimeErrorUrl(error, desktopConfig) {
 function loadDesktopConfig() {
     const configPath = resolveConfigPath();
     try {
-        const raw = fs.readFileSync(configPath, "utf8");
+        const raw = stripUtf8Bom(fs.readFileSync(configPath, "utf8"));
         const parsed = JSON.parse(raw);
-        const targetUrl = String(parsed?.targetUrl || DEFAULT_TARGET_URL).trim() || DEFAULT_TARGET_URL;
+        const envTargetUrl = readDesktopEnvOverride("CRIAVIDEO_DESKTOP_TARGET_URL");
+        let targetUrl = String(parsed?.targetUrl || DEFAULT_TARGET_URL).trim() || DEFAULT_TARGET_URL;
+        if (envTargetUrl) {
+            targetUrl = envTargetUrl;
+        }
         const runtimeConfig = {
             ...DEFAULT_RUNTIME,
             ...(parsed?.runtime || {}),
         };
-        runtimeConfig.mode = String(runtimeConfig.mode || DEFAULT_RUNTIME.mode).trim().toLowerCase() === "local-proxy"
+        const envRuntimeMode = readDesktopEnvOverride("CRIAVIDEO_DESKTOP_RUNTIME_MODE");
+        const envLocalUrl = readDesktopEnvOverride("CRIAVIDEO_DESKTOP_LOCAL_URL");
+        const envHealthUrl = readDesktopEnvOverride("CRIAVIDEO_DESKTOP_HEALTH_URL");
+        const envApiTargetUrl = readDesktopEnvOverride("CRIAVIDEO_DESKTOP_API_TARGET_URL");
+        runtimeConfig.mode = String(envRuntimeMode || runtimeConfig.mode || DEFAULT_RUNTIME.mode).trim().toLowerCase() === "local-proxy"
             ? "local-proxy"
             : "remote";
-        runtimeConfig.localUrl = String(runtimeConfig.localUrl || DEFAULT_RUNTIME.localUrl).trim() || DEFAULT_RUNTIME.localUrl;
-        runtimeConfig.healthUrl = String(runtimeConfig.healthUrl || DEFAULT_RUNTIME.healthUrl).trim() || DEFAULT_RUNTIME.healthUrl;
-        runtimeConfig.apiTargetUrl = normalizeOrigin(runtimeConfig.apiTargetUrl || targetUrl, targetUrl);
+        runtimeConfig.localUrl = String(envLocalUrl || runtimeConfig.localUrl || DEFAULT_RUNTIME.localUrl).trim() || DEFAULT_RUNTIME.localUrl;
+        runtimeConfig.healthUrl = String(envHealthUrl || runtimeConfig.healthUrl || DEFAULT_RUNTIME.healthUrl).trim() || DEFAULT_RUNTIME.healthUrl;
+        runtimeConfig.apiTargetUrl = normalizeOrigin(envApiTargetUrl || runtimeConfig.apiTargetUrl || targetUrl, targetUrl);
         runtimeConfig.startupTimeoutMs = Math.max(5000, Number(runtimeConfig.startupTimeoutMs || DEFAULT_RUNTIME.startupTimeoutMs));
         return {
             targetUrl,
@@ -240,6 +256,7 @@ function loadDesktopConfig() {
             },
         };
     } catch (error) {
+        console.warn(`[desktop-config] failed to load ${configPath}: ${error?.message || error}`);
         return {
             targetUrl: DEFAULT_TARGET_URL,
             runtime: { ...DEFAULT_RUNTIME, apiTargetUrl: normalizeOrigin(DEFAULT_TARGET_URL, DEFAULT_TARGET_URL) },

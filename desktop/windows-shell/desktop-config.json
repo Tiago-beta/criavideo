@@ -1,4 +1,4 @@
-﻿{
+{
     "targetUrl":  "https://staging.criavideo.pro/video",
     "runtime":  {
                     "mode":  "remote",
@@ -17,4 +17,3 @@
                    "minHeight":  760
                }
 }
-

@@ -1,5 +1,8 @@
 param(
     [string]$TargetUrl = "https://criavideo.pro/video",
+    [ValidateSet("remote", "local-proxy")]
+    [string]$RuntimeMode = "remote",
+    [string]$ApiTargetUrl = "",
     [switch]$SkipInstall,
     [switch]$SkipCopyToStatic
 )
@@ -13,10 +16,29 @@ $downloadsDir = Join-Path $repoRoot "static\downloads"
 
 $originalConfig = Get-Content -Raw -Encoding UTF8 $configPath
 
+function Write-Utf8NoBom {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Content
+    )
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 try {
     $config = $originalConfig | ConvertFrom-Json
     $config.targetUrl = $TargetUrl
-    $config | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 $configPath
+    if (-not $config.runtime) {
+        $config | Add-Member -MemberType NoteProperty -Name runtime -Value ([pscustomobject]@{})
+    }
+    $config.runtime.mode = $RuntimeMode
+    if ($ApiTargetUrl) {
+        $config.runtime.apiTargetUrl = $ApiTargetUrl
+    }
+    Write-Utf8NoBom -Path $configPath -Content ($config | ConvertTo-Json -Depth 10)
 
     Push-Location $desktopDir
     try {
@@ -56,5 +78,5 @@ try {
     }
 }
 finally {
-    Set-Content -Encoding UTF8 $configPath $originalConfig
+    Write-Utf8NoBom -Path $configPath -Content $originalConfig
 }
