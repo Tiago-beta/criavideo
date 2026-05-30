@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v616 loaded");
+console.log("[CriaVideo] app.js v617 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -20053,14 +20053,26 @@ function _getScriptImageCreatorPromptInput(index = 0) {
 }
 
 function _getScriptImageCreatorSceneResultIndex(sceneIndex) {
-    for (let index = 0; index < _scriptImageCreatorState.generatedImages.length; index += 1) {
+    const normalizedSceneIndex = Number.parseInt(String(sceneIndex), 10);
+    if (!Number.isFinite(normalizedSceneIndex)) {
+        return -1;
+    }
+
+    let fallbackIndex = -1;
+    for (let index = _scriptImageCreatorState.generatedImages.length - 1; index >= 0; index -= 1) {
         const item = _scriptImageCreatorState.generatedImages[index];
         const currentSceneIndex = Number.parseInt(String(item?.scene_index ?? index), 10);
-        if (currentSceneIndex === sceneIndex) {
+        if (currentSceneIndex !== normalizedSceneIndex) {
+            continue;
+        }
+        if (!String(item?.derived_from_upload_id || "").trim()) {
             return index;
         }
+        if (fallbackIndex < 0) {
+            fallbackIndex = index;
+        }
     }
-    return -1;
+    return fallbackIndex;
 }
 
 function _getScriptImageCreatorSceneResult(sceneIndex) {
@@ -21631,6 +21643,9 @@ async function generateScriptImageFromModal() {
         return;
     }
 
+    const existingGeneratedImages = isEditing ? [] : [..._scriptImageCreatorState.generatedImages];
+    const parsedImages = [];
+
     const submitBtn = document.getElementById("script-image-generator-submit");
     _scriptImageCreatorState.busy = true;
     if (submitBtn) {
@@ -21659,12 +21674,9 @@ async function generateScriptImageFromModal() {
         const size = document.getElementById("script-image-generator-size")?.value || "2K";
         const seed = Number.parseInt(document.getElementById("script-image-generator-seed")?.value || "-1", 10) || -1;
         const thinkingMode = !!document.getElementById("script-image-generator-thinking")?.checked;
-        const parsedImages = [];
         let firstGeneratedBaseUploadId = "";
 
         if (!isEditing) {
-            _scriptImageCreatorState.generatedImages = [];
-            _scriptImageCreatorState.activeResultIndex = 0;
             _scriptImageCreatorState.activeSceneIndex = -1;
             renderScriptImageCreatorPromptEditors();
             renderScriptImageCreatorResults();
@@ -21733,8 +21745,8 @@ async function generateScriptImageFromModal() {
             }
 
             if (!isEditing) {
-                _scriptImageCreatorState.generatedImages = [...parsedImages];
-                _scriptImageCreatorState.activeResultIndex = parsedImages.length - 1;
+                _scriptImageCreatorState.generatedImages = [...existingGeneratedImages, ...parsedImages];
+                _scriptImageCreatorState.activeResultIndex = _scriptImageCreatorState.generatedImages.length - 1;
                 renderScriptImageCreatorResults();
             }
         }
@@ -21750,8 +21762,8 @@ async function generateScriptImageFromModal() {
             }
             cancelScriptImageCreatorEdit(true);
         } else {
-            _scriptImageCreatorState.generatedImages = parsedImages;
-            _scriptImageCreatorState.activeResultIndex = 0;
+            _scriptImageCreatorState.generatedImages = [...existingGeneratedImages, ...parsedImages];
+            _scriptImageCreatorState.activeResultIndex = Math.max(0, _scriptImageCreatorState.generatedImages.length - 1);
         }
 
         renderScriptImageCreatorResults();
@@ -21776,7 +21788,7 @@ async function generateScriptImageFromModal() {
             "success",
         );
     } catch (error) {
-        const partialCount = isEditing ? 0 : _scriptImageCreatorState.generatedImages.length;
+        const partialCount = isEditing ? 0 : parsedImages.length;
         const sceneLabel = !isEditing && prompts.length > 1 ? ` na cena ${Math.min(lastSceneIndex + 1, prompts.length)}` : "";
         const partialLabel = partialCount > 0
             ? ` ${partialCount} ${partialCount === 1 ? "imagem pronta permaneceu disponível." : "imagens prontas permaneceram disponíveis."}`
