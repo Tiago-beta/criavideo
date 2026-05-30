@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v614 loaded");
+console.log("[CriaVideo] app.js v615 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -4591,6 +4591,10 @@ function _createLiveSessionDefaultState() {
         nextSceneError: "",
         pendingApprovalArgs: null,
         pendingApprovalLaunching: false,
+        pendingApprovalEditOpen: false,
+        pendingApprovalEditInstruction: "",
+        pendingApprovalEditBusy: false,
+        pendingApprovalEditModelId: "",
         pollingTimer: null,
         lastProjectSnapshot: null,
         openingEditor: false,
@@ -8126,6 +8130,125 @@ function _getCreateLivePendingInitialImage(prefix) {
     };
 }
 
+function _getCreateLivePendingApprovalEditModels() {
+    return SCRIPT_IMAGE_CREATOR_MODELS.filter((item) => (Number(item?.maxReferences || 0) || 0) > 0);
+}
+
+function _getCreateLivePendingApprovalEditModelId() {
+    const editModels = _getCreateLivePendingApprovalEditModels();
+    const requestedModelId = String(createLiveSessionState.pendingApprovalEditModelId || "").trim();
+    if (requestedModelId && editModels.some((item) => item.id === requestedModelId)) {
+        return requestedModelId;
+    }
+    const fallbackModel = editModels.find((item) => item.id === DEFAULT_SCRIPT_IMAGE_CREATOR_MODEL_ID) || editModels[0] || null;
+    return String(fallbackModel?.id || "").trim();
+}
+
+function _getCreateLivePendingApprovalEditModelMeta(modelId = _getCreateLivePendingApprovalEditModelId()) {
+    const normalizedModelId = String(modelId || "").trim();
+    const editModels = _getCreateLivePendingApprovalEditModels();
+    const fallbackModel = editModels.find((item) => item.id === DEFAULT_SCRIPT_IMAGE_CREATOR_MODEL_ID) || editModels[0] || null;
+    const baseMeta = editModels.find((item) => item.id === normalizedModelId) || fallbackModel;
+    if (!baseMeta) {
+        return null;
+    }
+    const editOverrides = baseMeta.editOverrides && typeof baseMeta.editOverrides === "object"
+        ? baseMeta.editOverrides
+        : null;
+    return editOverrides
+        ? { ...baseMeta, ...editOverrides }
+        : baseMeta;
+}
+
+function _buildCreateLivePendingApprovalEditPrompt(basePrompt, instruction) {
+    const normalizedBasePrompt = String(basePrompt || "").trim();
+    const normalizedInstruction = String(instruction || "").trim();
+    const promptBlocks = [];
+
+    if (normalizedBasePrompt) {
+        promptBlocks.push(normalizedBasePrompt);
+    }
+
+    promptBlocks.push("Use a imagem de referencia enviada como base principal desta cena.");
+
+    if (normalizedInstruction) {
+        promptBlocks.push(`Ajuste solicitado: ${normalizedInstruction}`);
+        promptBlocks.push("Mantenha a identidade visual, o enquadramento e a composicao da cena, alterando apenas o que foi pedido.");
+    } else {
+        promptBlocks.push("Crie uma nova variacao desta mesma imagem, mantendo a identidade visual, o enquadramento e a composicao da cena.");
+    }
+
+    return promptBlocks.join("\n\n");
+}
+
+function _buildCreateLivePendingApprovalEditModelCard(modelMeta) {
+    const normalizedModelId = String(modelMeta?.id || "").trim();
+    const selectedModelId = _getCreateLivePendingApprovalEditModelId();
+    const modal = document.getElementById("modal-script-image-creator");
+    const sourceCard = modal
+        ? modal.querySelector(`.script-image-model-card[data-model="${normalizedModelId}"]`)
+        : null;
+    const fallbackMarkup = `
+        <span class="script-image-model-card-copy">
+            <strong>${workflowEscapeHtml(String(modelMeta?.label || normalizedModelId).trim() || "Motor")}</strong>
+            <small>${workflowEscapeHtml(String(modelMeta?.defaultCostLabel || "Use este motor para refazer a foto.").trim())}</small>
+        </span>
+    `;
+
+    return `
+        <button
+            type="button"
+            class="script-image-model-card${selectedModelId === normalizedModelId ? " is-active" : ""}"
+            data-model="${workflowEscapeHtml(normalizedModelId)}"
+            aria-pressed="${selectedModelId === normalizedModelId ? "true" : "false"}"
+            onclick="createLiveSelectInitialImageEditModel('${normalizedModelId}')"
+            ${createLiveSessionState.pendingApprovalEditBusy ? "disabled" : ""}
+        >
+            ${sourceCard ? sourceCard.innerHTML : fallbackMarkup}
+        </button>
+    `;
+}
+
+function _buildCreateLivePendingApprovalEditMarkup(sceneItem) {
+    const instructionValue = workflowEscapeHtml(String(createLiveSessionState.pendingApprovalEditInstruction || "").trim());
+    const selectedMeta = _getCreateLivePendingApprovalEditModelMeta();
+    const modelCardsMarkup = _getCreateLivePendingApprovalEditModels()
+        .map((item) => _buildCreateLivePendingApprovalEditModelCard(item))
+        .join("");
+
+    return `
+        <div class="similar-reference-frame-editor">
+            <label for="create-live-initial-image-edit-instruction">O que você quer mudar na foto?</label>
+            <textarea
+                id="create-live-initial-image-edit-instruction"
+                class="wizard-textarea similar-reference-frame-editor-input"
+                rows="4"
+                maxlength="5000"
+                placeholder="Ex.: troque o fundo, ajuste a expressão, mude a roupa, deixe mais cinematográfico..."
+                oninput="createLiveSetInitialImageEditInstruction(this.value)"
+                ${createLiveSessionState.pendingApprovalEditBusy ? "disabled" : ""}
+            >${instructionValue}</textarea>
+            <div class="similar-reference-frame-editor-tools">
+                <span class="field-hint">Escreva o ajuste e escolha abaixo o motor para refazer esta foto antes de criar o vídeo.</span>
+            </div>
+            <div class="form-group">
+                <label>Motor para refazer a foto</label>
+                <div class="script-image-generator-model-options" role="listbox" aria-label="Motores para editar a imagem">
+                    ${modelCardsMarkup}
+                </div>
+            </div>
+            <div class="similar-reference-frame-editor-actions similar-reference-frame-create-actions">
+                <button class="similar-frame-create-btn" type="button" onclick="createLiveApplyInitialImageEdit()" ${createLiveSessionState.pendingApprovalEditBusy || !selectedMeta ? "disabled" : ""}>
+                    ${createLiveSessionState.pendingApprovalEditBusy ? "Refazendo..." : "Refazer foto"}
+                </button>
+                <button class="btn btn-secondary" type="button" onclick="createLiveToggleInitialImageEdit(false)" ${createLiveSessionState.pendingApprovalEditBusy ? "disabled" : ""}>
+                    Fechar
+                </button>
+            </div>
+        </div>
+    `;
+}
+
 function _startCreateLiveInitialApproval(options = {}) {
     const prefix = String(options.prefix || "script").trim() || "script";
     const selectedEngine = _normalizeCreateLiveEngine(options.engine || _getRealisticSelectedEngine(prefix));
@@ -8161,6 +8284,10 @@ function _startCreateLiveInitialApproval(options = {}) {
         realisticStyle: String(options.realisticStyle || "").trim(),
     };
     createLiveSessionState.pendingApprovalLaunching = false;
+    createLiveSessionState.pendingApprovalEditOpen = false;
+    createLiveSessionState.pendingApprovalEditInstruction = "";
+    createLiveSessionState.pendingApprovalEditBusy = false;
+    createLiveSessionState.pendingApprovalEditModelId = _getCreateLivePendingApprovalEditModelId();
     createLiveSessionState.sceneProjects = [{
         sceneNumber: 1,
         projectId: 0,
@@ -8189,7 +8316,7 @@ function _startCreateLiveInitialApproval(options = {}) {
 }
 
 async function createLiveSessionApproveInitialImage() {
-    if (!_hasCreateLivePendingApproval() || createLiveSessionState.pendingApprovalLaunching) {
+    if (!_hasCreateLivePendingApproval() || createLiveSessionState.pendingApprovalLaunching || createLiveSessionState.pendingApprovalEditBusy) {
         return;
     }
 
@@ -8221,11 +8348,130 @@ async function createLiveSessionApproveInitialImage() {
     }
 }
 
+function createLiveSetInitialImageEditInstruction(value) {
+    createLiveSessionState.pendingApprovalEditInstruction = String(value || "");
+}
+
+function createLiveSelectInitialImageEditModel(modelId) {
+    if (createLiveSessionState.pendingApprovalEditBusy) {
+        return;
+    }
+    const nextMeta = _getCreateLivePendingApprovalEditModelMeta(modelId);
+    if (!nextMeta) {
+        return;
+    }
+    createLiveSessionState.pendingApprovalEditModelId = nextMeta.id;
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+}
+
+function createLiveToggleInitialImageEdit(forceOpen = null) {
+    if (!_hasCreateLivePendingApproval() || createLiveSessionState.pendingApprovalEditBusy) {
+        return;
+    }
+    const nextOpen = typeof forceOpen === "boolean"
+        ? forceOpen
+        : !createLiveSessionState.pendingApprovalEditOpen;
+    createLiveSessionState.pendingApprovalEditOpen = nextOpen;
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+    if (nextOpen) {
+        setTimeout(() => {
+            const input = document.getElementById("create-live-initial-image-edit-instruction");
+            if (input) {
+                input.focus();
+                const textLength = String(input.value || "").length;
+                input.setSelectionRange(textLength, textLength);
+            }
+        }, 0);
+    }
+}
+
+async function createLiveApplyInitialImageEdit() {
+    if (!_hasCreateLivePendingApproval() || createLiveSessionState.pendingApprovalEditBusy) {
+        return;
+    }
+
+    const firstScene = _getCreateLiveSceneProjects()[0] || null;
+    const referenceUploadId = String(firstScene?.sourceFrameUploadId || "").trim();
+    if (!referenceUploadId) {
+        showToast("A imagem base ainda nao esta pronta para edicao.", "error");
+        return;
+    }
+
+    const selectedMeta = _getCreateLivePendingApprovalEditModelMeta();
+    if (!selectedMeta) {
+        showToast("Nenhum motor de edicao esta disponivel no momento.", "error");
+        return;
+    }
+
+    const instructionInput = document.getElementById("create-live-initial-image-edit-instruction");
+    const instructionSource = instructionInput?.value ?? createLiveSessionState.pendingApprovalEditInstruction ?? "";
+    const instruction = String(instructionSource).trim();
+    const basePrompt = String(firstScene?.promptText || createLiveSessionState.pendingApprovalArgs?.prompt || createLiveSessionState.title || "").trim();
+    if (!basePrompt) {
+        showToast("Nao foi possivel recuperar o prompt desta imagem.", "error");
+        return;
+    }
+
+    createLiveSessionState.pendingApprovalEditInstruction = instruction;
+    createLiveSessionState.pendingApprovalEditBusy = true;
+    createLiveSessionState.pendingApprovalEditOpen = true;
+    createLiveSessionState.pendingApprovalEditModelId = selectedMeta.id;
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+
+    try {
+        const response = await api("/video/script-image/generate", {
+            method: "POST",
+            body: JSON.stringify({
+                prompt: _buildCreateLivePendingApprovalEditPrompt(basePrompt, instruction),
+                model: selectedMeta.id,
+                aspect_ratio: String(createLiveSessionState.aspectRatio || "9:16").trim() || "9:16",
+                size: "2K",
+                n: 1,
+                seed: -1,
+                thinking_mode: false,
+                reference_upload_ids: [referenceUploadId],
+            }),
+        });
+
+        const nextImage = Array.isArray(response?.images) ? response.images[0] : null;
+        const nextUploadId = String(nextImage?.upload_id || "").trim();
+        const nextPreviewUrl = String(nextImage?.image_url || "").trim();
+        if (!nextUploadId || !nextPreviewUrl) {
+            throw new Error("A nova imagem veio vazia.");
+        }
+
+        const updatedScene = {
+            ...firstScene,
+            sourceFrameUploadId: nextUploadId,
+            sourceFrameUrl: nextPreviewUrl,
+        };
+        createLiveSessionState.sceneProjects.splice(0, 1, updatedScene);
+
+        const firstSourceImage = Array.isArray(createLiveSessionState.sourceItems)
+            ? createLiveSessionState.sourceItems.find((item) => String(item?.kind || "").trim() === "image")
+            : null;
+        if (firstSourceImage) {
+            firstSourceImage.url = nextPreviewUrl;
+        }
+
+        createLiveSessionState.pendingApprovalEditInstruction = "";
+        showToast("Imagem atualizada com sucesso.", "success");
+    } catch (error) {
+        showToast(`Erro ao refazer a foto: ${error.message}`, "error");
+    } finally {
+        createLiveSessionState.pendingApprovalEditBusy = false;
+        _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+    }
+}
+
 function _getCreateLiveSceneStatusLabel(sceneItem) {
     if (!sceneItem) {
         return "Pronta";
     }
     if (_hasCreateLivePendingApproval() && !(Number(sceneItem?.projectId || 0) > 0) && String(sceneItem?.sourceFrameUploadId || "").trim()) {
+        if (createLiveSessionState.pendingApprovalEditBusy) {
+            return "Atualizando imagem";
+        }
         return createLiveSessionState.pendingApprovalLaunching ? "Criando vídeo" : "Imagem pronta";
     }
     const status = String(sceneItem.status || "").trim().toLowerCase();
@@ -8318,6 +8564,7 @@ function _buildCreateLiveFrameGalleryItem(options = {}) {
     const busyTitle = workflowEscapeHtml(String(options.busyTitle || "Processando").trim() || "Processando");
     const busySubtitle = workflowEscapeHtml(String(options.busySubtitle || "").trim());
     const downloadName = workflowEscapeHtml(String(options.downloadName || "frame.png").trim() || "frame.png");
+    const extraActionMarkup = String(options.extraActionMarkup || "").trim();
     const contentMarkup = url
         ? `<img src="${workflowEscapeHtml(url)}" alt="${alt}" loading="lazy">`
         : `
@@ -8338,7 +8585,14 @@ function _buildCreateLiveFrameGalleryItem(options = {}) {
         `
         : "";
     const actionMarkup = url
-        ? `<a class="similar-frame-image-action" href="${workflowEscapeHtml(url)}" download="${downloadName}" title="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}" aria-label="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}">${SIMILAR_ACTION_ICONS.download}</a>`
+        ? (extraActionMarkup
+            ? `
+                <div class="similar-frame-image-actions">
+                    <a class="similar-frame-image-action" href="${workflowEscapeHtml(url)}" download="${downloadName}" title="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}" aria-label="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}">${SIMILAR_ACTION_ICONS.download}</a>
+                    ${extraActionMarkup}
+                </div>
+            `
+            : `<a class="similar-frame-image-action" href="${workflowEscapeHtml(url)}" download="${downloadName}" title="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}" aria-label="Baixar ${workflowEscapeHtml(badgeRaw.toLowerCase())}">${SIMILAR_ACTION_ICONS.download}</a>`)
         : "";
 
     return `
@@ -8540,6 +8794,9 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
     const hideTitle = !!options.hideTitle;
     const inputFrameUrl = String(sceneItem?.sourceFrameUrl || "").trim() || (sceneNumber === 1 ? _getCreateLivePreferredSourcePreviewUrl() : "");
     const pendingApproval = sceneNumber === 1 && _hasCreateLivePendingApproval();
+    const pendingEditOpen = pendingApproval && createLiveSessionState.pendingApprovalEditOpen;
+    const pendingEditBusy = pendingApproval && createLiveSessionState.pendingApprovalEditBusy;
+    const pendingEditModelMeta = pendingApproval ? _getCreateLivePendingApprovalEditModelMeta() : null;
     const frameItems = [];
 
     if (inputFrameUrl) {
@@ -8549,6 +8806,16 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
             url: inputFrameUrl,
             alt: `Cena ${sceneNumber} entrada`,
             downloadName: _getCreateLiveFrameDownloadName(sceneNumber, "entrada"),
+            busy: pendingEditBusy,
+            busyTitle: "Atualizando imagem",
+            busySubtitle: pendingEditModelMeta?.label || statusLabel,
+            extraActionMarkup: pendingApproval
+                ? `
+                    <button class="similar-frame-image-action${pendingEditOpen ? " is-active" : ""}" type="button" onclick="createLiveToggleInitialImageEdit()" title="Editar imagem" aria-label="Editar imagem" ${pendingEditBusy ? "disabled" : ""}>
+                        ${SIMILAR_ACTION_ICONS.edit}
+                    </button>
+                `
+                : "",
         }));
     }
 
@@ -8576,7 +8843,9 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
             : pendingApproval
                 ? (createLiveSessionState.pendingApprovalLaunching
                     ? "Seu vídeo está sendo iniciado com esta imagem."
-                    : "Se gostar da imagem, clique em Criar abaixo.")
+                    : (pendingEditBusy
+                        ? "A nova imagem aparece aqui assim que terminar."
+                        : "Se gostar da imagem, clique em Criar abaixo."))
                 : (isActive ? "A cena aparece aqui assim que terminar." : "Aguardando vídeo."),
     });
     const headMeta = durationLabel
@@ -8592,9 +8861,12 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
         `;
     const afterMarkupParts = [];
     if (pendingApproval) {
+        if (pendingEditOpen) {
+            afterMarkupParts.push(_buildCreateLivePendingApprovalEditMarkup(sceneItem));
+        }
         afterMarkupParts.push(`
             <div class="create-live-session-approval-actions">
-                <button class="similar-frame-create-btn" type="button" onclick="createLiveSessionApproveInitialImage()" ${createLiveSessionState.pendingApprovalLaunching ? "disabled" : ""}>
+                <button class="similar-frame-create-btn" type="button" onclick="createLiveSessionApproveInitialImage()" ${(createLiveSessionState.pendingApprovalLaunching || createLiveSessionState.pendingApprovalEditBusy) ? "disabled" : ""}>
                     <span class="btn-create-video-label">${createLiveSessionState.pendingApprovalLaunching ? "Criando..." : "Criar"}</span>
                 </button>
             </div>
