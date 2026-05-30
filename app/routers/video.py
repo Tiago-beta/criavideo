@@ -622,11 +622,37 @@ def _build_continuous_time_ranges(total_duration: int, block_count: int) -> list
     return ranges
 
 
+_MAX_REALISTIC_PROMPT_DURATION_SECONDS = 86400
+
+
+def _normalize_realistic_prompt_duration_seconds(raw_value: object, default_value: int = 10) -> int:
+    try:
+        parsed = int(raw_value or default_value)
+    except Exception:
+        parsed = default_value
+    return max(1, min(parsed, _MAX_REALISTIC_PROMPT_DURATION_SECONDS))
+
+
+def _get_temporal_prompt_block_counts(duration: int) -> tuple[int, int]:
+    safe_duration = max(1, int(duration or 1))
+    if safe_duration <= 6:
+        return 4, 1
+    if safe_duration <= 12:
+        return 5, 2
+    if safe_duration <= 20:
+        return 6, 3
+    if safe_duration <= 60:
+        return 7, 3
+
+    scene_count = max(8, (safe_duration + 74) // 75)
+    dialogue_count = max(3, (safe_duration + 179) // 180)
+    return min(scene_count, 24), min(dialogue_count, 12)
+
+
 def _build_temporal_prompt_fallback(briefing: str, duration: int, topic_seed: str = "") -> str:
     cleaned_briefing = _strip_non_visual_briefing_directives(briefing)
-    scene_count = 4 if duration <= 6 else 5 if duration <= 12 else 6
+    scene_count, dialogue_count = _get_temporal_prompt_block_counts(duration)
     scene_ranges = _build_continuous_time_ranges(duration, scene_count)
-    dialogue_count = 1 if duration <= 6 else 2
     dialogue_ranges = _build_continuous_time_ranges(duration, dialogue_count)
 
     visual_seed = _extract_thematic_seed(topic_seed, cleaned_briefing, max_chars=240)
@@ -782,10 +808,10 @@ async def _generate_temporal_realistic_prompt(
     cleaned_briefing = _strip_non_visual_briefing_directives(optimized_prompt)
     atlas_prompt_model = get_atlas_prompt_model()
 
-    scene_count = 4 if duration <= 6 else 5 if duration <= 12 else 6 if duration <= 20 else 7
-    dialogue_count = 1 if duration <= 6 else 2 if duration <= 16 else 3
+    scene_count, dialogue_count = _get_temporal_prompt_block_counts(duration)
     scene_ranges = _build_continuous_time_ranges(duration, scene_count)
     dialogue_ranges = _build_continuous_time_ranges(duration, dialogue_count)
+    prompt_token_budget = min(6200, 900 + (scene_count * 110) + (dialogue_count * 70))
 
     scene_ranges_text = "\n".join(f"{start:.1f}s - {end:.1f}s" for start, end in scene_ranges)
     dialogue_ranges_text = "\n".join(f"{start:.1f}s - {end:.1f}s" for start, end in dialogue_ranges)
@@ -828,7 +854,7 @@ async def _generate_temporal_realistic_prompt(
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.35,
-            max_tokens=1400,
+            max_tokens=prompt_token_budget,
         )
         first_candidate = (resp.choices[0].message.content or "").strip()
     except Exception as e:
@@ -888,7 +914,7 @@ async def _generate_temporal_realistic_prompt(
                 {"role": "user", "content": repair_user},
             ],
             temperature=0.15,
-            max_tokens=1400,
+            max_tokens=prompt_token_budget,
         )
         repaired_candidate = (repair_resp.choices[0].message.content or "").strip()
         repaired_valid, repaired_reason = _is_temporal_prompt_format_valid(
@@ -6930,20 +6956,7 @@ async def generate_realistic_prompt_endpoint(
         topic_for_optimizer = topic
 
     engine = req.engine if req.engine in _REALISTIC_ENGINES else "wan2"
-    if engine == "grok":
-        duration = max(1, min(int(req.duration or 10), 60))
-    elif engine == "viduq3":
-        duration = max(1, min(int(req.duration or 10), 16))
-    elif engine == "wan2":
-        duration = _normalize_wan_duration_seconds(int(req.duration or 5))
-    elif engine == "lite2":
-        duration = _normalize_lite2_duration_seconds(int(req.duration or 5))
-    elif engine in {"seedance", "mega15"}:
-        duration = max(1, min(int(req.duration or 10), 15))
-    elif engine == "avatar31":
-        duration = max(1, min(int(req.duration or 10), 180))
-    else:
-        duration = max(1, min(int(req.duration or 10), 10))
+    duration = _normalize_realistic_prompt_duration_seconds(req.duration, default_value=10)
 
     interaction_persona = _normalize_interaction_persona(req.interaction_persona)
     selected_persona_profile_id = int(req.persona_profile_id or 0)

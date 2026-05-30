@@ -6063,6 +6063,29 @@ th {
     color: var(--accent);
 }
 
+.duration-option.duration-option-custom {
+    min-width: 52px;
+    padding-inline: 14px;
+    font-weight: 700;
+}
+
+.duration-custom-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 140px;
+    gap: 10px;
+    margin-top: 10px;
+    max-width: 360px;
+}
+
+.duration-custom-controls[hidden] {
+    display: none !important;
+}
+
+.duration-custom-input,
+.duration-custom-unit {
+    min-width: 0;
+}
+
 /* Engine options */
 .engine-options {
     display: flex;

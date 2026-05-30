@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260530-04">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260530-05">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 617;
+        var REQUIRED_VER = 618;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -3000,7 +3000,14 @@
                             <button class="duration-option" data-value="48" type="button">48s</button>
                             <button class="duration-option" data-value="56" type="button">56s</button>
                         </div>
-                        <small class="field-hint">Esse tempo orienta a IA a montar um prompt coerente com a duração final.</small>
+                        <div class="duration-custom-controls" id="ai-suggest-realistic-duration-custom" hidden>
+                            <input id="ai-suggest-realistic-duration-value" class="input duration-custom-input" type="number" min="1" step="1" placeholder="Ex: 10" oninput="handleAiSuggestCustomDurationInput()">
+                            <select id="ai-suggest-realistic-duration-unit" class="input duration-custom-unit" onchange="handleAiSuggestCustomDurationInput()">
+                                <option value="seconds">segundos</option>
+                                <option value="minutes" selected>minutos</option>
+                            </select>
+                        </div>
+                        <small class="field-hint">Esse tempo orienta a IA a montar um prompt coerente com a duração final. Use o botão + para definir qualquer duração em segundos ou minutos.</small>
                     </div>
                     <div class="form-group" id="ai-suggest-static-camera-group" hidden>
                         <button type="button" id="ai-suggest-static-camera-btn" class="static-camera-toggle" aria-pressed="false" onclick="toggleAiSuggestStaticCamera()">
@@ -4701,8 +4708,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260530-04"></script>
-    <script src="/video/static/pwa.js?v=20260530-04"></script>
+    <script src="/video/static/app.js?v=20260530-05"></script>
+    <script src="/video/static/pwa.js?v=20260530-05"></script>
 </body>
 </html>
 

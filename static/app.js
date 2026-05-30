@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v617 loaded");
+console.log("[CriaVideo] app.js v618 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -231,6 +231,8 @@ const SEEDANCE_REALISTIC_DURATION_OPTIONS = [5, 10, 15];
 const LITE2_REALISTIC_DURATION_OPTIONS = [5, 10, 12];
 const VIDU_Q3_REALISTIC_DURATION_OPTIONS = Array.from({ length: 16 }, (_, index) => index + 1);
 const AUTO_GROK_DURATION_OPTIONS = [5, 10, 12, 15];
+const AI_SUGGEST_REALISTIC_DURATION_EXTRA_PRESETS = [60];
+const AI_SUGGEST_REALISTIC_DURATION_MAX_SECONDS = 86400;
 const SIMILAR_ENGINE_OPTIONS = ["lite2", "mega15", "viduq3", "grok", "wan2", "seedance"];
 const SIMILAR_UNIFIED_ENGINE_CARD_OPTIONS = ["lite2", "viduq3", "grok", "wan2", "mega15", "seedance"];
 const SEEDANCE_FAMILY_ENGINES = new Set(["seedance", "mega15", "lite2", "viduq3"]);
@@ -412,6 +414,88 @@ function _renderDurationButtons(containerId, options, preferredValue = null) {
         return `<button class="duration-option${selected}" data-value="${value}" type="button">${value}s</button>`;
     }).join("");
 }
+
+function _normalizeAiSuggestDurationSeconds(value) {
+    const parsed = parseInt(value || 0, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return 0;
+    }
+    return Math.max(1, Math.min(AI_SUGGEST_REALISTIC_DURATION_MAX_SECONDS, parsed));
+}
+
+function _getAiSuggestRealisticDurationPresetOptions(engineValue) {
+    const baseOptions = _getCreateRealisticDurationOptions(engineValue)
+        .map((value) => _normalizeAiSuggestDurationSeconds(value))
+        .filter((value) => value > 0);
+    return Array.from(new Set([...baseOptions, ...AI_SUGGEST_REALISTIC_DURATION_EXTRA_PRESETS])).sort((left, right) => left - right);
+}
+
+function _getAiSuggestCustomDurationElements() {
+    return {
+        wrap: document.getElementById("ai-suggest-realistic-duration-custom"),
+        input: document.getElementById("ai-suggest-realistic-duration-value"),
+        unit: document.getElementById("ai-suggest-realistic-duration-unit"),
+    };
+}
+
+function _showAiSuggestCustomDurationControls(visible) {
+    const { wrap } = _getAiSuggestCustomDurationElements();
+    if (!wrap) return;
+    wrap.hidden = !visible;
+}
+
+function _setAiSuggestCustomDurationFromSeconds(seconds) {
+    const normalized = _normalizeAiSuggestDurationSeconds(seconds);
+    const { input, unit } = _getAiSuggestCustomDurationElements();
+    if (!input || !unit || !normalized) return;
+
+    if (normalized >= 60 && normalized % 60 === 0) {
+        input.value = String(normalized / 60);
+        unit.value = "minutes";
+        return;
+    }
+
+    input.value = String(normalized);
+    unit.value = "seconds";
+}
+
+function _getAiSuggestCustomDurationSeconds() {
+    const { input, unit } = _getAiSuggestCustomDurationElements();
+    if (!input || !unit) return 0;
+
+    const rawValue = parseInt(input.value || 0, 10);
+    if (!Number.isFinite(rawValue) || rawValue <= 0) {
+        return 0;
+    }
+
+    const multiplier = unit.value === "minutes" ? 60 : 1;
+    return _normalizeAiSuggestDurationSeconds(rawValue * multiplier);
+}
+
+function _selectAiSuggestCustomDurationButton() {
+    const group = document.getElementById("ai-suggest-realistic-duration");
+    if (!group) return;
+    group.querySelectorAll(".duration-option").forEach((button) => {
+        button.classList.toggle("selected", button.dataset.value === "custom");
+    });
+}
+
+function _getSelectedAiSuggestRealisticDurationSeconds() {
+    const selected = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
+    if (!selected) return 0;
+    if ((selected.dataset.value || "") === "custom") {
+        return _getAiSuggestCustomDurationSeconds();
+    }
+    return _normalizeAiSuggestDurationSeconds(selected.dataset.value);
+}
+
+function handleAiSuggestCustomDurationInput() {
+    const customSeconds = _getAiSuggestCustomDurationSeconds();
+    _showAiSuggestCustomDurationControls(true);
+    if (!customSeconds) return;
+    _selectAiSuggestCustomDurationButton();
+}
+window.handleAiSuggestCustomDurationInput = handleAiSuggestCustomDurationInput;
 
 function _formatDurationOptionLabel(value) {
     const parsed = parseInt(value || 0, 10);
@@ -606,8 +690,35 @@ function _syncAiSuggestRealisticDurationOptions(preferredValue = null) {
     const engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected")
         || document.querySelector("#wizard-realistic-engine .engine-option.selected");
     const engine = engineBtn?.dataset.value || "mega15";
-    const options = _getCreateRealisticDurationOptions(engine);
-    _renderDurationButtons("ai-suggest-realistic-duration", options, preferredValue);
+    const options = _getAiSuggestRealisticDurationPresetOptions(engine);
+    const currentSelected = preferredValue != null
+        ? _normalizeAiSuggestDurationSeconds(preferredValue)
+        : _getSelectedAiSuggestRealisticDurationSeconds();
+    const useCustom = currentSelected > 0 && !options.includes(currentSelected);
+
+    _renderDurationButtons(
+        "ai-suggest-realistic-duration",
+        options,
+        useCustom ? options[0] : currentSelected,
+    );
+
+    const durationGroup = document.getElementById("ai-suggest-realistic-duration");
+    if (!durationGroup) return;
+
+    const customBtn = document.createElement("button");
+    customBtn.className = `duration-option duration-option-custom${useCustom ? " selected" : ""}`;
+    customBtn.dataset.value = "custom";
+    customBtn.type = "button";
+    customBtn.title = "Definir duração personalizada";
+    customBtn.textContent = "+";
+    durationGroup.appendChild(customBtn);
+
+    if (useCustom) {
+        _setAiSuggestCustomDurationFromSeconds(currentSelected);
+        _showAiSuggestCustomDurationControls(true);
+    } else {
+        _showAiSuggestCustomDurationControls(false);
+    }
 }
 
 function _syncAutoRealisticDurationOptions(preferredValue = null) {
@@ -7357,6 +7468,21 @@ function initCreateWizard() {
                 scheduleScriptCreditEstimate();
             } else if (durationGroupId === "auto-realistic-duration") {
                 scheduleAutoCreditEstimate();
+            } else if (durationGroupId === "ai-suggest-realistic-duration") {
+                if ((dur.dataset.value || "") === "custom") {
+                    _showAiSuggestCustomDurationControls(true);
+                    const customValue = _getAiSuggestCustomDurationSeconds();
+                    if (customValue > 0) {
+                        _setAiSuggestCustomDurationFromSeconds(customValue);
+                    }
+                    const customInput = document.getElementById("ai-suggest-realistic-duration-value");
+                    if (customInput) {
+                        customInput.focus();
+                        customInput.select();
+                    }
+                } else {
+                    _showAiSuggestCustomDurationControls(false);
+                }
             } else if (durationGroupId === "similar-unified-duration-options") {
                 similarState.unifiedDuration = parseInt(dur.dataset.value || "10", 10) || 10;
                 scheduleSimilarUnifiedActionCreditEstimates();
@@ -25544,7 +25670,7 @@ function showAiSuggestPanel() {
     // Adapt AI suggest panel for mode
     document.getElementById("ai-suggest-title").textContent = isRealistic ? "Gerar prompt com IA" : "Gerar roteiro com IA";
     aiHintEl.textContent = isRealistic
-        ? "Descreva a cena e escolha a duracao para a IA criar um prompt cinematografico com timeline por segundos e Dialogue timing."
+        ? "Descreva a cena e escolha a duracao para a IA criar um prompt cinematografico com timeline por segundos e Dialogue timing. Para tempos longos, use o botao +."
         : "Descreva o tema e a IA criara um roteiro completo";
     aiTopicEl.placeholder = isRealistic
         ? "Ex: uma cachorra adotou um gatinho, produto girando..."
@@ -25629,18 +25755,13 @@ async function generateAiScript() {
         const interactionPersona = selectedPersonaType || "none";
         const usePersonalizedReferences = selectedPersonaType === "personalizado";
         setSelectedRealisticPersona(selectedPersonaType);
-        const realisticDurationBtn = document.querySelector("#ai-suggest-realistic-duration .duration-option.selected");
-        let realisticDuration = realisticDurationBtn ? parseInt(realisticDurationBtn.dataset.value, 10) : 8;
+        const realisticDuration = _getSelectedAiSuggestRealisticDurationSeconds();
+        if (!realisticDuration) {
+            alert("Escolha uma duração válida para o prompt.");
+            return;
+        }
         let engineBtn = document.querySelector("#script-realistic-engine .engine-option.selected") || document.querySelector("#wizard-realistic-engine .engine-option.selected");
         let engine = engineBtn ? engineBtn.dataset.value : "grok";
-        if (["wan2", "avatar25"].includes(engine)) {
-            const normalized = _normalizeWanDurationMultiple(realisticDuration);
-            if (normalized !== realisticDuration) {
-                realisticDuration = normalized;
-                _syncAiSuggestRealisticDurationOptions(realisticDuration);
-                showToast(`${getRealisticEngineLabel(engine)} usa duracao em multiplos de 8 segundos.`);
-            }
-        }
         const disablePersonaReference = !selectedPersonaType || _isPersonaNoReferenceEnabled("ai", selectedPersonaType);
         let selectedPersonaIds = [];
         if (!disablePersonaReference && selectedPersonaType) {
