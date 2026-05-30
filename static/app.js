@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v610 loaded");
+console.log("[CriaVideo] app.js v611 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -35996,6 +35996,11 @@ function _editorStartPlaybackFollowLoop() {
             _editor._playbackFollowRaf = 0;
             return;
         }
+        const previewTimelineTime = Number(_editor.timelineTime || sourceTime || 0);
+        if (_editorHasActiveVisualVideoLayerAtTime(previewTimelineTime)) {
+            _editorStartVirtualTimelinePlayback(previewTimelineTime);
+            return;
+        }
 
         const stalledForMs = ts - lastAdvanceTs;
         const canFallbackToVirtual = !video.ended && !video.seeking && (video.paused || video.readyState >= 2);
@@ -36156,14 +36161,6 @@ function _editorResetMusicWaveformState() {
     };
 }
 
-
-        if (_editor.playing && !_editor._virtualPlaybackActive) {
-            const previewTimelineTime = Number(_editor.timelineTime || sourceTime || 0);
-            if (_editorHasActiveVisualVideoLayerAtTime(previewTimelineTime)) {
-                _editorStartVirtualTimelinePlayback(previewTimelineTime);
-                return;
-            }
-        }
 function _editorResetSourceWaveformState() {
     _editorSourceWaveformState = {
         key: "",
