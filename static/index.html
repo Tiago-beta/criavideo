@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260530-09">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260530-10">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 622;
+        var REQUIRED_VER = 623;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -1918,6 +1918,7 @@
                                         </div>
                                     </div>
 
+                                    <div id="script-audio-builder-composer-step" class="script-audio-builder-composer-step">
                                     <div id="script-audio-direction-panel" class="script-audio-direction-panel" hidden>
                                         <div class="script-audio-direction-head">
                                             <strong>Direção da voz</strong>
@@ -1992,11 +1993,13 @@
                                             </div>
                                         </div>
                                         <div class="script-audio-builder-text-shell">
-                                            <button class="persona-record-btn script-audio-ai-btn script-audio-ai-btn--inside" id="script-audio-builder-ai-btn" type="button" onclick="generateScriptAudioNarration()">
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.2L18 9l-4.1 1.6L12 15l-1.9-4.4L6 9l4.1-1.8L12 3z"></path><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"></path><path d="M5 14l.6 1.4L7 16l-1.4.6L5 18l-.6-1.4L3 16l1.4-.6L5 14z"></path></svg>
-                                                <span id="script-audio-builder-ai-btn-label">Gerar</span>
-                                            </button>
                                             <textarea id="script-audio-builder-text" class="wizard-textarea script-audio-builder-textarea" rows="6" maxlength="20000" placeholder="Grave, cole ou escreva a narração aqui..." oninput="syncScriptAudioBuilderDraft()"></textarea>
+                                            <div class="script-audio-builder-text-footer">
+                                                <button class="persona-record-btn script-audio-ai-btn script-audio-ai-btn--inside" id="script-audio-builder-ai-btn" type="button" onclick="generateScriptAudioNarration()">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.2L18 9l-4.1 1.6L12 15l-1.9-4.4L6 9l4.1-1.8L12 3z"></path><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"></path><path d="M5 14l.6 1.4L7 16l-1.4.6L5 18l-.6-1.4L3 16l1.4-.6L5 14z"></path></svg>
+                                                    <span id="script-audio-builder-ai-btn-label">Gerar</span>
+                                                </button>
+                                            </div>
                                         </div>
                                         <small class="script-audio-builder-text-hint">Escreva como se fosse um chat: peça uma abertura forte, um texto mais emocionante, um anúncio mais vendedor ou um roteiro completo. A duração escolhida orienta o tamanho final da fala.</small>
                                     </div>
@@ -2032,6 +2035,7 @@
 
                                     <div class="script-video-audio-builder-footer">
                                         <button class="btn btn-primary" id="script-generate-audio-btn" type="button" onclick="generateScriptVideoAudio()">Gerar áudio</button>
+                                    </div>
                                     </div>
                                 </div>
                             </div>
@@ -4733,8 +4737,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260530-09"></script>
-    <script src="/video/static/pwa.js?v=20260530-09"></script>
+    <script src="/video/static/app.js?v=20260530-10"></script>
+    <script src="/video/static/pwa.js?v=20260530-10"></script>
 </body>
 </html>
 

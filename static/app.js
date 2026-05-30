@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v622 loaded");
+console.log("[CriaVideo] app.js v623 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -22233,6 +22233,7 @@ function updateScriptVideoAreaVisibility() {
     const header = document.getElementById("script-video-tools-header");
     const area = document.getElementById("script-video-area");
     const builder = document.getElementById("script-video-audio-builder");
+    const builderHead = document.getElementById("script-video-audio-builder-head");
     const generatedAudioSummary = document.getElementById("script-generated-audio-summary");
     const selectionRow = document.getElementById("script-video-selection-row");
     const narrationChoice = document.getElementById("script-video-narration-choice");
@@ -22248,6 +22249,7 @@ function updateScriptVideoAreaVisibility() {
     const audioVideoTrigger = document.getElementById("script-user-audio-video-trigger");
     const builderHeading = document.getElementById("script-audio-builder-heading");
     const builderSubheading = document.getElementById("script-audio-builder-subheading");
+    const hasExplicitAudioBuilderVoiceSelection = _hasExplicitVoiceSelection("script-audio-builder");
     const videoEnabled = !!document.getElementById("script-use-video")?.checked;
     const userAudioEnabled = !!document.getElementById("script-use-user-audio")?.checked;
     const audioFirstMode = _isCreateAudioFirstMode();
@@ -22293,21 +22295,31 @@ function updateScriptVideoAreaVisibility() {
         audioVideoTrigger.hidden = true;
     }
     const builderCopy = document.getElementById("script-audio-builder-copy");
-    if (builderCopy) builderCopy.hidden = realisticNarrationBuilderActive ? false : audioFirstMode || (!hasVideo && !userAudioEnabled);
+    const shouldShowBuilderCopy = realisticNarrationBuilderActive || audioFirstMode || hasVideo || userAudioEnabled;
+    if (builderHead) builderHead.hidden = !shouldShowBuilderCopy;
+    if (builderCopy) builderCopy.hidden = !shouldShowBuilderCopy;
     if (builderHeading) {
         builderHeading.textContent = realisticNarrationBuilderActive
             ? "Criar narração para esta cena"
-            : hasVideo
-                ? "Criar áudio para este vídeo"
-                : "Criar áudio com voz IA";
+            : audioFirstMode
+                ? (hasExplicitAudioBuilderVoiceSelection ? "Agora escreva sua narração" : "Escolha sua voz abaixo")
+                : hasVideo
+                    ? "Criar áudio para este vídeo"
+                    : "Criar áudio com voz IA";
     }
     if (builderSubheading) {
         builderSubheading.textContent = realisticNarrationBuilderActive
             ? "Grave para transcrever, cole ou escreva a narração e gere o áudio antes de criar o vídeo final."
-            : hasVideo
-                ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
-                : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
+            : audioFirstMode
+                ? (hasExplicitAudioBuilderVoiceSelection
+                    ? "Defina a duração, escreva o pedido da narração e gere o áudio antes de continuar."
+                    : "Esse é o primeiro passo. Escolha a voz e, em seguida, liberamos a duração e o texto da narração.")
+                : hasVideo
+                    ? "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar."
+                    : "Grave para transcrever, cole a letra ou escreva o texto e gere o áudio antes de continuar.";
     }
+
+    _syncScriptAudioBuilderVoiceUi();
 
     _syncScriptAudioFirstSurface();
 }
@@ -22681,6 +22693,8 @@ function toggleScriptAudioBuilder(forceOpen = null) {
         }
     }
 
+    _syncScriptAudioBuilderVoiceUi();
+
     updateScriptVideoAreaVisibility();
 }
 
@@ -22915,6 +22929,14 @@ function _resolveVoiceSelectionFromSelector(prefix) {
     return { voice: DEFAULT_CREATE_AI_VOICE_ID, voiceType: "builtin", voiceProfileId: 0 };
 }
 
+function _hasExplicitVoiceSelection(prefix) {
+    const selector = document.getElementById(`${prefix}-voice-selector`);
+    if (!selector) {
+        return false;
+    }
+    return !!selector.querySelector(".persona-item.selected, .wizard-option.selected");
+}
+
 function _describeCreateVoiceProvider(voiceType = "") {
     const normalized = String(voiceType || "builtin").trim().toLowerCase();
     if (normalized === "gemini") return "Gemini 3.1 Flash TTS Preview";
@@ -23144,12 +23166,21 @@ async function _restoreScriptAudioBuilderState(rawState = null, options = {}) {
 
 function _syncScriptAudioBuilderVoiceUi() {
     const directionPanel = document.getElementById("script-audio-direction-panel");
-    if (!directionPanel) {
-        return;
-    }
+    const composerStep = document.getElementById("script-audio-builder-composer-step");
+    const builder = document.getElementById("script-video-audio-builder");
+    const hasExplicitVoiceSelection = _hasExplicitVoiceSelection("script-audio-builder");
     const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
-    const isGeminiVoice = String(voiceSelection.voiceType || "").trim().toLowerCase() === "gemini";
-    directionPanel.hidden = !isGeminiVoice;
+    const isGeminiVoice = hasExplicitVoiceSelection && String(voiceSelection.voiceType || "").trim().toLowerCase() === "gemini";
+    if (directionPanel) {
+        directionPanel.hidden = !isGeminiVoice;
+    }
+    const shouldGateComposerStep = _isCreateAudioFirstMode() && !hasExplicitVoiceSelection;
+    if (composerStep) {
+        composerStep.hidden = shouldGateComposerStep;
+    }
+    if (builder) {
+        builder.classList.toggle("script-video-audio-builder--voice-first", shouldGateComposerStep);
+    }
 }
 
 function _resetScriptAudioBuilderControls() {

@@ -8770,8 +8770,6 @@ svg.spin {
 #create-panel-script.create-panel--audio-first-mode #script-media-toggle-group,
 #create-panel-script.create-panel--audio-first-mode #script-tevoxi-section,
 #create-panel-script.create-panel--audio-first-mode #script-video-tools-header,
-#create-panel-script.create-panel--audio-first-mode #script-video-audio-builder-head,
-#create-panel-script.create-panel--audio-first-mode #script-audio-builder-copy,
 #create-panel-script.create-panel--audio-first-mode #script-video-selection-row,
 #create-panel-script.create-panel--audio-first-mode #script-video-narration-choice,
 #create-panel-script.create-panel--audio-first-mode #script-user-audio-section {
@@ -9053,6 +9051,10 @@ svg.spin {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
+.script-video-audio-builder--voice-first {
+    gap: 18px;
+}
+
 .script-video-audio-builder-head {
     display: flex;
     align-items: flex-start;
@@ -9129,7 +9131,29 @@ svg.spin {
 }
 
 .script-audio-builder-textarea {
-    padding-top: 54px;
+    padding-top: 16px;
+    padding-bottom: 72px;
+}
+
+.script-audio-builder-composer-step {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    animation: wizardFadeIn 0.22s ease-out;
+}
+
+.script-audio-builder-text-footer {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 1;
+    display: flex;
+    justify-content: flex-end;
+    pointer-events: none;
+}
+
+.script-audio-builder-text-footer .script-audio-ai-btn {
+    pointer-events: auto;
 }
 
 .script-audio-ai-btn {
@@ -9139,18 +9163,28 @@ svg.spin {
 }
 
 .script-audio-ai-btn--inside {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 1;
-    min-height: 34px;
-    padding: 6px 12px;
-    border-radius: 999px;
+    position: static;
+    min-height: 40px;
+    padding: 8px 14px;
+    border-radius: 14px;
+    border-color: rgba(0, 212, 255, 0.42);
+    background:
+        linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(24, 78, 140, 0.92)),
+        linear-gradient(180deg, rgba(8, 32, 54, 0.96), rgba(6, 21, 37, 0.98));
+    box-shadow: 0 10px 22px rgba(0, 212, 255, 0.14), 0 0 0 1px rgba(0, 212, 255, 0.08);
+    animation: scriptNarrationGenerateGlow 2.2s ease-in-out infinite;
+}
+
+.script-audio-ai-btn--inside:hover,
+.script-audio-ai-btn--inside:focus-visible {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(0, 212, 255, 0.2), 0 0 0 1px rgba(0, 212, 255, 0.18);
 }
 
 .script-audio-ai-btn.is-loading {
     opacity: 0.78;
     cursor: wait;
+    animation: none;
 }
 
 .script-audio-builder-text-hint {
@@ -9280,6 +9314,16 @@ svg.spin {
     justify-content: flex-end;
 }
 
+@keyframes scriptNarrationGenerateGlow {
+    0%,
+    100% {
+        box-shadow: 0 10px 22px rgba(0, 212, 255, 0.14), 0 0 0 1px rgba(0, 212, 255, 0.08);
+    }
+    50% {
+        box-shadow: 0 14px 28px rgba(0, 212, 255, 0.22), 0 0 0 1px rgba(0, 212, 255, 0.16);
+    }
+}
+
 @media (max-width: 768px) {
     .script-media-toggle-group {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9294,13 +9338,13 @@ svg.spin {
         justify-content: center;
     }
 
-    .script-audio-ai-btn--inside {
+    .script-audio-builder-text-footer {
         left: 10px;
-        right: auto;
+        right: 10px;
     }
 
     .script-audio-builder-textarea {
-        padding-top: 58px;
+        padding-bottom: 78px;
     }
 
     .realistic-voice-grid,
