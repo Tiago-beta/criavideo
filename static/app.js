@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v613 loaded");
+console.log("[CriaVideo] app.js v614 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -567,6 +567,11 @@ function _clearCreatePersonaPreview(prefix) {
     const preview = document.getElementById(`${prefix}-realistic-persona-preview`);
     if (!preview) return;
     preview.innerHTML = "";
+    const inlinePreview = document.getElementById(`${prefix}-realistic-persona-inline-preview`);
+    if (inlinePreview) {
+        inlinePreview.innerHTML = "";
+        inlinePreview.hidden = true;
+    }
 }
 
 function _clearScriptImageCreatorPersonaPreview() {
@@ -577,6 +582,7 @@ function _clearScriptImageCreatorPersonaPreview() {
 
 function _syncCreatePersonaUi(prefix) {
     const selectedPersona = _getSelectedCreatePersonaType(prefix);
+    _syncCreateActionRow(prefix);
     if (!selectedPersona) {
         _clearCreatePersonaPreview(prefix);
         return;
@@ -4583,6 +4589,8 @@ function _createLiveSessionDefaultState() {
         nextSceneDurationSeconds: 0,
         nextSceneBusy: false,
         nextSceneError: "",
+        pendingApprovalArgs: null,
+        pendingApprovalLaunching: false,
         pollingTimer: null,
         lastProjectSnapshot: null,
         openingEditor: false,
@@ -4971,7 +4979,84 @@ function _getSelectedDurationSeconds(containerId, fallbackSeconds = 8) {
     return fallbackSeconds;
 }
 
-function _buildRealisticEstimatePayload(prefix) {
+function _getCreateSelectedPersonaProfiles(prefix) {
+    const selectedPersona = _getSelectedCreatePersonaType(prefix);
+    if (!selectedPersona || _isPersonaNoReferenceEnabled(prefix, selectedPersona)) {
+        return [];
+    }
+    const profiles = _getPersonaProfiles(selectedPersona);
+    const selectedIds = _getSelectedPersonaProfileIds(prefix, selectedPersona);
+    return selectedIds
+        .map((sid) => profiles.find((profile) => (parseInt(profile?.id || "0", 10) || 0) === sid))
+        .filter(Boolean)
+        .slice(0, 6);
+}
+
+function _renderCreatePersonaInlinePreview(prefix) {
+    const preview = document.getElementById(`${prefix}-realistic-persona-inline-preview`);
+    if (!preview) return;
+
+    const profiles = _getCreateSelectedPersonaProfiles(prefix);
+    if (!profiles.length) {
+        preview.innerHTML = "";
+        preview.hidden = true;
+        return;
+    }
+
+    preview.hidden = false;
+    preview.innerHTML = profiles.map((profile, index) => {
+        const profileName = esc(profile?.name || `Persona ${index + 1}`);
+        const imageUrl = String(profile?.image_url || "").trim();
+        return imageUrl
+            ? `
+                <div class="create-realistic-persona-inline-chip" title="${profileName}" aria-label="${profileName}">
+                    <img src="${imageUrl}" alt="${profileName}">
+                </div>
+            `
+            : `
+                <div class="create-realistic-persona-inline-chip" title="${profileName}" aria-label="${profileName}">
+                    <span aria-hidden="true"></span>
+                </div>
+            `;
+    }).join("");
+}
+
+function _shouldCreateRealisticImageFirst(prefix) {
+    if (_getSelectedCreateVideoType(prefix) !== "realista") {
+        return false;
+    }
+
+    const selectedPersona = _getSelectedCreatePersonaType(prefix);
+    if (!selectedPersona || _isPersonaNoReferenceEnabled(prefix, selectedPersona)) {
+        return false;
+    }
+
+    if (prefix === "script") {
+        const wantsReferenceImage = !!document.getElementById("script-use-photos")?.checked;
+        if (wantsReferenceImage && scriptPhotos.length > 0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function _getCreatePrimaryActionLabel(prefix) {
+    if (_getSelectedCreateVideoType(prefix) !== "realista") {
+        return "Criar";
+    }
+    return _shouldCreateRealisticImageFirst(prefix) ? "Criar imagem" : "Criar";
+}
+
+function _buildCreateRealisticInitialImageEstimatePayload() {
+    return _buildOpenAiImageEstimatePayload();
+}
+
+function _buildRealisticEstimatePayload(prefix, options = {}) {
+    if (!options.forceVideo && _shouldCreateRealisticImageFirst(prefix)) {
+        return _buildCreateRealisticInitialImageEstimatePayload();
+    }
+
     const useTevoxi = !!document.getElementById(`${prefix}-realistic-tevoxi`)?.checked;
     const selectedEngine = _getRealisticSelectedEngine(prefix);
     const engine = (prefix === "auto" && useTevoxi) ? "wan2" : selectedEngine;
@@ -5416,7 +5501,7 @@ async function updateWizardCreditEstimate() {
         _setCreditEstimateBadge("wizard-credit-estimate", "", "ready", true);
         return;
     }
-    if (_getRealisticSelectedEngine("wizard") === "avatar31" && _getAvatarAutomaticDurationSeconds("wizard") <= 0) {
+    if (!_shouldCreateRealisticImageFirst("wizard") && _getRealisticSelectedEngine("wizard") === "avatar31" && _getAvatarAutomaticDurationSeconds("wizard") <= 0) {
         _setCreditEstimateBadge("wizard-credit-estimate", _getAvatarEstimatePendingMessage("wizard"), "ready");
         return;
     }
@@ -5437,7 +5522,7 @@ async function updateScriptCreditEstimate() {
         _setCreditEstimateBadge("script-credit-estimate", "", "ready", true);
         return;
     }
-    if (_getRealisticSelectedEngine("script") === "avatar31" && _getAvatarAutomaticDurationSeconds("script") <= 0) {
+    if (!_shouldCreateRealisticImageFirst("script") && _getRealisticSelectedEngine("script") === "avatar31" && _getAvatarAutomaticDurationSeconds("script") <= 0) {
         _setCreditEstimateBadge("script-credit-estimate", _getAvatarEstimatePendingMessage("script"), "ready");
         return;
     }
@@ -7665,6 +7750,14 @@ function _syncCreateActionRow(prefix) {
     if (aspectGroup) {
         aspectGroup.hidden = !isRealistic;
     }
+
+    const nextLabel = _getCreatePrimaryActionLabel(prefix);
+    const labelEl = createBtn.querySelector(".btn-create-video-label");
+    if (labelEl) {
+        labelEl.textContent = nextLabel;
+    } else {
+        createBtn.textContent = nextLabel;
+    }
 }
 
 function updateFlowUI(panelId, stepIndex, flow, prefix) {
@@ -8014,9 +8107,126 @@ function _formatCreateLiveSceneDuration(sceneItem) {
     return "";
 }
 
+function _hasCreateLivePendingApproval() {
+    const firstScene = _getCreateLiveSceneProjects()[0] || null;
+    return !!createLiveSessionState.pendingApprovalArgs
+        && !(Number(firstScene?.projectId || 0) > 0)
+        && !!String(firstScene?.sourceFrameUploadId || "").trim();
+}
+
+function _getCreateLivePendingInitialImage(prefix) {
+    const normalizedPrefix = String(prefix || "").trim();
+    if (!normalizedPrefix || String(createLiveSessionState.prefix || "").trim() !== normalizedPrefix || !_hasCreateLivePendingApproval()) {
+        return null;
+    }
+    const firstScene = _getCreateLiveSceneProjects()[0] || null;
+    return {
+        uploadId: String(firstScene?.sourceFrameUploadId || "").trim(),
+        previewUrl: String(firstScene?.sourceFrameUrl || "").trim(),
+    };
+}
+
+function _startCreateLiveInitialApproval(options = {}) {
+    const prefix = String(options.prefix || "script").trim() || "script";
+    const selectedEngine = _normalizeCreateLiveEngine(options.engine || _getRealisticSelectedEngine(prefix));
+    const sourceItems = _collectCreateLiveSessionSourceItems(prefix);
+    const aspectRatio = _resolveCreateLiveAspectRatio(prefix, options.aspectRatio);
+    const sceneTitle = String(options.sceneTitle || options.title || "Cena 1").trim() || "Cena 1";
+
+    _resetCreateLiveSession();
+
+    createLiveSessionState.active = true;
+    createLiveSessionState.prefix = prefix;
+    createLiveSessionState.mode = prefix;
+    createLiveSessionState.videoType = "realista";
+    createLiveSessionState.title = String(options.title || options.promptText || sceneTitle).trim() || sceneTitle;
+    createLiveSessionState.selectedEngine = selectedEngine;
+    createLiveSessionState.engineLabel = String(options.engineLabel || getRealisticEngineLabel(selectedEngine) || "IA").trim() || "IA";
+    createLiveSessionState.nextSceneDurationSeconds = _pickClosestDurationOption(
+        _getCreateRealisticDurationOptions(selectedEngine),
+        Number(options.durationSeconds || 0) || 0
+    );
+    createLiveSessionState.aspectRatio = aspectRatio;
+    createLiveSessionState.returnFrameEnabled = false;
+    createLiveSessionState.useLastImageAsFinalFrame = false;
+    createLiveSessionState.sourceItems = sourceItems;
+    createLiveSessionState.pendingApprovalArgs = {
+        prompt: String(options.prompt || "").trim(),
+        durationSelectorId: String(options.durationSelectorId || "").trim(),
+        aspectSelectorId: String(options.aspectSelectorId || "").trim(),
+        musicCheckboxId: String(options.musicCheckboxId || "").trim(),
+        title: String(options.title || "").trim(),
+        engineSelectorId: String(options.engineSelectorId || "").trim(),
+        prefix,
+        realisticStyle: String(options.realisticStyle || "").trim(),
+    };
+    createLiveSessionState.pendingApprovalLaunching = false;
+    createLiveSessionState.sceneProjects = [{
+        sceneNumber: 1,
+        projectId: 0,
+        title: sceneTitle,
+        promptText: String(options.promptText || options.prompt || "").trim(),
+        sourceFrameUrl: String(options.imagePreviewUrl || "").trim(),
+        sourceFrameUploadId: String(options.imageUploadId || "").trim(),
+        status: "draft_ready",
+        progress: 100,
+        errorMessage: "",
+        videoUrl: "",
+        thumbnailUrl: "",
+        duration: 0,
+        returnedFrameUrl: "",
+        returnedFrameUploadId: "",
+        extractingFrame: false,
+        extractError: "",
+        snapshot: null,
+    }];
+
+    const progressEl = document.getElementById("create-progress");
+    if (progressEl) progressEl.hidden = true;
+    _restoreCreateLiveOriginPanel(prefix);
+    _renderCreateLiveSession();
+    _queueCreateLiveScroll();
+}
+
+async function createLiveSessionApproveInitialImage() {
+    if (!_hasCreateLivePendingApproval() || createLiveSessionState.pendingApprovalLaunching) {
+        return;
+    }
+
+    const args = createLiveSessionState.pendingApprovalArgs;
+    if (!args) {
+        return;
+    }
+
+    createLiveSessionState.pendingApprovalLaunching = true;
+    _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+
+    try {
+        await handleRealisticVideoCreate(
+            args.prompt,
+            args.durationSelectorId,
+            args.aspectSelectorId,
+            args.musicCheckboxId,
+            args.title,
+            args.engineSelectorId,
+            args.prefix,
+            args.realisticStyle,
+            { usePendingInitialImage: true }
+        );
+    } finally {
+        if (_hasCreateLivePendingApproval()) {
+            createLiveSessionState.pendingApprovalLaunching = false;
+            _renderCreateLiveSession(createLiveSessionState.lastProjectSnapshot);
+        }
+    }
+}
+
 function _getCreateLiveSceneStatusLabel(sceneItem) {
     if (!sceneItem) {
         return "Pronta";
+    }
+    if (_hasCreateLivePendingApproval() && !(Number(sceneItem?.projectId || 0) > 0) && String(sceneItem?.sourceFrameUploadId || "").trim()) {
+        return createLiveSessionState.pendingApprovalLaunching ? "Criando vídeo" : "Imagem pronta";
     }
     const status = String(sceneItem.status || "").trim().toLowerCase();
     if (status === "failed") {
@@ -8329,6 +8539,7 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
     const statusLabel = _getCreateLiveSceneStatusLabel(sceneItem);
     const hideTitle = !!options.hideTitle;
     const inputFrameUrl = String(sceneItem?.sourceFrameUrl || "").trim() || (sceneNumber === 1 ? _getCreateLivePreferredSourcePreviewUrl() : "");
+    const pendingApproval = sceneNumber === 1 && _hasCreateLivePendingApproval();
     const frameItems = [];
 
     if (inputFrameUrl) {
@@ -8356,13 +8567,17 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
         previewAspectClass,
         url: String(sceneItem?.videoUrl || "").trim(),
         posterUrl: String(sceneItem?.thumbnailUrl || "").trim(),
-        busy: isActive,
-        busyTitle: "Gerando cena",
+        busy: isActive || (pendingApproval && createLiveSessionState.pendingApprovalLaunching),
+        busyTitle: pendingApproval && createLiveSessionState.pendingApprovalLaunching ? "Gerando vídeo" : "Gerando cena",
         busySubtitle: statusLabel,
-        placeholderTitle: isFailed ? "Falhou" : "Vídeo",
+        placeholderTitle: isFailed ? "Falhou" : (pendingApproval ? "Criar vídeo" : "Vídeo"),
         placeholderCopy: isFailed
             ? (sceneItem?.errorMessage || "Tente gerar novamente.")
-            : (isActive ? "A cena aparece aqui assim que terminar." : "Aguardando vídeo."),
+            : pendingApproval
+                ? (createLiveSessionState.pendingApprovalLaunching
+                    ? "Seu vídeo está sendo iniciado com esta imagem."
+                    : "Se gostar da imagem, clique em Criar abaixo.")
+                : (isActive ? "A cena aparece aqui assim que terminar." : "Aguardando vídeo."),
     });
     const headMeta = durationLabel
         ? `<span class="similar-scene-time">${workflowEscapeHtml(durationLabel)}</span>`
@@ -8375,6 +8590,21 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
                 ${headMeta}
             </div>
         `;
+    const afterMarkupParts = [];
+    if (pendingApproval) {
+        afterMarkupParts.push(`
+            <div class="create-live-session-approval-actions">
+                <button class="similar-frame-create-btn" type="button" onclick="createLiveSessionApproveInitialImage()" ${createLiveSessionState.pendingApprovalLaunching ? "disabled" : ""}>
+                    <span class="btn-create-video-label">${createLiveSessionState.pendingApprovalLaunching ? "Criando..." : "Criar"}</span>
+                </button>
+            </div>
+        `);
+    }
+    if (sceneItem?.errorMessage) {
+        afterMarkupParts.push(`<p class="create-live-session-next-error">${workflowEscapeHtml(sceneItem.errorMessage)}</p>`);
+    } else if (sceneItem?.extractError) {
+        afterMarkupParts.push(`<p class="create-live-session-next-error">${workflowEscapeHtml(sceneItem.extractError)}</p>`);
+    }
 
     return `
         <article class="similar-scene-card create-live-session-scene-card${isActive ? " is-active" : ""}">
@@ -8383,11 +8613,7 @@ function _buildCreateLiveSceneCard(sceneItem, options = {}) {
                 frameItems,
                 clipMarkup,
                 hideHead: true,
-                afterMarkup: sceneItem?.errorMessage
-                    ? `<p class="create-live-session-next-error">${workflowEscapeHtml(sceneItem.errorMessage)}</p>`
-                    : sceneItem?.extractError
-                        ? `<p class="create-live-session-next-error">${workflowEscapeHtml(sceneItem.extractError)}</p>`
-                        : "",
+                afterMarkup: afterMarkupParts.join(""),
             })}
         </article>
     `;
@@ -17411,11 +17637,14 @@ function _applyCreateRealisticVoiceSelection(prefix, voiceId = "") {
     voiceButtons.forEach((button) => button.classList.toggle("selected", button === selectedButton));
 }
 
-async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix, realisticStyle) {
+async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSelectorId, musicCheckboxId, title, engineSelectorId, prefix, realisticStyle, options = {}) {
     // Derive prefix from selector IDs if not provided
     if (!prefix) {
         prefix = durationSelectorId.startsWith("wizard") ? "wizard" : "script";
     }
+
+    const usePendingInitialImage = !!options.usePendingInitialImage;
+    const preparingInitialImage = !usePendingInitialImage && _shouldCreateRealisticImageFirst(prefix);
 
     const useTevoxi = !!(document.getElementById(`${prefix}-realistic-tevoxi`)?.checked);
     const selectedTevoxiSong = !useTevoxi
@@ -17435,6 +17664,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     }
 
     let finalPrompt = String(prompt || "").trim();
+    const initialFramePrompt = finalPrompt;
 
     const selectedEngineForPromptCheck = document.querySelector(`#${engineSelectorId} .engine-option.selected`)?.dataset.value
         || (prefix === "auto" ? "wan2" : "mega15");
@@ -17447,6 +17677,12 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     let finalTitle = String(title || "").trim();
     if (!finalTitle && selectedTevoxiSong && selectedEngineForPromptCheck !== "avatar31") {
         finalTitle = String(selectedTevoxiSong.title || "").trim();
+    }
+
+    const initialImagePrompt = initialFramePrompt || finalTitle;
+    if (preparingInitialImage && !initialImagePrompt) {
+        alert("Descreva a cena para criar a imagem inicial.");
+        return;
     }
 
     const useScriptPhotosToggle = prefix === "script"
@@ -17486,11 +17722,11 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const avatarAutomaticDuration = engine === "avatar31"
         ? await _resolveAvatarAutomaticDurationForCreate(prefix)
         : 0;
-    if (engine === "avatar31" && (selectedTevoxiSong || hasAttachedAudio) && avatarAutomaticDuration <= 0) {
+    if (!preparingInitialImage && engine === "avatar31" && (selectedTevoxiSong || hasAttachedAudio) && avatarAutomaticDuration <= 0) {
         alert("Nao foi possivel identificar a duracao do audio. Reenvie o arquivo ou escolha outro trecho do Tevoxi.");
         return;
     }
-    if (avatarAutomaticDuration > 0) {
+    if (!preparingInitialImage && avatarAutomaticDuration > 0) {
         duration = avatarAutomaticDuration;
     }
     if (["wan2", "avatar25"].includes(engine)) {
@@ -17536,8 +17772,8 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     let personaProfileId = 0;
     let personaProfileIds = [];
 
-    const realisticEstimatePayload = _buildRealisticEstimatePayload(prefix);
-    if (engine === "avatar31" && avatarAutomaticDuration > 0) {
+    const realisticEstimatePayload = _buildRealisticEstimatePayload(prefix, { forceVideo: usePendingInitialImage });
+    if (!preparingInitialImage && engine === "avatar31" && avatarAutomaticDuration > 0 && realisticEstimatePayload.mode === "realistic") {
         realisticEstimatePayload.duration_seconds = avatarAutomaticDuration;
     }
     const realisticEstimateKey = prefix === "wizard" ? "wizard" : "script";
@@ -17554,7 +17790,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
     const scrCreateBtn = document.getElementById("script-create-btn");
     if (wizCreateBtn) wizCreateBtn.hidden = true;
     if (scrCreateBtn) scrCreateBtn.hidden = true;
-    setCreateProgress(CREATE_PROGRESS_BASE, "Gerando vídeo realista...", "Preparando...");
+    setCreateProgress(CREATE_PROGRESS_BASE, preparingInitialImage ? "Criando imagem inicial..." : "Gerando vídeo realista...", "Preparando...");
     _smoothProgressTarget = 10;
     _startSmoothProgress();
 
@@ -17600,6 +17836,46 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
             throw new Error("Crie uma ou mais personas de interação primeiro para gerar o vídeo realista.");
         }
 
+        if (preparingInitialImage) {
+            setCreateProgress(8, "Criando imagem inicial...", "Gerando o frame inicial da Cena 1...");
+
+            const previewResult = await _fetchGrokAnchorPreview({
+                prompt: initialImagePrompt,
+                duration,
+                aspect_ratio: aspect,
+                interaction_persona: interactionPersona,
+                persona_profile_id: personaProfileId,
+                persona_profile_ids: personaProfileIds,
+                realistic_style: realisticStyle || "",
+            });
+
+            if (!previewResult?.upload_id || !previewResult?.preview_data_url) {
+                throw new Error("Falha ao criar a imagem inicial da Cena 1.");
+            }
+
+            _stopSmoothProgress();
+            _startCreateLiveInitialApproval({
+                prefix,
+                prompt: initialImagePrompt,
+                promptText: initialImagePrompt,
+                title: finalTitle || finalPrompt || "Cena 1",
+                sceneTitle: "Cena 1",
+                engine,
+                engineLabel,
+                durationSeconds: duration,
+                aspectRatio: aspect,
+                imagePreviewUrl: previewResult.preview_data_url,
+                imageUploadId: previewResult.upload_id,
+                durationSelectorId,
+                aspectSelectorId,
+                musicCheckboxId,
+                engineSelectorId,
+                realisticStyle,
+            });
+            showToast("Imagem pronta na Cena 1. Se gostar, clique em Criar abaixo.", "success");
+            return;
+        }
+
         // Upload reference image if available
         let imageUploadId = "";
         let imageUploadIds = [];
@@ -17609,10 +17885,16 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
         const referencePhotosToUpload = engine === "avatar31"
             ? scriptPhotos.slice(-1)
             : scriptPhotos.slice(0, 6);
+        const pendingInitialImage = usePendingInitialImage ? _getCreateLivePendingInitialImage(prefix) : null;
+        if (pendingInitialImage?.uploadId) {
+            imageUploadIds = [pendingInitialImage.uploadId];
+            imageUploadId = pendingInitialImage.uploadId;
+            _smoothProgressTarget = 15;
+        }
         if (engine === "avatar31" && !selectedTevoxiSong && !hasAttachedAudio) {
             throw new Error("Avatar 3.1 Plus exige um áudio enviado ou um trecho do Tevoxi.");
         }
-        if (shouldUploadReferenceImage) {
+        if (!imageUploadId && shouldUploadReferenceImage) {
             setCreateProgress(5, "Gerando vídeo realista...", "Enviando imagem de referência...");
             for (const photo of referencePhotosToUpload) {
                 const uploaded = await uploadTempFileWithRetry(photo, "image", "imagem de referência");
@@ -17626,7 +17908,7 @@ async function handleRealisticVideoCreate(prompt, durationSelectorId, aspectSele
                     finalPrompt = `${finalPrompt}${mergeRule}`;
                 }
             }
-        } else if (engine === "grok" && personaProfileIds.length > 0) {
+        } else if (!imageUploadId && engine === "grok" && personaProfileIds.length > 0) {
             setCreateProgress(8, "Gerando vídeo realista...", "Gerando imagem-base com personas para o Cria 3.0...");
 
             const previewResult = await _fetchGrokAnchorPreview({
@@ -21151,6 +21433,7 @@ function togglePhotoUpload() {
         if (narCb) narCb.checked = true;
     }
     updateNarrationChoiceVisibility();
+    _syncCreateActionRow("script");
     scheduleScriptCreditEstimate();
 }
 
@@ -22681,6 +22964,7 @@ function renderPhotoPreview() {
     numEl.textContent = scriptPhotos.length;
     updateNarrationChoiceVisibility();
     _updateScriptRealisticPersonaVisibility();
+    _syncCreateActionRow("script");
     scheduleScriptCreditEstimate();
 }
 
@@ -23472,6 +23756,9 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
         await _loadPersonaProfiles(type, false);
     } catch (error) {
         const previewEl = _getRealisticPersonaPreviewElement(context);
+        if (context === "wizard" || context === "script") {
+            _renderCreatePersonaInlinePreview(context);
+        }
         if (previewEl) {
             previewEl.innerHTML = `<div class="realistic-persona-empty">${esc(error.message || "Falha ao carregar personas")}</div>`;
         }
@@ -23497,6 +23784,10 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
     _setSelectedPersonaProfileIds(context, type, selectedIds);
 
     _renderPersonaPreview(context);
+    if (context === "wizard" || context === "script") {
+        _renderCreatePersonaInlinePreview(context);
+        _syncCreateActionRow(context);
+    }
     if (context === "auto") {
         _renderAutoRealisticPersonaCompositionSummary();
     }
@@ -23509,6 +23800,10 @@ async function _refreshPersonaContext(context, forcedPersonaType = "") {
 function _refreshAllPersonaPreviews() {
     _renderPersonaPreview("wizard");
     _renderPersonaPreview("script");
+    _renderCreatePersonaInlinePreview("wizard");
+    _renderCreatePersonaInlinePreview("script");
+    _syncCreateActionRow("wizard");
+    _syncCreateActionRow("script");
     _renderPersonaPreview("ai");
     _renderPersonaPreview("auto");
     _renderPersonaPreview("pilot");

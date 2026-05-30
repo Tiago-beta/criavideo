@@ -5665,6 +5665,10 @@ th {
     box-shadow: 0 20px 40px rgba(3, 10, 22, 0.24);
 }
 
+.create-live-session-approval-actions {
+    margin-top: 14px;
+}
+
 .create-live-session-note-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -15187,6 +15191,45 @@ th,
 .realistic-persona-preview:empty {
     display: none;
     margin-top: 0;
+}
+
+.create-realistic-persona-inline-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow-x: auto;
+    margin-bottom: 12px;
+    padding: 2px 0 4px;
+}
+
+.create-realistic-persona-inline-preview[hidden] {
+    display: none !important;
+}
+
+.create-realistic-persona-inline-chip {
+    width: 46px;
+    height: 46px;
+    flex: 0 0 auto;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 10px 24px rgba(3, 10, 22, 0.2);
+}
+
+.create-realistic-persona-inline-chip img,
+.create-realistic-persona-inline-chip span {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.create-realistic-persona-inline-chip img {
+    object-fit: cover;
+}
+
+.create-realistic-persona-inline-chip span {
+    background: linear-gradient(135deg, rgba(255, 193, 79, 0.3), rgba(58, 175, 169, 0.22));
 }
 
 .realistic-persona-card {
