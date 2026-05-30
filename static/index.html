@@ -16,11 +16,11 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/video/static/icons/favicon-48.png?v=20260406-02">
     <link rel="icon" type="image/png" sizes="192x192" href="/video/static/icons/icon-192.png?v=20260406-02">
     <link rel="apple-touch-icon" sizes="180x180" href="/video/static/icons/apple-touch-icon.png?v=20260406-02">
-    <link rel="stylesheet" href="/video/static/style.css?v=20260529-16">
+    <link rel="stylesheet" href="/video/static/style.css?v=20260529-17">
     <script>
     // Force SW refresh ? bump this version to invalidate stale workers
     (function(){
-        var REQUIRED_VER = 609;
+        var REQUIRED_VER = 610;
         var key = "criavideo_sw_ver";
         var cur = parseInt(localStorage.getItem(key) || "0");
         if (cur < REQUIRED_VER && "serviceWorker" in navigator) {
@@ -2919,20 +2919,6 @@
                 <div id="ai-suggest-panel" class="ai-suggest-panel" hidden>
                     <h3 class="wizard-question" id="ai-suggest-title">Gerar roteiro com IA</h3>
                     <p class="wizard-hint" id="ai-suggest-hint">Descreva o tema e a IA criara um roteiro completo</p>
-                    <div class="form-group ai-suggest-top-images">
-                        <div class="ai-suggest-top-images-row">
-                            <button type="button" class="ai-suggest-add-image-btn" onclick="triggerAiSuggestCustomImageUpload()" title="Adicionar imagens de referência" aria-label="Adicionar imagens de referência">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                <span>Adicionar imagens</span>
-                            </button>
-                            <small class="field-hint ai-suggest-top-images-hint">A IA analisa as imagens junto com o tema para montar o prompt.</small>
-                        </div>
-                        <input id="ai-suggest-custom-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleAiSuggestCustomImageSelect(event)">
-                        <div id="ai-suggest-custom-image-preview" class="photo-preview-grid"></div>
-                        <div id="ai-suggest-custom-image-count" class="photo-count" hidden>
-                            <span id="ai-suggest-custom-image-num">0</span> / 8 referências
-                        </div>
-                    </div>
                     <div class="form-group">
                         <label>Tema do vídeo</label>
                         <input id="ai-suggest-topic" type="text" class="input" placeholder="Ex: benefícios da meditação, como fazer pão caseiro...">
@@ -2976,6 +2962,30 @@
                         </div>
                         <small class="pause-hint">A IA vai manter essa persona no contexto da cena.</small>
                         <div id="ai-suggest-persona-preview" class="realistic-persona-preview"></div>
+                        <div class="realistic-persona-actions">
+                            <button class="btn-icon-sm realistic-persona-gear" type="button" onclick="openPersonaManager('ai')" title="Gerenciar personas" aria-label="Gerenciar personas">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            </button>
+                        </div>
+                        <div id="ai-suggest-custom-image-group" class="photo-upload-area" hidden>
+                            <div class="photo-upload-header">
+                                <span class="photo-upload-label">Referências visuais do personalizado</span>
+                                <span class="photo-upload-hint">A IA analisa essas imagens antes de montar o prompt final.</span>
+                            </div>
+                            <div class="ai-suggest-custom-image-generate">
+                                <input id="ai-suggest-custom-image-prompt" type="text" class="input" placeholder="Ex: fachada da casa em construção ao pôr do sol">
+                                <button id="ai-suggest-custom-image-generate-btn" class="btn btn-secondary btn-sm" type="button" onclick="generateAiSuggestCustomImage()">Gerar imagem</button>
+                            </div>
+                            <div id="ai-suggest-custom-image-dropzone" class="photo-dropzone" onclick="triggerAiSuggestCustomImageUpload()">
+                                <p>Clique ou arraste imagens aqui</p>
+                                <small>JPG, PNG ou WebP • Máx 8 imagens • 10MB cada</small>
+                            </div>
+                            <input id="ai-suggest-custom-image-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="handleAiSuggestCustomImageSelect(event)">
+                            <div id="ai-suggest-custom-image-preview" class="photo-preview-grid"></div>
+                            <div id="ai-suggest-custom-image-count" class="photo-count" hidden>
+                                <span id="ai-suggest-custom-image-num">0</span> / 8 referências
+                            </div>
+                        </div>
                     </div>
                     <div class="form-group" id="ai-suggest-realistic-duration-group" hidden>
                         <label>Duração do vídeo para o prompt</label>
@@ -4689,8 +4699,8 @@
             </div>
         </div>
     </div>
-    <script src="/video/static/app.js?v=20260529-16"></script>
-    <script src="/video/static/pwa.js?v=20260529-16"></script>
+    <script src="/video/static/app.js?v=20260529-17"></script>
+    <script src="/video/static/pwa.js?v=20260529-17"></script>
 </body>
 </html>
 

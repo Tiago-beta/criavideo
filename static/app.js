@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v609 loaded");
+console.log("[CriaVideo] app.js v610 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -22663,8 +22663,9 @@ function _isAiSuggestCustomPersonaSelected() {
 }
 
 function _syncAiSuggestCustomImageSection() {
-    // Section is now always visible at the top of the AI suggest panel; nothing to sync.
-    return;
+    const group = document.getElementById("ai-suggest-custom-image-group");
+    if (!group) return;
+    group.hidden = !_isAiSuggestCustomPersonaSelected();
 }
 
 function resetAiSuggestCustomImages() {
@@ -23241,13 +23242,13 @@ function _renderPersonaPreview(context) {
     const noReferenceEnabled = supportsNoReference && _isPersonaNoReferenceEnabled(context, type);
     const profiles = _getPersonaProfiles(type);
     const supportsQuickAdd = ["wizard", "script", "ai", "auto", "pilot"].includes(String(context || "").toLowerCase());
-    const addOptionLabel = type === "local" ? "Gerenciar locais" : "Gerenciar personas";
+    const addOptionLabel = type === "local" ? "Adicionar local pela foto" : "Adicionar persona pela foto";
     const addOptionHtml = supportsQuickAdd
         ? `
             <button
                 class="realistic-persona-option realistic-persona-add"
                 type="button"
-                onclick="openPersonaManager('${context}')"
+                onclick="openPersonaQuickAdd('${context}')"
                 title="${addOptionLabel}"
                 aria-label="${addOptionLabel}">
                 <span class="realistic-persona-add-icon" aria-hidden="true">+</span>
@@ -23356,9 +23357,9 @@ function _renderPersonaPreview(context) {
 
         el.innerHTML = `
             <div class="realistic-persona-grid">
+                ${addOptionHtml}
                 ${noneOptionHtml}
                 ${cards}
-                ${addOptionHtml}
             </div>
         `;
         return;
@@ -24916,15 +24917,13 @@ async function generateAiScript() {
         const engineLabel = getRealisticEngineLabel(engine);
         try {
             let customImageIds = [];
-            if (usePersonalizedReferences || aiSuggestCustomImages.length > 0) {
-                if (aiSuggestCustomImages.length > 0) {
-                    showCreateProgress("Enviando referências visuais...", {
-                        progress: 24,
-                        stage: "Enviando referências...",
-                    });
-                    customImageIds = await _prepareAiSuggestCustomImageUploadIds();
-                    renderAiSuggestCustomImagePreview();
-                }
+            if (usePersonalizedReferences && aiSuggestCustomImages.length > 0) {
+                showCreateProgress("Enviando referências visuais personalizadas...", {
+                    progress: 24,
+                    stage: "Enviando referências...",
+                });
+                customImageIds = await _prepareAiSuggestCustomImageUploadIds();
+                renderAiSuggestCustomImagePreview();
             }
 
             const hasReferenceImage = hasPersonaReference
