@@ -43,6 +43,39 @@ _NARRATION_TONE_LABELS = {
     "dramatico": "dramatico, cinematografico e intenso",
     "motivacional": "motivacional, energico e persuasivo",
 }
+_NARRATION_INLINE_TAGS = (
+    "[angry]",
+    "[sad]",
+    "[embarrassed]",
+    "[emphasis]",
+    "[whispering]",
+    "[soft]",
+    "[breathy]",
+    "[excited]",
+    "[laughing]",
+    "[chuckling]",
+    "[moaning]",
+    "[clear throat]",
+    "[sobbing]",
+    "[crying loudly]",
+    "[sighing]",
+    "[panting]",
+    "[groaning]",
+    "[crowd laughing]",
+    "[background laughter]",
+    "[audience laughing]",
+    "[pause]",
+    "[long pause]",
+)
+_NARRATION_INLINE_TAG_CANONICAL = {tag.lower(): tag for tag in _NARRATION_INLINE_TAGS}
+_NARRATION_INLINE_TAG_PATTERN = re.compile(
+    "|".join(re.escape(tag) for tag in _NARRATION_INLINE_TAGS),
+    flags=re.IGNORECASE,
+)
+_NARRATION_PAUSE_TAG_REPLACEMENTS = {
+    "[pause]": "...",
+    "[long pause]": "......",
+}
 
 
 def _normalize_narration_duration_seconds(value: int | float | str | None) -> int:
@@ -57,6 +90,51 @@ def _estimate_narration_word_range(duration_seconds: int) -> tuple[int, int]:
     center_words = max(12, round(normalized_seconds * 2.4))
     tolerance = max(4, round(center_words * 0.12))
     return max(8, center_words - tolerance), center_words + tolerance
+
+
+def _canonicalize_narration_inline_tags(value: str) -> str:
+    text = str(value or "")
+    if not text or "[" not in text or "]" not in text:
+        return text
+
+    def _replace(match: re.Match[str]) -> str:
+        return _NARRATION_INLINE_TAG_CANONICAL.get(match.group(0).lower(), match.group(0))
+
+    return _NARRATION_INLINE_TAG_PATTERN.sub(_replace, text)
+
+
+def _build_narration_inline_tag_rules() -> str:
+    available_tags = ", ".join(_NARRATION_INLINE_TAGS)
+    return (
+        "- Analise a narracao e adicione tags inline automaticamente quando a interpretacao pedir emocao, atitude, respiro ou efeito sonoro.\n"
+        f"- Use SOMENTE estas tags, exatamente como escritas: {available_tags}.\n"
+        "- Coloque a tag imediatamente antes da palavra, expressao curta ou frase que deve receber aquela interpretacao.\n"
+        "- Use as tags com parcimonia: marque apenas os momentos que realmente ganham forca dramatica com isso.\n"
+        "- [pause] representa uma pausa curta e [long pause] uma pausa longa e dramatica.\n"
+        "- Preserve tags validas que o usuario ja tiver escrito e melhore sua distribuicao se necessario.\n"
+        "- Nao traduza, nao explique e nao invente nenhuma outra tag fora dessa lista.\n"
+        "- As tags sao marcadores de interpretacao e nao contam como palavras faladas."
+    )
+
+
+def _prepare_narration_text_for_tts(text: str, voice_type: str) -> str:
+    prepared = _canonicalize_narration_inline_tags(text)
+    normalized_voice_type = str(voice_type or "builtin").strip().lower() or "builtin"
+    if normalized_voice_type == "custom":
+        return prepared
+
+    for tag, replacement in _NARRATION_PAUSE_TAG_REPLACEMENTS.items():
+        prepared = prepared.replace(tag, replacement)
+
+    for tag in _NARRATION_INLINE_TAGS:
+        if tag in _NARRATION_PAUSE_TAG_REPLACEMENTS:
+            continue
+        prepared = prepared.replace(tag, "")
+
+    prepared = re.sub(r"[ \t]{2,}", " ", prepared)
+    prepared = re.sub(r"\s+([,.;:!?])", r"\1", prepared)
+    prepared = re.sub(r"\n{3,}", "\n\n", prepared)
+    return prepared.strip()
 
 
 def _normalize_lookup_text(value: str) -> str:
@@ -350,6 +428,7 @@ def _sanitize_generated_narration_text(value: str) -> str:
     text = text.strip().strip('"').strip("'").strip()
     text = re.sub(r"^(?:narra[cç][aã]o|roteiro|texto final)\s*:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = _canonicalize_narration_inline_tags(text)
     return text.strip()
 
 
@@ -382,6 +461,7 @@ async def generate_powerful_narration_text(
         "- A narracao precisa soar humana, fluida, envolvente, convincente e forte.\n"
         "- Use pausas retoricas com '...' apenas quando ajudarem a interpretacao.\n"
         "- Evite frases roboticas, genericas, tecnicas demais ou com cara de prompt.\n"
+        f"{_build_narration_inline_tag_rules()}\n"
         f"- A duracao alvo e de cerca de {normalized_duration_seconds} segundos de fala.\n"
         f"- Mire aproximadamente entre {min_words} e {max_words} palavras, ajustando de forma natural para caber nessa duracao."
     )
@@ -636,6 +716,8 @@ async def generate_tts_audio(
     elif voice_type == "gemini":
         tts_instructions = build_gemini_ptbr_instructions(voice, tts_instructions)
 
+    text = _prepare_narration_text_for_tts(text, voice_type)
+
     try:
         logger.info(f"TTS generation: voice_type={voice_type}, pause_level={pause_level}, tone={tone}, voice={voice[:20] if voice else 'none'}")
         # For non-normal pause levels, use segment-based generation with silence insertion
@@ -767,6 +849,10 @@ def _split_at_pause_markers(text: str, pause_level: str) -> list[dict]:
     
     Returns list of {"text": str, "silence_after": float} dicts.
     """
+    text = _canonicalize_narration_inline_tags(text)
+    for tag, replacement in _NARRATION_PAUSE_TAG_REPLACEMENTS.items():
+        text = text.replace(tag, replacement)
+
     # Normalize: replace unicode ellipsis with 3 dots, collapse spaces around dots
     text = text.replace('…', '...')
     # Normalize mixed patterns like ". . ." or ". . . . . ." into consecutive dots
