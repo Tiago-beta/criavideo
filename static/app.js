@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v607 loaded");
+console.log("[CriaVideo] app.js v608 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -36026,6 +36026,18 @@ function _editorHasSpeedAdjustedVideoSegments() {
     return _editor.videoSegments.some((seg) => Math.abs(_editorSegmentPlaybackSpeed(seg) - 1) > 0.001);
 }
 
+function _editorHasActiveVisualVideoLayerAtTime(timeSec = 0) {
+    const currentTime = Math.max(0, Number(timeSec || 0));
+    return (_editor.mediaLayers || []).some((layer) => {
+        const normalizedLayer = _editorNormalizeMediaLayer(layer);
+        if (normalizedLayer.kind !== "video" || normalizedLayer.audioOnly) {
+            return false;
+        }
+        return currentTime >= Number(normalizedLayer.startTime || 0) - 0.01
+            && currentTime <= Number(normalizedLayer.endTime || 0) + 0.01;
+    });
+}
+
 function _editorShouldUseVirtualVideoPlayback() {
     return _editor.videoSegments.length > 1 || _editorHasReversedVideoSegments() || _editorHasSpeedAdjustedVideoSegments();
 }
@@ -36145,6 +36157,14 @@ function _editorResetMusicWaveformState() {
     };
 }
 
+
+        if (_editor.playing && !_editor._virtualPlaybackActive) {
+            const previewTimelineTime = Number(_editor.timelineTime || sourceTime || 0);
+            if (_editorHasActiveVisualVideoLayerAtTime(previewTimelineTime)) {
+                _editorStartVirtualTimelinePlayback(previewTimelineTime);
+                return;
+            }
+        }
 function _editorResetSourceWaveformState() {
     _editorSourceWaveformState = {
         key: "",
@@ -41654,7 +41674,12 @@ function _editorTogglePlay() {
     _editorSyncBaseVideoPreviewVolume(startTime, true);
 
     const videoPlaybackEnd = _editorGetVideoPlaybackEndTime();
-    if (!hasVideoSource || _editorShouldUseVirtualVideoPlayback() || startTime > videoPlaybackEnd + 0.01) {
+    if (
+        !hasVideoSource
+        || _editorShouldUseVirtualVideoPlayback()
+        || _editorHasActiveVisualVideoLayerAtTime(startTime)
+        || startTime > videoPlaybackEnd + 0.01
+    ) {
         _editorStartVirtualTimelinePlayback(startTime);
     } else {
         _editor._virtualPlaybackActive = false;
