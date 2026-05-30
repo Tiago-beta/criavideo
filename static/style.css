@@ -8165,6 +8165,13 @@ svg.spin {
     margin-top: 10px;
 }
 
+.ai-suggest-custom-image-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
+}
+
 .ai-suggest-custom-image-tile {
     position: relative;
     width: 100%;
@@ -8236,6 +8243,45 @@ svg.spin {
 .ai-suggest-custom-image-tile-upload.is-compact .ai-suggest-custom-image-tile-title,
 .ai-suggest-custom-image-tile-upload.is-compact .ai-suggest-custom-image-tile-copy {
     display: none;
+}
+
+.ai-suggest-custom-image-tile--icon-only {
+    width: clamp(72px, 18vw, 96px);
+    min-width: clamp(72px, 18vw, 96px);
+    padding: 0;
+    aspect-ratio: 1;
+    border-style: dashed;
+}
+
+.ai-suggest-custom-image-tile--icon-only .ai-suggest-custom-image-tile-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: rgba(19, 47, 76, 0.78);
+    font-size: 1.65rem;
+}
+
+.ai-suggest-custom-image-tile--icon-only .ai-suggest-custom-image-tile-title,
+.ai-suggest-custom-image-tile--icon-only .ai-suggest-custom-image-tile-copy {
+    display: none;
+}
+
+.ai-suggest-custom-image-tile--icon-only .ai-suggest-custom-image-tile-icon svg {
+    width: 24px;
+    height: 24px;
+}
+
+.ai-suggest-custom-image-tile--accent {
+    border-style: solid;
+}
+
+.ai-suggest-custom-image-tile--accent .ai-suggest-custom-image-tile-icon {
+    background: rgba(var(--accent-rgb), 0.16);
+    color: var(--accent);
+}
+
+.ai-suggest-custom-image-preview {
+    margin-top: 12px;
 }
 
 @media (max-width: 720px) {

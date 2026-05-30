@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v612 loaded");
+console.log("[CriaVideo] app.js v613 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -6090,7 +6090,7 @@ async function updateAuxImageActionCreditEstimates() {
     if (!estimateData) return;
 
     _setInlineButtonCredit(workflowButton, estimateData.label, estimateData.kind);
-    _setInlineButtonCredit(aiSuggestButton, estimateData.label, estimateData.kind);
+    _setInlineButtonCredit(aiSuggestButton, "");
 }
 
 function scheduleAuxImageActionCreditEstimates() {
@@ -20520,7 +20520,9 @@ function renderScriptImageCreatorResults() {
             const isVideoPending = _isScriptImageCreatorVideoPendingStatus(item?.video_state?.status);
             const editButtonTitle = isEditingActive ? "Cancelar edicao" : "Editar imagem";
             const editButtonAction = isEditingActive ? "cancelScriptImageCreatorEdit()" : `startScriptImageCreatorEdit(${index})`;
-            const primaryActionLabel = _scriptImageCreatorConsumer ? "Usar no projeto" : "Criar video";
+            const primaryActionLabel = _scriptImageCreatorLaunchSource === "ai-suggest-custom"
+                ? "Usar no personalizado"
+                : (_scriptImageCreatorConsumer ? "Usar no projeto" : "Criar video");
             const actionBusyAttr = (_scriptImageCreatorState.busy || isVideoPending) ? " disabled" : "";
             const videoSlotHtml = _buildScriptImageCreatorVideoSlot(item);
             return `
@@ -20680,12 +20682,15 @@ async function createVideoFromScriptImageCreatorResult(index) {
             throw new Error("Imagem nao encontrada para criar o video.");
         }
         if (typeof _scriptImageCreatorConsumer === "function") {
+            const consumerSuccessMessage = _scriptImageCreatorLaunchSource === "ai-suggest-custom"
+                ? "Imagem adicionada ao personalizado."
+                : "Imagem vinculada ao projeto.";
             if (!item?.image_url) {
                 throw new Error("Imagem nao encontrada para vincular ao projeto.");
             }
             await _scriptImageCreatorConsumer(item, parsedIndex);
             closeScriptImageCreatorModal();
-            showToast("Imagem vinculada ao projeto.", "success");
+            showToast(consumerSuccessMessage, "success");
             return;
         }
 
@@ -20942,6 +20947,17 @@ async function generateScriptImageFromModal() {
     }
 
     const emptyPromptIndex = prompts.findIndex((value) => !value);
+    if (_scriptImageCreatorLaunchSource === "ai-suggest-custom") {
+        const remainingSlots = Math.max(0, MAX_AI_SUGGEST_CUSTOM_IMAGES - aiSuggestCustomImages.length);
+        if (!remainingSlots) {
+            alert(`Maximo de ${MAX_AI_SUGGEST_CUSTOM_IMAGES} referencias atingido.`);
+            return;
+        }
+        if (requestedCount > remainingSlots) {
+            alert(`Voce ainda pode adicionar ${remainingSlots} referencia(s) no personalizado.`);
+            return;
+        }
+    }
     if (emptyPromptIndex >= 0) {
         alert(requestedCount > 1
             ? `Descreva a cena ${emptyPromptIndex + 1} antes de gerar.`
@@ -21078,6 +21094,19 @@ async function generateScriptImageFromModal() {
 
         renderScriptImageCreatorResults();
         setScriptImageCreatorStatus("", "info");
+        if (_scriptImageCreatorLaunchSource === "ai-suggest-custom" && typeof _scriptImageCreatorConsumer === "function") {
+            for (let index = 0; index < parsedImages.length; index += 1) {
+                await _scriptImageCreatorConsumer(parsedImages[index], index);
+            }
+            closeScriptImageCreatorModal();
+            showToast(
+                parsedImages.length > 1
+                    ? `${parsedImages.length} imagens adicionadas ao personalizado.`
+                    : "Imagem adicionada ao personalizado.",
+                "success",
+            );
+            return;
+        }
         showToast(
             isEditing
                 ? "Imagem atualizada com sucesso."
@@ -22672,8 +22701,6 @@ function resetAiSuggestCustomImages() {
     aiSuggestCustomImages = [];
     const input = document.getElementById("ai-suggest-custom-image-input");
     if (input) input.value = "";
-    const promptInput = document.getElementById("ai-suggest-custom-image-prompt");
-    if (promptInput) promptInput.value = "";
     renderAiSuggestCustomImagePreview();
     _syncAiSuggestCustomImageSection();
 }
@@ -22712,6 +22739,28 @@ function addAiSuggestCustomImages(files) {
     }
 
     renderAiSuggestCustomImagePreview();
+}
+
+function _pushAiSuggestCustomGeneratedImage(generatedItem) {
+    const uploadId = String(generatedItem?.upload_id || "").trim();
+    const previewUrl = String(generatedItem?.image_url || generatedItem?.preview_url || "").trim();
+    if (!uploadId || !previewUrl) {
+        throw new Error("Imagem gerada invalida.");
+    }
+    if (aiSuggestCustomImages.length >= MAX_AI_SUGGEST_CUSTOM_IMAGES) {
+        throw new Error(`Maximo de ${MAX_AI_SUGGEST_CUSTOM_IMAGES} referencias atingido.`);
+    }
+
+    aiSuggestCustomImages.push({
+        file: null,
+        file_name: String(generatedItem?.file_name || "imagem-personalizada-gerada.png").trim() || "imagem-personalizada-gerada.png",
+        upload_id: uploadId,
+        preview_url: previewUrl,
+        generated: true,
+    });
+
+    renderAiSuggestCustomImagePreview();
+    _syncAiSuggestCustomImageSection();
 }
 
 function removeAiSuggestCustomImage(index) {
@@ -22767,43 +22816,30 @@ async function generateAiSuggestCustomImage() {
         return;
     }
 
-    const promptInput = document.getElementById("ai-suggest-custom-image-prompt");
-    const topicFallback = document.getElementById("ai-suggest-topic")?.value || "";
-    const prompt = String(promptInput?.value || topicFallback).trim();
-    if (!prompt) {
-        alert("Descreva a imagem desejada para gerar a referência visual.");
-        return;
-    }
+    resetScriptImageCreatorModalState();
+    _scriptImageCreatorLaunchSource = "ai-suggest-custom";
+    _scriptImageCreatorConsumer = async (generatedItem) => {
+        _pushAiSuggestCustomGeneratedImage(generatedItem);
+    };
+    _ensureScriptImageCreatorPromptCapacity(1);
+    _scriptImageCreatorState.promptValues[0] = String(document.getElementById("ai-suggest-topic")?.value || "").trim();
+    _scriptImageCreatorState.generatedImages = [];
+    _scriptImageCreatorState.activeResultIndex = 0;
+    _scriptImageCreatorState.referenceFiles = [];
+    syncScriptImageCreatorControls();
+    renderScriptImageCreatorReferencePreview();
+    renderScriptImageCreatorResults();
+    _refreshScriptImageCreatorReferenceContexts().catch((error) => {
+        console.warn("Failed to refresh script image creator persona contexts:", error);
+    });
+    scheduleScriptImageCreatorEstimate(0);
+    openModal("modal-script-image-creator");
 
-    const button = document.getElementById("ai-suggest-custom-image-generate-btn");
-    if (button) button.disabled = true;
-
-    try {
-        const aspect = document.getElementById("script-realistic-aspect")?.value
-            || document.getElementById("wizard-realistic-aspect")?.value
-            || "16:9";
-        const response = await api("/video/workflow/generate-image", {
-            method: "POST",
-            body: JSON.stringify({ prompt, aspect_ratio: aspect }),
-        });
-        if (!response?.upload_id || !response?.image_url) {
-            throw new Error("A imagem foi gerada sem referência válida.");
-        }
-
-        aiSuggestCustomImages.push({
-            file: null,
-            file_name: "imagem-gerada-personalizada.png",
-            upload_id: String(response.upload_id || "").trim(),
-            preview_url: String(response.image_url || "").trim(),
-            generated: true,
-        });
-        renderAiSuggestCustomImagePreview();
-        showToast("Imagem de referência gerada e adicionada ao prompt.", "success");
-    } catch (error) {
-        alert(`Erro ao gerar imagem de referência: ${error.message}`);
-    } finally {
-        if (button) button.disabled = false;
-    }
+    window.requestAnimationFrame(() => {
+        const promptInput = _getScriptImageCreatorPromptInput();
+        promptInput?.focus();
+        promptInput?.select?.();
+    });
 }
 
 async function _prepareAiSuggestCustomImageUploadIds() {
