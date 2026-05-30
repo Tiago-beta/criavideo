@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v608 loaded");
+console.log("[CriaVideo] app.js v609 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -41466,9 +41466,24 @@ function _editorGetTimelineTrackWidth(durationSec = 0) {
     return Math.round(baseWidth * zoom);
 }
 
+function _editorResolveTimelinePlaybackTime(video = null, fallback = 0) {
+    const explicitTimelineTime = Number(_editor.timelineTime);
+    if (Number.isFinite(explicitTimelineTime)) {
+        return explicitTimelineTime;
+    }
+
+    const mediaTime = Number(video?.currentTime);
+    if (Number.isFinite(mediaTime)) {
+        return mediaTime;
+    }
+
+    const safeFallback = Number(fallback);
+    return Number.isFinite(safeFallback) ? safeFallback : 0;
+}
+
 function _editorGetTimelineFocusTime() {
     const video = document.getElementById("editor-video");
-    return Number(_editor.timelineTime || video?.currentTime || 0);
+    return _editorResolveTimelinePlaybackTime(video, 0);
 }
 
 function _editorCenterTimelineOnTime(timeSec) {
@@ -41642,13 +41657,13 @@ function _editorTogglePlay() {
         _editorStopPlaybackFollowLoop();
         _editorStopVirtualTimelinePlayback();
         video.pause();
-        _editorApplyTimelineFrame(_editor.timelineTime || video.currentTime || 0, false);
+        _editorApplyTimelineFrame(_editorResolveTimelinePlaybackTime(video, 0), false);
         _updatePlayIcon();
         return;
     }
 
     const timelineDuration = _editorGetTimelineDuration();
-    let startTime = Number(_editor.timelineTime || video.currentTime || 0);
+    let startTime = _editorResolveTimelinePlaybackTime(video, 0);
     if (startTime >= timelineDuration - 0.02) {
         startTime = 0;
     }
