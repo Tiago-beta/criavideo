@@ -1170,6 +1170,9 @@ class GenerateNarrationTextRequest(BaseModel):
     text: str
     tone: str = "informativo"
     duration_seconds: int = 5
+    voice: str = ""
+    voice_profile_id: int = 0
+    voice_type: str = ""
 
 
 async def _resolve_tts_voice_selection(
@@ -1202,6 +1205,11 @@ async def _resolve_tts_voice_selection(
             voice_type = "builtin"
         tts_instructions = str(profile.tts_instructions or "")
 
+    if voice_type == "builtin" and is_elevenlabs_br_voice_id(voice):
+        voice_type = "elevenlabs"
+    elif voice_type == "builtin" and is_gemini_br_voice_id(voice):
+        voice_type = "gemini"
+
     return voice, voice_type, tts_instructions
 
 
@@ -1218,10 +1226,11 @@ async def _generate_temp_preview_audio(
     is_suno_narration = normalized_voice_type == "suno" or str(voice or "").startswith("suno_narrator_")
 
     if is_suno_narration:
+        from app.services.script_audio import _prepare_narration_text_for_tts
         from app.services.suno_narration import generate_suno_narration
 
         return await generate_suno_narration(
-            text=text,
+            text=_prepare_narration_text_for_tts(text, "suno"),
             voice_preset=str(voice or "").strip(),
             project_id=0,
             tone=tone,
@@ -1368,6 +1377,7 @@ async def generate_temp_audio(
 async def generate_narration_text(
     req: GenerateNarrationTextRequest,
     user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     from app.services.script_audio import generate_powerful_narration_text
 
@@ -1377,11 +1387,21 @@ async def generate_narration_text(
     if len(text) > 20000:
         raise HTTPException(status_code=400, detail="Texto muito longo para gerar a narração")
 
+    _resolved_voice, resolved_voice_type, _resolved_tts_instructions = await _resolve_tts_voice_selection(
+        int(user["id"]),
+        db,
+        requested_voice=req.voice,
+        requested_voice_profile_id=req.voice_profile_id,
+        requested_voice_type=req.voice_type,
+    )
+    allow_inline_tags = resolved_voice_type in {"custom", "elevenlabs", "gemini"}
+
     try:
         narration_text = await generate_powerful_narration_text(
             instruction_text=text,
             tone=str(req.tone or "informativo").strip() or "informativo",
             duration_seconds=int(req.duration_seconds or 5),
+            allow_inline_tags=allow_inline_tags,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

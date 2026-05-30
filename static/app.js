@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v621 loaded");
+console.log("[CriaVideo] app.js v622 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -22713,6 +22713,7 @@ async function generateScriptAudioNarration() {
         "script-audio-builder-tone-options",
         scriptData.tone || "informativo",
     );
+    const voiceSelection = _resolveVoiceSelectionFromSelector("script-audio-builder");
 
     _setScriptAudioNarrationButtonState(true);
     _setScriptAudioBuilderStatus("Lapidando a narração com IA...", "info");
@@ -22724,6 +22725,9 @@ async function generateScriptAudioNarration() {
                 text: instructionText,
                 tone: selectedTone,
                 duration_seconds: narrationDurationSeconds,
+                voice: voiceSelection.voice,
+                voice_profile_id: voiceSelection.voiceProfileId,
+                voice_type: voiceSelection.voiceType,
             }),
         });
         const narrationText = String(result?.text || "").trim();

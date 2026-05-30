@@ -117,10 +117,14 @@ def _build_narration_inline_tag_rules() -> str:
     )
 
 
+def _voice_type_supports_narration_inline_tags(voice_type: str) -> bool:
+    normalized_voice_type = str(voice_type or "builtin").strip().lower() or "builtin"
+    return normalized_voice_type in {"custom", "elevenlabs", "gemini"}
+
+
 def _prepare_narration_text_for_tts(text: str, voice_type: str) -> str:
     prepared = _canonicalize_narration_inline_tags(text)
-    normalized_voice_type = str(voice_type or "builtin").strip().lower() or "builtin"
-    if normalized_voice_type == "custom":
+    if _voice_type_supports_narration_inline_tags(voice_type):
         return prepared
 
     for tag, replacement in _NARRATION_PAUSE_TAG_REPLACEMENTS.items():
@@ -135,6 +139,13 @@ def _prepare_narration_text_for_tts(text: str, voice_type: str) -> str:
     prepared = re.sub(r"\s+([,.;:!?])", r"\1", prepared)
     prepared = re.sub(r"\n{3,}", "\n\n", prepared)
     return prepared.strip()
+
+
+def _finalize_generated_narration_text(text: str, allow_inline_tags: bool) -> str:
+    finalized = _canonicalize_narration_inline_tags(text)
+    if allow_inline_tags:
+        return finalized.strip()
+    return _prepare_narration_text_for_tts(finalized, "builtin")
 
 
 def _normalize_lookup_text(value: str) -> str:
@@ -436,6 +447,7 @@ async def generate_powerful_narration_text(
     instruction_text: str,
     tone: str = "informativo",
     duration_seconds: int = 5,
+    allow_inline_tags: bool = False,
 ) -> str:
     """Turn a chat-like request or rough draft into a final narration ready for recording."""
     cleaned_instruction = str(instruction_text or "").strip()
@@ -448,6 +460,7 @@ async def generate_powerful_narration_text(
         str(tone or "informativo").strip().lower(),
         "forte, claro e natural",
     )
+    inline_tag_rules = _build_narration_inline_tag_rules()
     system_prompt = (
         "Voce e um roteirista brasileiro especialista em narracoes poderosas para voz IA. "
         "O usuario pode enviar uma instrução curta, um pedido em formato de chat, um comando solto "
@@ -461,10 +474,16 @@ async def generate_powerful_narration_text(
         "- A narracao precisa soar humana, fluida, envolvente, convincente e forte.\n"
         "- Use pausas retoricas com '...' apenas quando ajudarem a interpretacao.\n"
         "- Evite frases roboticas, genericas, tecnicas demais ou com cara de prompt.\n"
-        f"{_build_narration_inline_tag_rules()}\n"
+        f"{inline_tag_rules}\n"
         f"- A duracao alvo e de cerca de {normalized_duration_seconds} segundos de fala.\n"
         f"- Mire aproximadamente entre {min_words} e {max_words} palavras, ajustando de forma natural para caber nessa duracao."
     )
+    if not allow_inline_tags:
+        system_prompt = system_prompt.replace(f"{inline_tag_rules}\n", "")
+        system_prompt += (
+            "\n- Nao use tags entre colchetes no texto final. "
+            "Se o usuario mencionou tags, converta tudo para leitura natural."
+        )
     user_prompt = (
         f"TOM DESEJADO: {tone_label}\n\n"
         f"DURACAO ALVO: {normalized_duration_seconds} segundos\n"
@@ -490,7 +509,10 @@ async def generate_powerful_narration_text(
             model=get_atlas_narration_model(),
             **request_kwargs,
         )
-        final_text = _sanitize_generated_narration_text(atlas_response.choices[0].message.content)
+        final_text = _finalize_generated_narration_text(
+            _sanitize_generated_narration_text(atlas_response.choices[0].message.content),
+            allow_inline_tags=allow_inline_tags,
+        )
         if final_text:
             return final_text
     except Exception as exc:
@@ -502,7 +524,10 @@ async def generate_powerful_narration_text(
             model=SCRIPT_TEXT_MODEL,
             **request_kwargs,
         )
-        final_text = _sanitize_generated_narration_text(fallback_response.choices[0].message.content)
+        final_text = _finalize_generated_narration_text(
+            _sanitize_generated_narration_text(fallback_response.choices[0].message.content),
+            allow_inline_tags=allow_inline_tags,
+        )
         if final_text:
             return final_text
     except Exception as exc:
