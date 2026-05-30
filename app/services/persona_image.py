@@ -224,7 +224,7 @@ def default_persona_attributes(persona_type: str) -> dict:
     }
 
 
-def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> dict:
+def normalize_persona_attributes(persona_type: str, attributes: dict | None, fill_defaults: bool = True) -> dict:
     persona_type = normalize_persona_type(persona_type)
     raw = attributes if isinstance(attributes, dict) else {}
     normalized: dict[str, str] = {}
@@ -304,9 +304,12 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
             "other": "outros",
         }
         subtype = subtype_map.get(subtype, subtype)
-        if subtype not in NATURE_SUBTYPES:
+        if subtype and subtype not in NATURE_SUBTYPES:
+            subtype = ""
+        if not subtype and fill_defaults:
             subtype = "gato"
-        normalized["subtipo"] = subtype
+        if subtype:
+            normalized["subtipo"] = subtype
     elif persona_type == "desenho":
         style = normalized.get("estilo_desenho", "").lower()
         style_map = {
@@ -325,17 +328,20 @@ def normalize_persona_attributes(persona_type: str, attributes: dict | None) -> 
             "outro": "outros",
         }
         style = style_map.get(style, style)
-        if style not in DRAWING_STYLES:
+        if style and style not in DRAWING_STYLES:
+            style = ""
+        if not style and fill_defaults:
             style = "cartoon"
-        normalized["estilo_desenho"] = style
+        if style:
+            normalized["estilo_desenho"] = style
     elif persona_type == "personalizado":
-        if not normalized.get("descricao_persona"):
+        if fill_defaults and not normalized.get("descricao_persona"):
             normalized["descricao_persona"] = "personagem autoral com identidade visual unica"
     elif persona_type == "local":
-        if not normalized.get("tipo_local"):
+        if fill_defaults and not normalized.get("tipo_local"):
             normalized["tipo_local"] = "ambiente cinematografico coerente"
 
-    if not normalized:
+    if not normalized and fill_defaults:
         normalized = default_persona_attributes(persona_type)
 
     reference_visual = _clean_text(raw.get("referencia_visual", ""), max_len=_attribute_max_len("referencia_visual"))

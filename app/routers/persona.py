@@ -177,12 +177,17 @@ async def create_profile_from_reference(
     name: str = Form(""),
     attributes_json: str = Form("{}"),
     set_default: bool = Form(False),
+    preserve_reference_image: bool = Form(False),
     reference_image: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     normalized_type = normalize_persona_type(persona_type)
-    attrs = normalize_persona_attributes(normalized_type, _parse_attributes_json(attributes_json))
+    attrs = normalize_persona_attributes(
+        normalized_type,
+        _parse_attributes_json(attributes_json),
+        fill_defaults=not preserve_reference_image,
+    )
 
     content_type = str(reference_image.content_type or "").lower().strip()
     if content_type and content_type not in _ALLOWED_REFERENCE_IMAGE_TYPES:
@@ -214,6 +219,7 @@ async def create_profile_from_reference(
             attributes=attrs,
             set_default=set_default,
             reference_image_path=str(reference_path),
+            preserve_reference_image=preserve_reference_image,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))

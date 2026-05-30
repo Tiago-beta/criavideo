@@ -5,6 +5,7 @@ Handles profile CRUD, default behavior and reference image resolution.
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from sqlalchemy import select, update
@@ -55,6 +56,58 @@ def _media_url_from_path(path: str | None) -> str | None:
     return None
 
 
+def _persona_storage_dir(user_id: int, persona_type: str) -> Path:
+    target = Path(settings.media_dir) / "personas" / str(user_id) / normalize_persona_type(persona_type)
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _copy_reference_image_to_persona_storage(user_id: int, persona_type: str, reference_image_path: str) -> str:
+    source_path = Path(str(reference_image_path or "")).expanduser()
+    if not source_path.exists():
+        raise RuntimeError("Imagem de referencia nao encontrada")
+
+    suffix = source_path.suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+        suffix = ".png"
+
+    target_path = _persona_storage_dir(user_id, persona_type) / f"{os.urandom(12).hex()}{suffix}"
+    shutil.copy2(source_path, target_path)
+    return str(target_path)
+
+
+def _build_preserved_reference_prompt(persona_type: str, attributes: dict | None = None) -> str:
+    normalized_type = normalize_persona_type(persona_type)
+    label = PERSONA_LABELS.get(normalized_type, "Persona")
+    attrs = attributes if isinstance(attributes, dict) else {}
+    parts: list[str] = []
+
+    if normalized_type == "local":
+        parts.append("Use a imagem enviada do local como fonte visual exata.")
+        parts.append("Preserve arquitetura, objetos, materiais, cores, enquadramento, iluminacao e atmosfera da foto original.")
+    else:
+        parts.append(f"Use a foto enviada da {label.lower()} como fonte visual exata.")
+        parts.append("Preserve identidade, rosto, cabelo, roupa, acessorios, cores, pose, enquadramento, iluminacao e fundo da foto original.")
+
+    descricao_persona = " ".join(str(attrs.get("descricao_persona") or "").split()).strip()
+    if descricao_persona:
+        parts.append(f"Conceito central: {descricao_persona}.")
+
+    descricao_extra = " ".join(str(attrs.get("descricao_extra") or "").split()).strip()
+    if descricao_extra:
+        parts.append(f"Personalidade e observacoes: {descricao_extra}.")
+
+    if normalized_type == "local":
+        tipo_local = " ".join(str(attrs.get("tipo_local") or "").split()).strip()
+        elementos = " ".join(str(attrs.get("elementos_principais") or "").split()).strip()
+        if tipo_local:
+            parts.append(f"Tipo de local: {tipo_local}.")
+        if elementos:
+            parts.append(f"Elementos principais: {elementos}.")
+
+    return " ".join(parts).strip()
+
+
 def serialize_persona_profile(profile: PersonaProfile) -> dict:
     attrs = profile.attributes or {}
     voice_profile_id = _extract_voice_profile_id(attrs)
@@ -96,16 +149,29 @@ async def create_persona_profile(
     attributes: dict | None = None,
     set_default: bool = False,
     reference_image_path: str = "",
+    preserve_reference_image: bool = False,
 ) -> PersonaProfile:
     persona_type = normalize_persona_type(persona_type)
-    attrs = normalize_persona_attributes(persona_type, attributes)
+    preserve_uploaded_reference = bool(preserve_reference_image and str(reference_image_path or "").strip())
+    attrs = normalize_persona_attributes(persona_type, attributes, fill_defaults=not preserve_uploaded_reference)
 
-    generated = await generate_persona_image(
-        user_id=user_id,
-        persona_type=persona_type,
-        attributes=attrs,
-        reference_image_path=reference_image_path,
-    )
+    if preserve_reference_image and not preserve_uploaded_reference:
+        raise RuntimeError("Imagem de referencia invalida para salvar a persona")
+
+    if preserve_uploaded_reference:
+        generated = {
+            "persona_type": persona_type,
+            "attributes": attrs,
+            "prompt_text": _build_preserved_reference_prompt(persona_type, attrs),
+            "image_path": _copy_reference_image_to_persona_storage(user_id, persona_type, reference_image_path),
+        }
+    else:
+        generated = await generate_persona_image(
+            user_id=user_id,
+            persona_type=persona_type,
+            attributes=attrs,
+            reference_image_path=reference_image_path,
+        )
 
     profiles = await _query_active_profiles(db, user_id, persona_type)
     has_any = len(profiles) > 0

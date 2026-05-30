@@ -1,4 +1,4 @@
-console.log("[CriaVideo] app.js v611 loaded");
+console.log("[CriaVideo] app.js v612 loaded");
 const IS_CAPACITOR_APP = typeof window !== "undefined" && !!window.Capacitor;
 const IS_DESKTOP_SHELL = typeof window !== "undefined" && !!window.CRIAVIDEO_DESKTOP_SHELL;
 const CRIAVIDEO_DEFAULT_API = "https://criavideo.pro/api";
@@ -23538,6 +23538,8 @@ function _updatePersonaManagerFormByType() {
     const locationFields = document.getElementById("persona-manager-location-fields");
     const voiceField = document.querySelector(".persona-manager-field-voice");
     const extraGroup = document.getElementById("persona-manager-extra")?.closest(".form-group");
+    const extraLabel = extraGroup?.querySelector("label");
+    const extraInput = document.getElementById("persona-manager-extra");
     const nameLabel = document.querySelector(".persona-manager-field-name label");
     const nameInput = document.getElementById("persona-manager-name");
     const referenceField = document.querySelector(".persona-manager-field-reference");
@@ -23567,7 +23569,19 @@ function _updatePersonaManagerFormByType() {
     if (customDescGroup) customDescGroup.hidden = isQuickAdd || !isCustom;
     if (locationFields) locationFields.hidden = isQuickAdd || !isLocation;
     if (voiceField) voiceField.hidden = isLocation;
-    if (extraGroup) extraGroup.hidden = isQuickAdd;
+    if (extraGroup) extraGroup.hidden = false;
+    if (extraLabel) {
+        extraLabel.textContent = isQuickAdd
+            ? (isLocation ? "Descricao do local (opcional)" : "Personalidade (opcional)")
+            : "Descricao (opcional)";
+    }
+    if (extraInput) {
+        extraInput.placeholder = isQuickAdd
+            ? (isLocation
+                ? "Ex: acolhedor, sofisticado, silencioso, com atmosfera premium"
+                : "Ex: pai calmo, protetor e carismatico; menina curiosa e alegre")
+            : "Ex: luz dourada no fim da tarde, expressao tranquila";
+    }
     if (nameLabel) nameLabel.textContent = isQuickAdd ? `${isLocation ? "Nome do local" : "Nome da persona"} *` : "Nome (opcional)";
     if (nameInput) {
         nameInput.placeholder = isQuickAdd
@@ -24491,6 +24505,9 @@ async function createPersonaFromManager() {
             formData.append("persona_type", _personaManagerType);
             formData.append("name", name);
             formData.append("attributes_json", JSON.stringify(attributes));
+            if (isQuickAdd) {
+                formData.append("preserve_reference_image", "true");
+            }
             formData.append("reference_image", personaManagerReferenceImageFile, personaManagerReferenceImageFile.name || "reference.png");
             response = await apiForm("/persona/profiles/from-reference", formData);
         } else {
